@@ -47,19 +47,32 @@ class _WordSearchGridWidgetState extends State<WordSearchGridWidget> {
   void _onTap(int r, int c) {
     if (!widget.isInteractive || _solved || _wrongFlash) return;
     final pos = GridPosition(r, c);
+
+    // Tapping an already-selected cell deselects from that point onwards (undo).
     if (_isSel(r, c)) {
       final idx = _selected.indexOf(pos);
       setState(() => _selected.removeRange(idx, _selected.length));
       return;
     }
+
+    // Tapping a non-adjacent cell silently restarts the selection from the
+    // tapped cell — it does NOT count as a wrong attempt.  Wrong attempts are
+    // only recorded when the user completes a full path that spells the wrong
+    // word (or a path that is too long).  Previously this called _doWrong()
+    // on every mis-tap, which unfairly penalised navigation mistakes and
+    // triggered the hint after just 3 innocent mis-taps.
     if (_selected.isNotEmpty && !_selected.last.isAdjacentTo(pos)) {
-      _doWrong(); return;
+      setState(() => _selected
+        ..clear()
+        ..add(pos));
+      return;
     }
+
     setState(() => _selected.add(pos));
     final built  = _built;
     final target = widget.targetWord.toUpperCase();
-    if (built == target)             _doCorrect();
-    else if (built.length >= target.length) _doWrong();
+    if (built == target)                    _doCorrect();
+    else if (built.length >= target.length) _doWrong();   // full path, wrong word
   }
 
   void _doCorrect() {

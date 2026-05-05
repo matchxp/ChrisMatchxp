@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/matching_service.dart';
 import 'home_screen.dart';
@@ -97,11 +98,17 @@ class _MainNavigationState extends State<MainNavigation> {
     // Notify ChatsScreen to refresh its list in real-time
     ChatsScreen.refreshNotifier.value++;
 
+    // Clean up system-tag messages before showing in the banner
+    String displayMessage = msg['content'] as String? ?? '';
+    if (displayMessage.startsWith('[GAME_REQUEST]')) {
+      displayMessage = '🎮 Sent a Word Search challenge!';
+    }
+
     _showNotificationBanner(
       matchId: matchId,
       senderName: profile['first_name'] as String? ?? 'Match',
       senderPhoto: _firstPhoto(profile),
-      message: msg['content'] as String? ?? '',
+      message: displayMessage,
       matchEntry: matchEntry,
     );
   }
@@ -190,70 +197,52 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      extendBody: false,
+      backgroundColor: Colors.black,
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFF0A0A0A).withOpacity(0.0),
-              const Color(0xFF0A0A0A),
-            ],
-          ),
-        ),
-        child: SafeArea(
+      bottomNavigationBar: _buildNavBar(),
+    );
+  }
+
+  Widget _buildNavBar() {
+    return Container(
+      color: Colors.black,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
           child: Container(
-            margin: const EdgeInsets.fromLTRB(32, 0, 32, 12),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1A),
-              borderRadius: BorderRadius.circular(24),
+              color: const Color(0xFF1E1A2E),
+              borderRadius: BorderRadius.circular(28),
               border: Border.all(
                 color: const Color(0xFF6C3FE8).withOpacity(0.25),
-                width: 1.5,
+                width: 1,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF6C3FE8).withOpacity(0.12),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.5),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              mainAxisSize: MainAxisSize.max,
               children: [
                 _buildNavItem(
-                  icon: Icons.explore_outlined,
-                  activeIcon: Icons.explore,
-                  index: 0,
-                ),
+                    icon: Icons.explore_outlined,
+                    activeIcon: Icons.explore,
+                    index: 0),
                 _buildNavItem(
-                  icon: Icons.favorite_border_rounded,
-                  activeIcon: Icons.favorite_rounded,
-                  index: 1,
-                ),
+                    icon: Icons.favorite_border_rounded,
+                    activeIcon: Icons.favorite_rounded,
+                    index: 1),
                 _buildNavItem(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  activeIcon: Icons.chat_bubble_rounded,
-                  index: 2,
-                ),
+                    icon: Icons.chat_bubble_outline_rounded,
+                    activeIcon: Icons.chat_bubble_rounded,
+                    index: 2),
                 _buildNavItem(
-                  icon: Icons.person_outline_rounded,
-                  activeIcon: Icons.person_rounded,
-                  index: 3,
-                ),
+                    icon: Icons.person_outline_rounded,
+                    activeIcon: Icons.person_rounded,
+                    index: 3),
               ],
             ),
           ),
@@ -270,35 +259,27 @@ class _MainNavigationState extends State<MainNavigation> {
     final isSelected = _currentIndex == index;
 
     return GestureDetector(
-      onTap: () => setState(() => _currentIndex = index),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _currentIndex = index);
+      },
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOutCubic,
-        padding: const EdgeInsets.all(8),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? const LinearGradient(
-                  colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
-                )
-              : null,
-          shape: BoxShape.circle,
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF6C3FE8).withOpacity(0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : null,
+          color: isSelected
+              ? const Color(0xFF6C3FE8).withOpacity(0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
         ),
         child: Icon(
           isSelected ? activeIcon : icon,
           color: isSelected
-              ? Colors.white
-              : const Color(0xFF6C3FE8).withOpacity(0.6),
-          size: 20,
+              ? const Color(0xFF8B5CF6)
+              : const Color(0xFF888888),
+          size: 24,
         ),
       ),
     );

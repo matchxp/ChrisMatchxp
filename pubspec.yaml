@@ -14,12 +14,20 @@ dependencies:
 
   supabase_flutter: ^2.0.0
   image_picker: ^1.0.4
+  url_launcher: ^6.2.0
+  record: ^5.1.2
+  path_provider: ^2.1.0
   google_sign_in: ^6.1.5  # ← Add this for Google Sign-In
 
   geolocator: ^10.1.0        # For GPS location
   geocoding: ^2.1.1          # For address conversion
   http: ^1.1.0               # For API calls
   flutter_dotenv: ^5.1.0    # For loading credentials from .env file
+  shared_preferences: ^2.2.2 # For persisting theme preference
+
+dependency_overrides:
+  record_linux:
+    path: local_packages/record_linux
 
 dev_dependencies:
   flutter_test:

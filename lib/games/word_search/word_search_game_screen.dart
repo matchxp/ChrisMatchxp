@@ -83,38 +83,100 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
   }
 
   Future<void> _init() async {
-    setState(() => _loading = true);
+    // Clean up any stale subscription first
+    if (_ch != null) { _svc.unsubscribe(_ch!); _ch = null; }
+
+    setState(() { _loading = true; _error = null; });
     try {
       await _refresh();
 
-      // If a previous round is already complete, auto-reset so the user
-      // always lands on a fresh setup screen when they re-enter the game.
-      if (_snap.phase == MatchGamePhase.bothSolved) {
-        await _svc.resetGame(widget.matchId);
-        _wordCtrl.clear();
-        setState(() {
-          _topic         = null;
-          _ws            = _WState.idle;
-          _wrong         = 0;
-          _hint          = false;
-          _gridKey       = UniqueKey();
-          _scoreRecorded = false;
-        });
-        await _refresh();
-      }
+      // NOTE: If bothSolved, we intentionally show _bothSolvedScreen() so
+      // the score gets recorded and the celebration is visible.
+      // The user must press "Play Again" to explicitly reset for a new round.
+      // (Auto-resetting here caused the score to never be recorded when
+      //  users navigated away and returned after both had finished.)
 
-      _ch = _svc.subscribeToMatch(widget.matchId, () {
-        if (mounted) _refresh();
-      });
+      _ch = _svc.subscribeToMatch(
+        widget.matchId,
+        () { if (mounted) _refresh(); },
+        channelSuffix: 'game',
+      );
     } catch (e) {
-      setState(() { _error = 'Could not load game. Check connection.'; _loading = false; });
+      if (mounted) setState(() {
+        _error = 'Could not load game. Check connection.';
+        _loading = false;
+      });
     }
   }
 
   Future<void> _refresh() async {
     final snap = await _svc.getSnapshot(
       matchId: widget.matchId, myUserId: widget.currentUserId);
-    if (mounted) setState(() { _snap = snap; _loading = false; _error = null; });
+    if (!mounted) return;
+    setState(() { _snap = snap; _loading = false; _error = null; });
+
+    // Record the winner as soon as we detect bothSolved.
+    // Doing this here (rather than inside build / _bothSolvedScreen) keeps
+    // side-effects out of the build path, which can run many times and made
+    // it hard to reason about when exactly the DB write would happen.
+    if (snap.phase == MatchGamePhase.bothSolved) {
+      _recordScoreIfNeeded(snap);
+    }
+  }
+
+  /// Records the winner for the current round exactly once per widget instance.
+  /// Only the winner writes the row to avoid duplicate score entries.
+  void _recordScoreIfNeeded(MatchGamesSnapshot snap) {
+    if (_scoreRecorded) return;
+    final pg = snap.partnerGame; // puzzle I solved — solvedAt = my solve time
+    final mg = snap.myGame;     // puzzle partner solved — solvedAt = their time
+    if (pg?.solvedAt == null || mg?.solvedAt == null) return;
+
+    final iWon   = pg!.solvedAt!.isBefore(mg!.solvedAt!);
+    final isDraw = pg.solvedAt!.isAtSameMomentAs(mg.solvedAt!);
+    if (isDraw) return; // draws are not recorded
+
+    _scoreRecorded = true; // guard against duplicate calls from multiple refreshes
+    if (iWon) {
+      _svc.recordWinner(
+        matchId:  widget.matchId,
+        winnerId: widget.currentUserId,
+        loserId:  widget.partnerUserId,
+      );
+    }
+    // The loser does NOT write — the winner's row is the single source of truth.
+  }
+
+  /// Shared reset logic used by both _init() and _playAgain().
+  /// Deletes the game rows and resets all local state back to setup.
+  Future<void> _doReset() async {
+    await _svc.resetGame(widget.matchId);
+
+    // Reset the waiting-pages controller back to page 0
+    if (_waitPageCtrl.hasClients) {
+      _waitPageCtrl.jumpToPage(0);
+    }
+    _wordCtrl.clear();
+
+    setState(() {
+      _topic         = null;
+      _ws            = _WState.idle;
+      _wrong         = 0;
+      _hint          = false;
+      _gridKey       = UniqueKey();
+      _scoreRecorded = false;
+      _waitPage      = 0;
+    });
+
+    await _refresh();
+
+    // Verify the delete actually worked (catches missing RLS DELETE policy)
+    if (_snap.phase == MatchGamePhase.bothSolved) {
+      throw Exception(
+        'Game rows could not be deleted. '
+        'Please add the DELETE RLS policy to word_search_games in Supabase.',
+      );
+    }
   }
 
   void _onWordChange(String v) {
@@ -146,10 +208,24 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
         widget.matchId,
         '[GAME_REQUEST] 🎮 sent a Word Search challenge!',
       );
+      // Reset form state immediately after a successful submit.
+      // Without this there is a brief window between _making becoming false
+      // and the realtime subscription firing _refresh() where the submit
+      // button is re-enabled (because _ws is still _WState.valid), allowing
+      // an accidental double-submit of a second puzzle row.
+      if (mounted) {
+        _wordCtrl.clear();
+        setState(() { _ws = _WState.idle; _topic = null; _making = false; });
+        // Immediately refresh so the screen transitions to waitingPartnerSetup
+        // without waiting for the realtime subscription to fire (which can
+        // take 1–3 s and left the screen stuck showing an empty setup form,
+        // making it look like the submit was lost or the app was broken).
+        await _refresh();
+      }
     } catch (e) {
       _snack('Something went wrong. Please try again.');
+      if (mounted) setState(() => _making = false);
     }
-    if (mounted) setState(() => _making = false);
   }
 
   Future<void> _onCorrect(List<GridPosition> _) async {
@@ -157,38 +233,40 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     if (pg == null) return;
     final updated = await _svc.markSolved(pg.id);
     if (updated != null && mounted) {
-      setState(() => _snap = MatchGamesSnapshot(
-        myGame: _snap.myGame, partnerGame: updated));
+      final newSnap = MatchGamesSnapshot(myGame: _snap.myGame, partnerGame: updated);
+      setState(() => _snap = newSnap);
+
+      // Eagerly attempt score recording — don't wait for the realtime subscription
+      // to fire _refresh(). If partner already solved our puzzle (myGame.isSolved)
+      // the phase is now bothSolved and we should record immediately, in case the
+      // user navigates away before the realtime event arrives.
+      if (newSnap.phase == MatchGamePhase.bothSolved) {
+        _recordScoreIfNeeded(newSnap);
+      }
     }
   }
 
   void _onWrong() => setState(() { _wrong++; if (_wrong >= 3) _hint = true; });
-  void _resetBoard() => setState(() { _gridKey = UniqueKey(); });
 
-  /// Deletes both game rows so a brand-new game can be played.
+  /// Resets the interactive grid widget AND clears wrong-attempt state.
+  /// Previously only a new UniqueKey was set, which rebuilt the grid but left
+  /// _wrong and _hint stale — so the "3 wrong attempts / hint" count would
+  /// persist even after the user explicitly hit "Reset board".
+  void _resetBoard() => setState(() {
+    _gridKey = UniqueKey();
+    _wrong   = 0;
+    _hint    = false;
+  });
+
+  /// Resets the game so both players can play a new round.
   Future<void> _playAgain() async {
-    setState(() => _loading = true);
+    setState(() { _loading = true; _error = null; });
     try {
-      await _svc.resetGame(widget.matchId);
-      // Also post a fresh game-request card to chat
-      await _msgSvc.sendMessage(
-        widget.matchId,
-        '[GAME_REQUEST] 🎮 sent a Word Search challenge!',
-      );
-      // Reset local UI state
-      setState(() {
-        _topic         = null;
-        _ws            = _WState.idle;
-        _wrong         = 0;
-        _hint          = false;
-        _gridKey       = UniqueKey();
-        _scoreRecorded = false;
-      });
-      _wordCtrl.clear();
-      await _refresh();
+      await _doReset();
     } catch (e) {
-      _snack('Could not reset game. Try again.');
-      if (mounted) setState(() => _loading = false);
+      // Most likely cause: missing DELETE RLS policy on word_search_games
+      if (mounted) setState(() { _loading = false; });
+      _snack('Could not start new game — check Supabase DELETE policy.');
     }
   }
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -505,7 +583,18 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
               style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
           ]),
         ]),
-        if (_hint) ...[const SizedBox(height: 8), _hintPill('Hint: ${partnerGame.word.length} letters')],
+        // After 3 wrong attempts show the word length.
+        // After 6 wrong attempts reveal the full word so the player cannot
+        // be permanently stuck — the partner chose the word so the solver
+        // has no other way to discover it.
+        if (_hint) ...[
+          const SizedBox(height: 8),
+          _hintPill(
+            _wrong >= 6
+                ? 'Hint: the word is "${partnerGame.word}"'
+                : 'Hint: ${partnerGame.word.length} letters',
+          ),
+        ],
         const SizedBox(height: 12),
         WordSearchGridWidget(
           key: _gridKey,
@@ -611,25 +700,15 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     final pg = _snap.partnerGame!;
     final mg = _snap.myGame!;
 
-    // Determine winner: whoever solved first wins
-    // pg.solvedAt = when I solved; mg.solvedAt = when partner solved
+    // Determine winner: whoever solved first wins.
+    // pg.solvedAt = when I solved partner's puzzle (my solve time)
+    // mg.solvedAt = when partner solved my puzzle  (their solve time)
+    // Score recording has already been handled by _recordScoreIfNeeded()
+    // called from _refresh(), so we only need the values here for the UI.
     final iWon = pg.solvedAt != null && mg.solvedAt != null &&
         pg.solvedAt!.isBefore(mg.solvedAt!);
     final isDraw = pg.solvedAt != null && mg.solvedAt != null &&
         pg.solvedAt!.isAtSameMomentAs(mg.solvedAt!);
-
-    // Record winner once — only the winner records to avoid duplicates
-    if (!_scoreRecorded && pg.solvedAt != null && mg.solvedAt != null && !isDraw) {
-      _scoreRecorded = true;
-      if (iWon) {
-        _svc.recordWinner(
-          matchId:  widget.matchId,
-          winnerId: widget.currentUserId,
-          loserId:  widget.partnerUserId,
-        );
-      }
-      // loser does NOT call recordWinner; winner's call is the single source of truth
-    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -1044,12 +1123,28 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
       const _PulsingDots(),
     ]));
 
-  Widget _miniAvatar() => Container(
-    width: 32, height: 32,
-    decoration: const BoxDecoration(
-      shape: BoxShape.circle,
-      gradient: LinearGradient(colors: [Color(0xFFAD1F6A), Color(0xFFE55D9B)])),
-    child: const Center(child: Text('👩', style: TextStyle(fontSize: 16))));
+  /// Mini circular avatar showing the partner's first initial.
+  /// Previously showed a hardcoded 👩 emoji regardless of who the partner is.
+  Widget _miniAvatar() {
+    final initial = widget.partnerName.isNotEmpty
+        ? widget.partnerName[0].toUpperCase()
+        : '?';
+    return Container(
+      width: 32, height: 32,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)])),
+      child: Center(
+        child: Text(initial,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _resetBtn() => GestureDetector(
     onTap: _resetBoard,

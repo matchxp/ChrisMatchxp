@@ -20,6 +20,10 @@ class _ChatsScreenState extends State<ChatsScreen>
   final String _currentUserId =
       Supabase.instance.client.auth.currentUser?.id ?? '';
 
+  // ── Search ─────────────────────────────────────────────────────────────────
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
   late AnimationController _matchAnimationController;
   bool _showMatchPopup = false;
   Map<String, dynamic>? _selectedMatch;
@@ -27,6 +31,10 @@ class _ChatsScreenState extends State<ChatsScreen>
   // Each item: { match_id, profile, last_message }
   List<Map<String, dynamic>> _matchesWithProfiles = [];
   bool _loading = true;
+
+  // ── Online presence ────────────────────────────────────────────────────────
+  // A simple in-memory set; in production you'd subscribe to a presence channel.
+  final Set<String> _onlineUserIds = {};
 
   @override
   void initState() {
@@ -38,12 +46,14 @@ class _ChatsScreenState extends State<ChatsScreen>
     _loadMatches();
     // Listen for new messages arriving from other screens (e.g. MainNavigation)
     ChatsScreen.refreshNotifier.addListener(_onExternalRefresh);
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
     ChatsScreen.refreshNotifier.removeListener(_onExternalRefresh);
     _matchAnimationController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -51,18 +61,59 @@ class _ChatsScreenState extends State<ChatsScreen>
     if (mounted) _loadMatches();
   }
 
+  void _onSearchChanged() {
+    setState(() => _searchQuery = _searchController.text.toLowerCase().trim());
+  }
+
   Future<void> _loadMatches() async {
     final matches = await _matchingService.getMatchesWithProfiles();
 
-    // For each match fetch the last message in parallel
+    // For each match fetch the last message + unread count in parallel
     final enriched = await Future.wait(matches.map((m) async {
       final last = await _matchingService.getLastMessage(m['match_id'] as String);
-      return {...m, 'last_message': last};
+      // Fetch unread count — try; fall back to 0 if not implemented yet
+      int unreadCount = 0;
+      try {
+        final rows = await Supabase.instance.client
+            .from('messages')
+            .select('id')
+            .eq('match_id', m['match_id'] as String)
+            .neq('sender_id', _currentUserId)
+            .eq('is_read', false);
+        unreadCount = (rows as List).length;
+      } catch (_) {}
+      return {...m, 'last_message': last, 'unread_count': unreadCount};
     }));
+
+    // Fetch online presence via last_seen column (if available)
+    final Set<String> online = {};
+    for (final m in enriched) {
+      final profile = m['profile'] as Map<String, dynamic>;
+      final userId = profile['id'] as String?;
+      if (userId == null) continue;
+      try {
+        final row = await Supabase.instance.client
+            .from('profiles')
+            .select('last_seen')
+            .eq('id', userId)
+            .maybeSingle();
+        final raw = row?['last_seen'] as String?;
+        if (raw != null) {
+          final dt = DateTime.tryParse(raw);
+          if (dt != null &&
+              DateTime.now().difference(dt.toLocal()).inMinutes < 5) {
+            online.add(userId);
+          }
+        }
+      } catch (_) {}
+    }
 
     if (!mounted) return;
     setState(() {
       _matchesWithProfiles = enriched;
+      _onlineUserIds
+        ..clear()
+        ..addAll(online);
       _loading = false;
     });
   }
@@ -124,6 +175,19 @@ class _ChatsScreenState extends State<ChatsScreen>
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
     return '${diff.inDays}d';
+  }
+
+  /// Filtered list based on current search query
+  List<Map<String, dynamic>> get _filtered {
+    if (_searchQuery.isEmpty) return _matchesWithProfiles;
+    return _matchesWithProfiles.where((m) {
+      final profile = m['profile'] as Map<String, dynamic>;
+      final name = _profileName(profile).toLowerCase();
+      final preview = _lastMessagePreview(
+              m['last_message'] as Map<String, dynamic>?)
+          .toLowerCase();
+      return name.contains(_searchQuery) || preview.contains(_searchQuery);
+    }).toList();
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -216,10 +280,11 @@ class _ChatsScreenState extends State<ChatsScreen>
     );
   }
 
+  // ── Functional search bar ──────────────────────────────────────────────────
   Widget _buildSearchBar() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(16),
@@ -231,12 +296,28 @@ class _ChatsScreenState extends State<ChatsScreen>
               color: Colors.white.withValues(alpha: 0.5), size: 20),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              'Search',
-              style: TextStyle(
-                  fontSize: 15, color: Colors.white.withValues(alpha: 0.5)),
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              decoration: InputDecoration(
+                hintText: 'Search conversations…',
+                hintStyle: TextStyle(
+                    fontSize: 15,
+                    color: Colors.white.withValues(alpha: 0.4)),
+                border: InputBorder.none,
+                isDense: true,
+              ),
             ),
           ),
+          if (_searchQuery.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                _searchController.clear();
+                FocusScope.of(context).unfocus();
+              },
+              child: Icon(Icons.close,
+                  size: 18, color: Colors.white.withValues(alpha: 0.5)),
+            ),
         ],
       ),
     );
@@ -276,16 +357,18 @@ class _ChatsScreenState extends State<ChatsScreen>
   }
 
   Widget _buildMatchesSection() {
+    final list = _filtered;
+    if (list.isEmpty) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: SizedBox(
         height: 100,
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          itemCount: _matchesWithProfiles.length,
+          itemCount: list.length,
           itemBuilder: (context, index) {
-            return _buildMatchAvatar(_matchesWithProfiles[index]);
+            return _buildMatchAvatar(list[index]);
           },
         ),
       ),
@@ -296,6 +379,8 @@ class _ChatsScreenState extends State<ChatsScreen>
     final profile = match['profile'] as Map<String, dynamic>;
     final photo = _profilePhoto(profile);
     final name = _profileName(profile);
+    final userId = profile['id'] as String?;
+    final isOnline = userId != null && _onlineUserIds.contains(userId);
 
     return GestureDetector(
       onTap: () => _showMatchDialog(match),
@@ -303,38 +388,58 @@ class _ChatsScreenState extends State<ChatsScreen>
         margin: const EdgeInsets.only(right: 16),
         child: Column(
           children: [
-            Container(
-              width: 68,
-              height: 68,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+            Stack(
+              children: [
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.all(3),
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                      color: const Color(0xFF0A0A0A), width: 3),
+                  padding: const EdgeInsets.all(3),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFF0A0A0A), width: 3),
+                    ),
+                    child: ClipOval(
+                      child: photo.isNotEmpty
+                          ? Image.network(photo,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _avatarInitial(name))
+                          : _avatarInitial(name),
+                    ),
+                  ),
                 ),
-                child: ClipOval(
-                  child: photo.isNotEmpty
-                      ? Image.network(photo,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _avatarInitial(name))
-                      : _avatarInitial(name),
-                ),
-              ),
+                // Online dot on carousel avatar
+                if (isOnline)
+                  Positioned(
+                    bottom: 2,
+                    right: 2,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF22C55E),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: const Color(0xFF0A0A0A), width: 2),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 6),
             Text(
@@ -367,6 +472,8 @@ class _ChatsScreenState extends State<ChatsScreen>
   }
 
   Widget _buildMessagesSection() {
+    final list = _filtered;
+
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -376,9 +483,11 @@ class _ChatsScreenState extends State<ChatsScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Messages',
-                  style: TextStyle(
+                Text(
+                  _searchQuery.isEmpty
+                      ? 'Messages'
+                      : 'Results (${list.length})',
+                  style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                       color: Colors.white),
@@ -393,7 +502,7 @@ class _ChatsScreenState extends State<ChatsScreen>
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${_matchesWithProfiles.length}',
+                    '${list.length}',
                     style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -403,15 +512,27 @@ class _ChatsScreenState extends State<ChatsScreen>
               ],
             ),
           ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _matchesWithProfiles.length,
-              itemBuilder: (context, index) {
-                return _buildChatItem(_matchesWithProfiles[index]);
-              },
+          if (list.isEmpty && _searchQuery.isNotEmpty)
+            Expanded(
+              child: Center(
+                child: Text(
+                  'No results for "$_searchQuery"',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 14),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: list.length,
+                itemBuilder: (context, index) {
+                  return _buildChatItem(list[index]);
+                },
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -435,6 +556,9 @@ class _ChatsScreenState extends State<ChatsScreen>
     final preview = _lastMessagePreview(lastMsg);
     final time = _lastMessageTime(lastMsg);
     final unread = _isUnread(lastMsg);
+    final unreadCount = (match['unread_count'] as int?) ?? 0;
+    final userId = profile['id'] as String?;
+    final isOnline = userId != null && _onlineUserIds.contains(userId);
 
     return GestureDetector(
       onTap: () => _openConversation(match),
@@ -455,17 +579,41 @@ class _ChatsScreenState extends State<ChatsScreen>
         ),
         child: Row(
           children: [
-            // Avatar
-            ClipOval(
-              child: SizedBox(
-                width: 56,
-                height: 56,
-                child: photo.isNotEmpty
-                    ? Image.network(photo,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _avatarInitial(name))
-                    : _avatarInitial(name),
-              ),
+            // ── Avatar with online dot ───────────────────────────────────
+            Stack(
+              children: [
+                ClipOval(
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: photo.isNotEmpty
+                        ? Image.network(photo,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _avatarInitial(name))
+                        : _avatarInitial(name),
+                  ),
+                ),
+                if (isOnline)
+                  Positioned(
+                    bottom: 1,
+                    right: 1,
+                    child: Container(
+                      width: 13,
+                      height: 13,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF22C55E),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: unread
+                              ? const Color(0xFF1F1A2E)
+                              : const Color(0xFF1A1A1A),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(width: 12),
             // Name + preview
@@ -499,7 +647,7 @@ class _ChatsScreenState extends State<ChatsScreen>
                 ],
               ),
             ),
-            // Time + unread dot
+            // Time + unread count badge
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -514,7 +662,32 @@ class _ChatsScreenState extends State<ChatsScreen>
                         unread ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
-                if (unread) ...[
+                if (unread && unreadCount > 0) ...[
+                  const SizedBox(height: 6),
+                  // ── Numbered badge ─────────────────────────────────
+                  Container(
+                    constraints: const BoxConstraints(
+                        minWidth: 20, minHeight: 20),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      unreadCount > 99 ? '99+' : '$unreadCount',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ] else if (unread) ...[
+                  // Fallback dot if count fetch failed but still unread
                   const SizedBox(height: 6),
                   Container(
                     width: 12,

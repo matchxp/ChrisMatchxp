@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'full_profile_screen.dart';
+import 'preferences_screen.dart';
 import '../services/matching_service.dart';
 import '../games/game_hub_screen.dart';
 
@@ -736,14 +737,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       color: Color(0xFF6C3FE8), letterSpacing: 1.5)),
             ],
           ),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1A),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF6C3FE8).withOpacity(0.3)),
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PreferencesScreen()),
             ),
-            child: const Icon(Icons.tune, color: Color(0xFF6C3FE8), size: 18),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF6C3FE8).withOpacity(0.3)),
+              ),
+              child: const Icon(Icons.tune, color: Color(0xFF6C3FE8), size: 18),
+            ),
           ),
         ],
       ),

@@ -1,9 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation.dart';
 import 'screens/onboarding/profile_details_screen.dart';
+
+// ── Global theme notifier — read / written from SettingsScreen ───────────────
+final appThemeMode = ValueNotifier<ThemeMode>(ThemeMode.dark);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +20,11 @@ Future<void> main() async {
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
+  // Restore saved preference
+  final prefs = await SharedPreferences.getInstance();
+  final isDark = prefs.getBool('dark_mode') ?? true;
+  appThemeMode.value = isDark ? ThemeMode.dark : ThemeMode.light;
+
   runApp(const MatchXApp());
 }
 
@@ -25,16 +35,50 @@ class MatchXApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'MatchX',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        primaryColor: const Color(0xFF6C3FE8),
-        scaffoldBackgroundColor: const Color(0xFF0A0021),
-        fontFamily: 'Inter',
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: appThemeMode,
+      builder: (_, mode, __) => MaterialApp(
+        title: 'MatchX',
+        debugShowCheckedModeBanner: false,
+        themeMode: mode,
+
+        // ── Dark theme (original) ──────────────────────────────────────────
+        darkTheme: ThemeData(
+          brightness: Brightness.dark,
+          primaryColor: const Color(0xFF6C3FE8),
+          scaffoldBackgroundColor: const Color(0xFF0A0A0A),
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF6C3FE8),
+            secondary: Color(0xFF9D50BB),
+            surface: Color(0xFF1A1A1A),
+          ),
+          fontFamily: 'Inter',
+          cardColor: const Color(0xFF1A1A1A),
+          dividerColor: Colors.white12,
+        ),
+
+        // ── Light theme ────────────────────────────────────────────────────
+        theme: ThemeData(
+          brightness: Brightness.light,
+          primaryColor: const Color(0xFF6C3FE8),
+          scaffoldBackgroundColor: const Color(0xFFF2F2F7),
+          colorScheme: const ColorScheme.light(
+            primary: Color(0xFF6C3FE8),
+            secondary: Color(0xFF9D50BB),
+            surface: Color(0xFFFFFFFF),
+          ),
+          fontFamily: 'Inter',
+          cardColor: Colors.white,
+          dividerColor: Colors.black12,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFFF2F2F7),
+            foregroundColor: Color(0xFF0A0A0A),
+            elevation: 0,
+          ),
+        ),
+
+        home: const SplashRouter(),
       ),
-      home: const SplashRouter(),
     );
   }
 }
@@ -51,10 +95,22 @@ class SplashRouter extends StatefulWidget {
 }
 
 class _SplashRouterState extends State<SplashRouter> {
+  Timer? _forceNavTimer;
+
   @override
   void initState() {
     super.initState();
+    // Hard fallback: no matter what, navigate away after 5 seconds
+    _forceNavTimer = Timer(const Duration(seconds: 5), () {
+      _go(const LoginScreen());
+    });
     _route();
+  }
+
+  @override
+  void dispose() {
+    _forceNavTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _route() async {
@@ -72,22 +128,30 @@ class _SplashRouterState extends State<SplashRouter> {
           .from('profiles')
           .select('profile_completed')
           .eq('id', user.id)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(const Duration(seconds: 4));
 
       final done = profile?['profile_completed'] == true;
       _go(done ? const MainNavigation() : const ProfileDetailsScreen());
     } catch (_) {
-      // If check fails, fall back to login to be safe
+      // If check fails or times out, fall back to login to be safe
       _go(const LoginScreen());
     }
   }
 
+  bool _navigated = false;
+
   void _go(Widget screen) {
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => screen),
-    );
+    if (_navigated) return;
+    _navigated = true;
+    _forceNavTimer?.cancel();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => screen),
+      );
+    });
   }
 
   @override

@@ -1,0 +1,11 @@
+name: record_linux
+description: Linux stub for record plugin — satisfies record_platform_interface 1.5.x
+version: 0.8.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  record_platform_interface: ^1.5.0

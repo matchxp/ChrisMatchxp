@@ -124,7 +124,16 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
+      backgroundColor: const Color(0xFF0D0C1E),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0D0C1E), Color(0xFF07070F)],
+          ),
+        ),
+        child: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
@@ -132,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const SizedBox(height: 40),
-                
+
                 // ✅ BIG TEST BUTTON - SKIP TO HOME PAGE
                 Container(
                   width: double.infinity,
@@ -278,6 +287,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -429,7 +439,16 @@ class _VerifyScreenState extends State<VerifyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
+      backgroundColor: const Color(0xFF0D0C1E),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0D0C1E), Color(0xFF07070F)],
+          ),
+        ),
+        child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -539,6 +558,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

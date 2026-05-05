@@ -146,11 +146,13 @@ class WordSearchService {
   /// in their partner's puzzle.
   /// Returns the updated game row.
   Future<WordSearchGame?> markSolved(String gameId) async {
+    // Use UTC so that winner comparison (pg.solvedAt.isBefore(mg.solvedAt))
+    // is always correct regardless of the two players' local timezones.
     final response = await _db
         .from(_table)
         .update({
           'status':    'solved',
-          'solved_at': DateTime.now().toIso8601String(),
+          'solved_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', gameId)
         .select()
@@ -166,12 +168,23 @@ class WordSearchService {
   // re-fetches the snapshot and redraws.
   // ────────────────────────────────────────────────────────────
 
+  /// Subscribe to all changes on both game rows for this match.
+  ///
+  /// [channelSuffix] lets callers create distinct channel objects for the
+  /// same matchId so they don't accidentally share — or clobber — each
+  /// other's subscription when multiple screens are listening at once.
+  /// e.g. pass 'chat' from ChatConversationScreen and 'game' from the
+  /// game screen to avoid a naming collision in Supabase Realtime.
   RealtimeChannel subscribeToMatch(
     String matchId,
-    VoidCallback onRefresh,
-  ) {
+    VoidCallback onRefresh, {
+    String channelSuffix = '',
+  }) {
+    final channelName = channelSuffix.isEmpty
+        ? 'wsg_match_$matchId'
+        : 'wsg_match_${matchId}_$channelSuffix';
     return _db
-        .channel('wsg_match_$matchId')
+        .channel(channelName)
         .onPostgresChanges(
           event:  PostgresChangeEvent.all,
           schema: 'public',
@@ -194,6 +207,17 @@ class WordSearchService {
 
   Future<void> resetGame(String matchId) async {
     await _db.from(_table).delete().eq('match_id', matchId);
+  }
+
+  /// Deletes all score rows for a match (full score reset).
+  Future<void> resetScores(String matchId) async {
+    await _db.from(_scores).delete().eq('match_id', matchId);
+  }
+
+  /// Resets both the active game rows AND all score history for a match.
+  Future<void> resetAll(String matchId) async {
+    await resetGame(matchId);
+    await resetScores(matchId);
   }
 
   // ────────────────────────────────────────────────────────────

@@ -74,8 +74,13 @@ class GameHubScreen extends StatelessWidget {
                   partnerUserId:  partnerUserId,
                   partnerName:    partnerName,
                   onChatUnlocked: () {
-                    Navigator.of(context).popUntil((r) => r.isFirst);
-                    onChatUnlocked();
+                    // Pop exactly 2 routes: WordSearchGameScreen + GameHubScreen.
+                    // We must NOT use popUntil((r) => r.isFirst) because that
+                    // would also pop ChatConversationScreen, dumping the user on
+                    // the home screen instead of the now-unlocked chat.
+                    int _pops = 0;
+                    Navigator.of(context).popUntil((_) => _pops++ >= 2);
+                    onChatUnlocked(); // setState in ChatConversationScreen
                   },
                 ),
               )),

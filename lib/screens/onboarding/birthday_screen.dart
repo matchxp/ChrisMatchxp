@@ -133,7 +133,16 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
+      backgroundColor: const Color(0xFF0D0C1E),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0D0C1E), Color(0xFF07070F)],
+          ),
+        ),
+        child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -180,6 +189,7 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
