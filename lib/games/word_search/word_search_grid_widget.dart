@@ -1,4 +1,6 @@
 // lib/games/word_search/word_search_grid_widget.dart
+// Restyled to match emoji_charades_package UI — deep cosmic palette,
+// GoogleFonts.fredoka.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,17 +30,18 @@ class WordSearchGridWidget extends StatefulWidget {
 
 class _WordSearchGridWidgetState extends State<WordSearchGridWidget> {
   final List<GridPosition> _selected = [];
-  Set<GridPosition> _correctCells   = {};
+  Set<GridPosition> _correctCells    = {};
   bool _solved     = false;
   bool _wrongFlash = false;
 
-  static const _cBg      = Color(0xFF0A0A0A);
-  static const _cCell    = Color(0xFF1A1A1A);
-  static const _cBorder  = Color(0x406C3FE8);
-  static const _cPurple  = Color(0xFF6C3FE8);
-  static const _cPurpleL = Color(0xFFBB8DFF);
-  static const _cGreen   = Color(0xFF4ADE80);
-  static const _cRed     = Color(0xFFF87171);
+  // ── Palette — matches emoji_charades_package ─────────────
+  static const _cBg      = Color(0xFF07060F);
+  static const _cCell    = Color(0xFF14093A);
+  static const _cBorder  = Color(0xFF2E1F5E);
+  static const _cPurple  = Color(0xFF8B5CF6);
+  static const _cPurpleL = Color(0xFFA78BFA);
+  static const _cGreen   = Color(0xFF39FF14);
+  static const _cRed     = Color(0xFFFF6B6B);
 
   bool _isSel(int r, int c) => _selected.contains(GridPosition(r, c));
   bool _isOk (int r, int c) => _correctCells.contains(GridPosition(r, c));
@@ -48,23 +51,14 @@ class _WordSearchGridWidgetState extends State<WordSearchGridWidget> {
     if (!widget.isInteractive || _solved || _wrongFlash) return;
     final pos = GridPosition(r, c);
 
-    // Tapping an already-selected cell deselects from that point onwards (undo).
     if (_isSel(r, c)) {
       final idx = _selected.indexOf(pos);
       setState(() => _selected.removeRange(idx, _selected.length));
       return;
     }
 
-    // Tapping a non-adjacent cell silently restarts the selection from the
-    // tapped cell — it does NOT count as a wrong attempt.  Wrong attempts are
-    // only recorded when the user completes a full path that spells the wrong
-    // word (or a path that is too long).  Previously this called _doWrong()
-    // on every mis-tap, which unfairly penalised navigation mistakes and
-    // triggered the hint after just 3 innocent mis-taps.
     if (_selected.isNotEmpty && !_selected.last.isAdjacentTo(pos)) {
-      setState(() => _selected
-        ..clear()
-        ..add(pos));
+      setState(() => _selected..clear()..add(pos));
       return;
     }
 
@@ -72,7 +66,7 @@ class _WordSearchGridWidgetState extends State<WordSearchGridWidget> {
     final built  = _built;
     final target = widget.targetWord.toUpperCase();
     if (built == target)                    _doCorrect();
-    else if (built.length >= target.length) _doWrong();   // full path, wrong word
+    else if (built.length >= target.length) _doWrong();
   }
 
   void _doCorrect() {
@@ -101,18 +95,18 @@ class _WordSearchGridWidgetState extends State<WordSearchGridWidget> {
 
   Widget _buildGrid() {
     Color bc = _cBorder; Color gc = _cPurple; double bw = 1.5;
-    if (_solved)     { bc = _cGreen; gc = _cGreen; bw = 2.5; }
+    if (_solved)          { bc = _cGreen; gc = _cGreen; bw = 2.5; }
     else if (_wrongFlash) { bc = _cRed;   gc = _cRed;   bw = 2.5; }
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
         color: _cBg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: bc, width: bw),
         boxShadow: [BoxShadow(
-          color: gc.withOpacity(_solved || _wrongFlash ? 0.35 : 0.12),
-          blurRadius: _solved || _wrongFlash ? 24 : 12, spreadRadius: 1)],
+          color: gc.withValues(alpha: _solved || _wrongFlash ? 0.35 : 0.12),
+          blurRadius: _solved || _wrongFlash ? 28 : 14, spreadRadius: 1)],
       ),
       padding: const EdgeInsets.all(10),
       child: Column(
@@ -126,11 +120,13 @@ class _WordSearchGridWidgetState extends State<WordSearchGridWidget> {
   }
 
   Widget _buildCell(int r, int c) {
-    final isSel = _isSel(r, c); final isOk = _isOk(r, c);
+    final isSel = _isSel(r, c);
+    final isOk  = _isOk(r, c);
     Color bg = _cCell, brd = _cBorder, txt = Colors.white; double bw = 1.5;
-    if (isOk)         { bg = _cGreen.withOpacity(0.18); brd = _cGreen;   txt = _cGreen;   bw = 2; }
-    else if (isSel)   { bg = _cPurple.withOpacity(0.22); brd = _cPurpleL; txt = _cPurpleL; bw = 2; }
-    else if (_wrongFlash) { bg = _cRed.withOpacity(0.07); brd = _cRed.withOpacity(0.25); txt = _cRed.withOpacity(0.5); }
+
+    if (isOk)              { bg = _cGreen.withValues(alpha: 0.18); brd = _cGreen;   txt = _cGreen;   bw = 2; }
+    else if (isSel)        { bg = _cPurple.withValues(alpha: 0.22); brd = _cPurpleL; txt = _cPurpleL; bw = 2; }
+    else if (_wrongFlash)  { bg = _cRed.withValues(alpha: 0.07);   brd = _cRed.withValues(alpha: 0.25); txt = _cRed.withValues(alpha: 0.5); }
 
     return GestureDetector(
       onTap: widget.isInteractive ? () => _onTap(r, c) : null,
@@ -145,9 +141,11 @@ class _WordSearchGridWidgetState extends State<WordSearchGridWidget> {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: brd, width: bw),
         ),
-        child: Center(child: Text(widget.grid[r][c], style: TextStyle(
-          color: txt, fontSize: isSel ? 21 : 19,
-          fontWeight: FontWeight.w700, fontFamily: 'Fredoka One'))),
+        child: Center(child: Text(widget.grid[r][c],
+          style: TextStyle(fontFamily: 'Fredoka',
+            color: txt,
+            fontSize: isSel ? 21 : 19,
+            fontWeight: FontWeight.w700))),
       ),
     );
   }
@@ -168,8 +166,8 @@ class _WordSearchGridWidgetState extends State<WordSearchGridWidget> {
             border: Border(bottom: BorderSide(color: col, width: 2.5))),
           child: Center(child: Text(
             has ? built[i] : '_',
-            style: TextStyle(color: col, fontSize: 17,
-              fontWeight: FontWeight.w700, fontFamily: 'Fredoka One'))),
+            style: TextStyle(fontFamily: 'Fredoka',
+              color: col, fontSize: 17, fontWeight: FontWeight.w700))),
         );
       }),
     );

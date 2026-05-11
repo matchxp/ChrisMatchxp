@@ -24,6 +24,8 @@ dependencies:
   http: ^1.1.0               # For API calls
   flutter_dotenv: ^5.1.0    # For loading credentials from .env file
   shared_preferences: ^2.2.2 # For persisting theme preference
+  google_fonts: ^6.1.0       # For Emoji Charades UI
+  confetti: ^0.7.0           # For Emoji Charades win animation
 
 dependency_overrides:
   record_linux:

@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'word_search/word_search_game_screen.dart';
+import 'rock_paper_scissors/screens/rps_intro_screen.dart';
+import 'emoji_charades/emoji_charades_game_screen.dart';
 
 class GameHubScreen extends StatelessWidget {
   final String matchId;
@@ -126,40 +128,119 @@ class GameHubScreen extends StatelessWidget {
               ),
             ),
 
+
+
             const SizedBox(height: 12),
+            // ── Rock Paper Scissors ──
+            GestureDetector(
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => RPSIntroScreen(
+                  currentUserId:   currentUserId,
+                  currentUserName: 'You',
+                  opponentId:      partnerUserId,
+                  opponentName:    partnerName,
+                ),
+              )),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _surf,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFF7C3AED).withOpacity(0.35), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF7C3AED).withOpacity(0.12),
+                      blurRadius: 24, offset: const Offset(0, 8)),
+                  ],
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 54, height: 54,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        colors: [Color(0xFF3B1580), Color(0xFF7C3AED)])),
+                    child: const Center(child: Text('✊', style: TextStyle(fontSize: 26)))),
+                  const SizedBox(width: 14),
+                  const Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Rock Paper Scissors', style: TextStyle(fontFamily: 'Fredoka One',
+                        fontSize: 16, color: _tx)),
+                      SizedBox(height: 2),
+                      Text('Pass the phone · both pick secretly · reveal together',
+                        style: TextStyle(fontFamily: 'Fredoka', fontSize: 11, color: _mt)),
+                    ])),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFFA78BFA)]),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [BoxShadow(color: const Color(0xFF7C3AED).withOpacity(0.4), blurRadius: 12)]),
+                    child: const Text('PLAY', style: TextStyle(color: Colors.white,
+                      fontFamily: 'Fredoka', fontSize: 11, fontWeight: FontWeight.w700))),
+                ]),
+              ),
+            ),
 
-            // ── Emoji Guess (coming soon) ──
-            Opacity(opacity: 0.4, child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _surf,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withOpacity(0.08), width: 1.5)),
-              child: Row(children: [
-                Container(
-                  width: 54, height: 54,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      colors: [Color(0xFFAD6A1F), Color(0xFFE5A55D)])),
-                  child: const Center(child: Text('😂', style: TextStyle(fontSize: 26)))),
-                const SizedBox(width: 14),
-                const Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Emoji Guess', style: TextStyle(fontFamily: 'Fredoka One',
-                      fontSize: 16, color: _tx)),
-                    SizedBox(height: 2),
-                    Text('Describe a word using only emojis',
-                      style: TextStyle(fontFamily: 'Fredoka', fontSize: 11, color: _mt)),
-                  ])),
-                const Text('🔒', style: TextStyle(fontSize: 18)),
-              ]),
-            )),
+            const SizedBox(height: 12),
+            // ── Emoji Charades ──
+            GestureDetector(
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => EmojiCharadesGameScreen(
+                  matchId:        matchId,
+                  currentUserId:  currentUserId,
+                  partnerUserId:  partnerUserId,
+                  partnerName:    partnerName,
+                  onChatUnlocked: () {
+                    int pops = 0;
+                    Navigator.of(context).popUntil((_) => pops++ >= 2);
+                    onChatUnlocked();
+                  },
+                ),
+              )),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _surf,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFFFB800).withOpacity(0.35), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFFB800).withOpacity(0.10),
+                      blurRadius: 24, offset: const Offset(0, 8)),
+                  ],
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 54, height: 54,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        colors: [Color(0xFF7C3A00), Color(0xFFFFB800)])),
+                    child: const Center(child: Text('😂', style: TextStyle(fontSize: 26)))),
+                  const SizedBox(width: 14),
+                  const Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Emoji Charades', style: TextStyle(fontFamily: 'Fredoka One',
+                        fontSize: 16, color: _tx)),
+                      SizedBox(height: 2),
+                      Text('Turn a phrase into emojis · partner guesses · chat unlocks',
+                        style: TextStyle(fontFamily: 'Fredoka', fontSize: 11, color: _mt)),
+                    ])),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFFCC8800), Color(0xFFFFB800)]),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [BoxShadow(color: const Color(0xFFFFB800).withOpacity(0.4), blurRadius: 12)]),
+                    child: const Text('PLAY', style: TextStyle(color: Colors.white,
+                      fontFamily: 'Fredoka', fontSize: 11, fontWeight: FontWeight.w700))),
+                ]),
+              ),
+            ),
 
-            const SizedBox(height: 20),
-            const Center(child: Text('More games coming soon!',
-              style: TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 12))),
           ])),
         ]),
       ),

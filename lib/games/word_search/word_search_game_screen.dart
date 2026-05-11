@@ -1,13 +1,35 @@
-// lib/games/word_search/word_search_game_screen.dart  — v3
-// Fixes: grammar ("are waiting"), rich waiting pages, live partner solve status
+// lib/games/word_search/word_search_game_screen.dart
+// Restyled to match emoji_charades_package UI — deep cosmic palette,
+// GoogleFonts.fredoka, full-screen layout, gradient buttons.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'word_search_models.dart';
 import 'word_search_service.dart';
 import 'word_search_grid_widget.dart';
 import 'word_search_word_bank.dart';
 import '../../services/matching_service.dart';
+
+// ── Palette — matches emoji_charades_package ──────────────────
+const _kBg      = Color(0xFF07060F);
+const _kCard    = Color(0xFF14093A);
+const _kBorder  = Color(0xFF2E1F5E);
+const _kPurple  = Color(0xFF8B5CF6);
+const _kPurpleD = Color(0xFF6930C3);
+const _kPurpleL = Color(0xFFA78BFA);
+const _kGreen   = Color(0xFF39FF14);
+const _kRed     = Color(0xFFFF6B6B);
+const _kText    = Color(0xFFFFFFFF);
+const _kMuted   = Color(0xFF8B7AB8);
+const _kAmber   = Color(0xFFFFB800);
+const _kCyan    = Color(0xFF00E5FF);
+
+// ── Font helper ───────────────────────────────────────────────
+TextStyle _f(double sz, {FontWeight fw = FontWeight.w400, Color c = _kText,
+    double ls = 0, double lh = 1.0}) =>
+  TextStyle(fontFamily: 'Fredoka', fontSize: sz, fontWeight: fw, color: c,
+      letterSpacing: ls, height: lh);
 
 enum _WState { idle, valid, invalid }
 
@@ -32,44 +54,31 @@ class WordSearchGameScreen extends StatefulWidget {
 }
 
 class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
-  final _svc = WordSearchService();
+  final _svc    = WordSearchService();
   final _msgSvc = MatchingService();
   RealtimeChannel? _ch;
 
-  MatchGamesSnapshot _snap = const MatchGamesSnapshot();
-  bool _loading = true;
+  MatchGamesSnapshot _snap  = const MatchGamesSnapshot();
+  bool   _loading           = true;
   String? _error;
 
   // setup form
-  String?  _topic;
-  final    _wordCtrl = TextEditingController();
-  _WState  _ws       = _WState.idle;
-  bool     _making   = false;
+  String? _topic;
+  final   _wordCtrl = TextEditingController();
+  _WState _ws       = _WState.idle;
+  bool    _making   = false;
 
-  // waiting pages controller
+  // waiting pages
   final _waitPageCtrl = PageController();
   int   _waitPage     = 0;
 
   // solving
-  int  _wrong   = 0;
-  bool _hint    = false;
-  Key  _gridKey = UniqueKey();
+  int  _wrong        = 0;
+  bool _hint         = false;
+  Key  _gridKey      = UniqueKey();
 
-  // score recording
+  // score
   bool _scoreRecorded = false;
-
-  // colours — matched to dating app (MainNavigation / HomeScreen)
-  static const _bg  = Color(0xFF0A0A0A);
-  static const _s1  = Color(0xFF0A0A0A);
-  static const _s2  = Color(0xFF1A1A1A);
-  static const _bd  = Color(0x406C3FE8);   // 25% opacity purple for borders
-  static const _pu  = Color(0xFF6C3FE8);
-  static const _pl  = Color(0xFFBB8DFF);
-  static const _pd  = Color(0xFF4A1FAD);
-  static const _gn  = Color(0xFF4ADE80);
-  static const _rd  = Color(0xFFF87171);
-  static const _tx  = Colors.white;
-  static const _mt  = Color(0xFF888888);
 
   @override
   void initState() { super.initState(); _init(); }
@@ -83,60 +92,36 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
   }
 
   Future<void> _init() async {
-    // Clean up any stale subscription first
     if (_ch != null) { _svc.unsubscribe(_ch!); _ch = null; }
-
     setState(() { _loading = true; _error = null; });
     try {
       await _refresh();
-
-      // NOTE: If bothSolved, we intentionally show _bothSolvedScreen() so
-      // the score gets recorded and the celebration is visible.
-      // The user must press "Play Again" to explicitly reset for a new round.
-      // (Auto-resetting here caused the score to never be recorded when
-      //  users navigated away and returned after both had finished.)
-
       _ch = _svc.subscribeToMatch(
         widget.matchId,
         () { if (mounted) _refresh(); },
         channelSuffix: 'game',
       );
     } catch (e) {
-      if (mounted) setState(() {
-        _error = 'Could not load game. Check connection.';
-        _loading = false;
-      });
+      if (mounted) setState(() { _error = 'Could not load game. Check connection.'; _loading = false; });
     }
   }
 
   Future<void> _refresh() async {
-    final snap = await _svc.getSnapshot(
-      matchId: widget.matchId, myUserId: widget.currentUserId);
+    final snap = await _svc.getSnapshot(matchId: widget.matchId, myUserId: widget.currentUserId);
     if (!mounted) return;
     setState(() { _snap = snap; _loading = false; _error = null; });
-
-    // Record the winner as soon as we detect bothSolved.
-    // Doing this here (rather than inside build / _bothSolvedScreen) keeps
-    // side-effects out of the build path, which can run many times and made
-    // it hard to reason about when exactly the DB write would happen.
-    if (snap.phase == MatchGamePhase.bothSolved) {
-      _recordScoreIfNeeded(snap);
-    }
+    if (snap.phase == MatchGamePhase.bothSolved) _recordScoreIfNeeded(snap);
   }
 
-  /// Records the winner for the current round exactly once per widget instance.
-  /// Only the winner writes the row to avoid duplicate score entries.
   void _recordScoreIfNeeded(MatchGamesSnapshot snap) {
     if (_scoreRecorded) return;
-    final pg = snap.partnerGame; // puzzle I solved — solvedAt = my solve time
-    final mg = snap.myGame;     // puzzle partner solved — solvedAt = their time
+    final pg = snap.partnerGame;
+    final mg = snap.myGame;
     if (pg?.solvedAt == null || mg?.solvedAt == null) return;
-
     final iWon   = pg!.solvedAt!.isBefore(mg!.solvedAt!);
     final isDraw = pg.solvedAt!.isAtSameMomentAs(mg.solvedAt!);
-    if (isDraw) return; // draws are not recorded
-
-    _scoreRecorded = true; // guard against duplicate calls from multiple refreshes
+    if (isDraw) return;
+    _scoreRecorded = true;
     if (iWon) {
       _svc.recordWinner(
         matchId:  widget.matchId,
@@ -144,38 +129,19 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
         loserId:  widget.partnerUserId,
       );
     }
-    // The loser does NOT write — the winner's row is the single source of truth.
   }
 
-  /// Shared reset logic used by both _init() and _playAgain().
-  /// Deletes the game rows and resets all local state back to setup.
   Future<void> _doReset() async {
     await _svc.resetGame(widget.matchId);
-
-    // Reset the waiting-pages controller back to page 0
-    if (_waitPageCtrl.hasClients) {
-      _waitPageCtrl.jumpToPage(0);
-    }
+    if (_waitPageCtrl.hasClients) _waitPageCtrl.jumpToPage(0);
     _wordCtrl.clear();
-
     setState(() {
-      _topic         = null;
-      _ws            = _WState.idle;
-      _wrong         = 0;
-      _hint          = false;
-      _gridKey       = UniqueKey();
-      _scoreRecorded = false;
-      _waitPage      = 0;
+      _topic = null; _ws = _WState.idle; _wrong = 0; _hint = false;
+      _gridKey = UniqueKey(); _scoreRecorded = false; _waitPage = 0;
     });
-
     await _refresh();
-
-    // Verify the delete actually worked (catches missing RLS DELETE policy)
     if (_snap.phase == MatchGamePhase.bothSolved) {
-      throw Exception(
-        'Game rows could not be deleted. '
-        'Please add the DELETE RLS policy to word_search_games in Supabase.',
-      );
+      throw Exception('Game rows could not be deleted. Please add the DELETE RLS policy.');
     }
   }
 
@@ -186,7 +152,7 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
         text: w, selection: TextSelection.collapsed(offset: w.length));
     }
     setState(() {
-      if (w.length < 3)                     _ws = _WState.idle;
+      if (w.length < 3)                      _ws = _WState.idle;
       else if (isValidWord(_topic ?? '', w)) _ws = _WState.valid;
       else                                   _ws = _WState.invalid;
     });
@@ -197,29 +163,14 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     setState(() => _making = true);
     try {
       await _svc.createMyPuzzle(
-        matchId:       widget.matchId,
-        myUserId:      widget.currentUserId,
-        partnerUserId: widget.partnerUserId,
-        topic:         _topic!,
-        word:          _wordCtrl.text.toUpperCase(),
+        matchId: widget.matchId, myUserId: widget.currentUserId,
+        partnerUserId: widget.partnerUserId, topic: _topic!,
+        word: _wordCtrl.text.toUpperCase(),
       );
-      // Post a game-request card into the chat so the partner sees it
-      await _msgSvc.sendMessage(
-        widget.matchId,
-        '[GAME_REQUEST] 🎮 sent a Word Search challenge!',
-      );
-      // Reset form state immediately after a successful submit.
-      // Without this there is a brief window between _making becoming false
-      // and the realtime subscription firing _refresh() where the submit
-      // button is re-enabled (because _ws is still _WState.valid), allowing
-      // an accidental double-submit of a second puzzle row.
+      await _msgSvc.sendMessage(widget.matchId, '[GAME_REQUEST] 🎮 sent a Word Search challenge!');
       if (mounted) {
         _wordCtrl.clear();
         setState(() { _ws = _WState.idle; _topic = null; _making = false; });
-        // Immediately refresh so the screen transitions to waitingPartnerSetup
-        // without waiting for the realtime subscription to fire (which can
-        // take 1–3 s and left the screen stuck showing an empty setup form,
-        // making it look like the submit was lost or the app was broken).
         await _refresh();
       }
     } catch (e) {
@@ -235,174 +186,168 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     if (updated != null && mounted) {
       final newSnap = MatchGamesSnapshot(myGame: _snap.myGame, partnerGame: updated);
       setState(() => _snap = newSnap);
-
-      // Eagerly attempt score recording — don't wait for the realtime subscription
-      // to fire _refresh(). If partner already solved our puzzle (myGame.isSolved)
-      // the phase is now bothSolved and we should record immediately, in case the
-      // user navigates away before the realtime event arrives.
-      if (newSnap.phase == MatchGamePhase.bothSolved) {
-        _recordScoreIfNeeded(newSnap);
-      }
+      if (newSnap.phase == MatchGamePhase.bothSolved) _recordScoreIfNeeded(newSnap);
     }
   }
 
   void _onWrong() => setState(() { _wrong++; if (_wrong >= 3) _hint = true; });
 
-  /// Resets the interactive grid widget AND clears wrong-attempt state.
-  /// Previously only a new UniqueKey was set, which rebuilt the grid but left
-  /// _wrong and _hint stale — so the "3 wrong attempts / hint" count would
-  /// persist even after the user explicitly hit "Reset board".
-  void _resetBoard() => setState(() {
-    _gridKey = UniqueKey();
-    _wrong   = 0;
-    _hint    = false;
-  });
+  void _resetBoard() => setState(() { _gridKey = UniqueKey(); _wrong = 0; _hint = false; });
 
-  /// Resets the game so both players can play a new round.
   Future<void> _playAgain() async {
     setState(() { _loading = true; _error = null; });
     try {
       await _doReset();
     } catch (e) {
-      // Most likely cause: missing DELETE RLS policy on word_search_games
-      if (mounted) setState(() { _loading = false; });
+      if (mounted) setState(() => _loading = false);
       _snack('Could not start new game — check Supabase DELETE policy.');
     }
   }
-  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(msg, style: const TextStyle(fontFamily: 'Fredoka')),
-      backgroundColor: _s2, behavior: SnackBarBehavior.floating));
 
-  // ── BUILD ─────────────────────────────────────────────────
+  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(msg, style: _f(13)),
+      backgroundColor: _kCard, behavior: SnackBarBehavior.floating));
+
+  // ── BUILD ──────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        backgroundColor: _bg, elevation: 0, centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: _kBg,
+        body: SafeArea(
+          bottom: false,
+          child: Column(children: [
+            _topBar(),
+            Expanded(child: _body()),
+          ]),
         ),
-        title: RichText(text: const TextSpan(children: [
-          TextSpan(text: 'MATCH', style: TextStyle(color: Colors.white, fontFamily: 'Fredoka One', fontSize: 18, letterSpacing: 1)),
-          TextSpan(text: 'XP',   style: TextStyle(color: Color(0xFF6C3FE8), fontFamily: 'Fredoka One', fontSize: 18, letterSpacing: 1)),
-        ])),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: const Color(0xFF6C3FE8).withOpacity(0.15))),
       ),
-      bottomNavigationBar: _navBar(),
-      body: _body(),
     );
   }
 
-  Widget _navBar() => Container(
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topCenter, end: Alignment.bottomCenter,
-        colors: [_bg.withOpacity(0.0), _bg]),
-    ),
-    child: SafeArea(
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(32, 0, 32, 12),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: _pu.withOpacity(0.25), width: 1.5),
-          boxShadow: [
-            BoxShadow(color: _pu.withOpacity(0.12), blurRadius: 24, offset: const Offset(0, 8)),
-            BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 16, offset: const Offset(0, 4)),
-          ],
+  Widget _topBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: Row(children: [
+        GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Colors.white70, size: 18),
+          ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _navItem(Icons.explore_outlined,            Icons.explore,             false),
-            _navItem(Icons.favorite_border_rounded,     Icons.favorite_rounded,    false),
-            _navItem(Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, true),
-            _navItem(Icons.person_outline_rounded,      Icons.person_rounded,      false),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  Widget _navItem(IconData icon, IconData activeIcon, bool isSelected) =>
-    GestureDetector(
-      onTap: () { if (!isSelected) Navigator.of(context).popUntil((r) => r.isFirst); },
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOutCubic,
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          gradient: isSelected
-              ? const LinearGradient(colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)])
-              : null,
-          shape: BoxShape.circle,
-          boxShadow: isSelected
-              ? [BoxShadow(color: _pu.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 4))]
-              : null,
-        ),
-        child: Icon(
-          isSelected ? activeIcon : icon,
-          color: isSelected ? Colors.white : _pu.withOpacity(0.6),
-          size: 20,
-        ),
-      ),
+        Expanded(child: Center(
+          child: RichText(text: const TextSpan(children: [
+            TextSpan(text: 'MATCH', style: TextStyle(
+              color: Colors.white, fontFamily: 'Fredoka One',
+              fontSize: 15, letterSpacing: 1)),
+            TextSpan(text: 'XP', style: TextStyle(
+              color: _kPurple, fontFamily: 'Fredoka One',
+              fontSize: 15, letterSpacing: 1)),
+          ])),
+        )),
+        const SizedBox(width: 36),
+      ]),
     );
+  }
 
   Widget _body() {
-    if (_loading) return const Center(child: CircularProgressIndicator(color: _pu));
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _kPurple));
     if (_error != null) return _errScreen();
     switch (_snap.phase) {
-      case MatchGamePhase.setup:             return _setupScreen();
+      case MatchGamePhase.setup:              return _setupScreen();
       case MatchGamePhase.waitingPartnerSetup: return _waitingSetupScreen();
-      case MatchGamePhase.solving:           return _solvingScreen();
+      case MatchGamePhase.solving:            return _solvingScreen();
       case MatchGamePhase.waitingPartnerSolve: return _waitingSolveScreen();
-      case MatchGamePhase.bothSolved:        return _bothSolvedScreen();
+      case MatchGamePhase.bothSolved:         return _bothSolvedScreen();
     }
   }
 
-  // ── PHASE 1: Setup ───────────────────────────────────────
+  // ── SHARED BUTTONS ─────────────────────────────────────────
+  Widget _primaryBtn(String label, VoidCallback? onTap) {
+    return SizedBox(
+      width: double.infinity, height: 52,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          shape: const StadiumBorder(),
+          padding: EdgeInsets.zero,
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+        ),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: onTap == null
+                ? const LinearGradient(colors: [Color(0xFF2A1E48), Color(0xFF362856)])
+                : const LinearGradient(colors: [_kPurpleD, _kPurple, _kPurpleL, Color(0xFF7C3AED)]),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Center(child: Text(label,
+            style: _f(17, fw: FontWeight.w600,
+              c: onTap == null ? const Color(0xFF6B5A90) : _kText))),
+        ),
+      ),
+    );
+  }
+
+  Widget _ghostBtn(String label, VoidCallback onTap) {
+    return SizedBox(
+      width: double.infinity, height: 48,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          shape: const StadiumBorder(),
+          side: const BorderSide(color: Color(0x66AB5CF5), width: 1.5),
+        ),
+        child: Text(label, style: _f(16, fw: FontWeight.w500, c: const Color(0xFFC4A8FF))),
+      ),
+    );
+  }
+
+  // ── PHASE 1: Setup ─────────────────────────────────────────
   Widget _setupScreen() {
     final hasTopic  = _topic != null;
     final isValid   = _ws == _WState.valid;
     final isInvalid = _ws == _WState.invalid;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        const SizedBox(height: 4),
         _badge('🎮  ICE BREAKER GAME'),
         const SizedBox(height: 14),
-        RichText(textAlign: TextAlign.center, text: const TextSpan(
-          style: TextStyle(fontFamily: 'Fredoka One', fontSize: 26, color: _tx, height: 1.2),
+        RichText(textAlign: TextAlign.center, text: TextSpan(
           children: [
-            TextSpan(text: 'Set your '),
-            TextSpan(text: 'puzzle', style: TextStyle(color: _pu)),
+            TextSpan(text: 'Set your ', style: _f(26, fw: FontWeight.w700, lh: 1.2)),
+            TextSpan(text: 'puzzle',    style: _f(26, fw: FontWeight.w700, c: _kPurpleL, lh: 1.2)),
           ],
         )),
         const SizedBox(height: 6),
         Text(
           'Create a word for ${widget.partnerName} to find.\n${widget.partnerName} is setting one for you too!',
           textAlign: TextAlign.center,
-          style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 13, height: 1.5),
+          style: _f(13, c: _kMuted, lh: 1.5),
         ),
 
-        // Partner status indicator
+        // Partner status
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(color: _s2, borderRadius: BorderRadius.circular(12), border: Border.all(color: _bd)),
+          decoration: BoxDecoration(
+            color: _kCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _kBorder)),
           child: Row(children: [
             _miniAvatar(),
             const SizedBox(width: 10),
             Expanded(child: Text(
               '${widget.partnerName} is also setting a puzzle for you...',
-              style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 12))),
+              style: _f(12, c: _kMuted))),
             const _PulsingDots(),
           ]),
         ),
@@ -416,13 +361,14 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: _s2, borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: hasTopic ? _pu : _bd, width: 2)),
+              color: _kCard,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: hasTopic ? _kPurple : _kBorder, width: 2)),
             child: Row(children: [
               Expanded(child: Text(
                 hasTopic ? '${kTopicIcons[_topic!] ?? ''}  $_topic' : 'Tap to pick a topic...',
-                style: TextStyle(fontFamily: 'Fredoka One', fontSize: 16,
-                  color: hasTopic ? _tx : _mt))),
+                style: _f(16, fw: FontWeight.w600, c: hasTopic ? _kText : _kMuted))),
               Text(hasTopic ? '✅' : '▾', style: const TextStyle(fontSize: 20)),
             ]),
           ),
@@ -436,50 +382,49 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
           enabled: hasTopic,
           onChanged: _onWordChange,
           maxLength: 12,
-          style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 22, color: _tx, letterSpacing: 5),
+          style: _f(22, fw: FontWeight.w700, c: _kText, ls: 5),
           decoration: InputDecoration(
             hintText: hasTopic ? 'Type a ${_topic!.toLowerCase()} word...' : 'Pick a topic first',
-            hintStyle: const TextStyle(color: Color(0xFF555555), fontFamily: 'Fredoka One', fontSize: 16, letterSpacing: 2),
-            counterStyle: const TextStyle(color: _mt),
-            filled: true, fillColor: _s2,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _bd, width: 2)),
+            hintStyle: _f(16, c: const Color(0xFF4E3D72), ls: 2),
+            counterStyle: _f(11, c: _kMuted),
+            filled: true,
+            fillColor: _kCard,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: _kBorder, width: 2)),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: isValid ? _gn : isInvalid ? _rd : _bd, width: 2)),
+              borderSide: BorderSide(
+                color: isValid ? _kGreen : isInvalid ? _kRed : _kBorder, width: 2)),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: isValid ? _gn : isInvalid ? _rd : _pu, width: 2)),
+              borderSide: BorderSide(
+                color: isValid ? _kGreen : isInvalid ? _kRed : _kPurple, width: 2)),
           ),
         ),
         const SizedBox(height: 2),
         if (isValid)
-          const Row(children: [
-            Icon(Icons.check_circle, color: _gn, size: 15),
-            SizedBox(width: 6),
-            Text('Perfect — puzzle ready!',
-              style: TextStyle(color: _gn, fontFamily: 'Fredoka', fontSize: 12, fontWeight: FontWeight.w700)),
+          Row(children: [
+            Icon(Icons.check_circle, color: _kGreen, size: 15),
+            const SizedBox(width: 6),
+            Text('Perfect — puzzle ready!', style: _f(12, fw: FontWeight.w700, c: _kGreen)),
           ])
         else if (isInvalid)
           Row(children: [
-            const Icon(Icons.cancel, color: _rd, size: 15),
+            Icon(Icons.cancel, color: _kRed, size: 15),
             const SizedBox(width: 6),
             Text('Try a different ${_topic?.toLowerCase() ?? 'word'}',
-              style: const TextStyle(color: _rd, fontFamily: 'Fredoka', fontSize: 12, fontWeight: FontWeight.w700)),
+              style: _f(12, fw: FontWeight.w700, c: _kRed)),
           ])
         else
           Text(
             hasTopic ? 'Must be a real ${_topic?.toLowerCase()} (3–12 letters)' : 'Choose a topic first',
-            style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 12)),
+            style: _f(12, c: _kMuted)),
 
-        const SizedBox(height: 26),
-        SizedBox(width: double.infinity, height: 52,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white, disabledBackgroundColor: _s2,
-              foregroundColor: const Color(0xFF16163A), disabledForegroundColor: _mt,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
-            onPressed: (isValid && !_making) ? _submitPuzzle : null,
-            child: Text(_making ? 'Sending puzzle...' : 'Send puzzle to ${widget.partnerName} 📨',
-              style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 15)),
-          )),
+        const SizedBox(height: 28),
+        _making
+            ? const SizedBox(height: 52,
+                child: Center(child: CircularProgressIndicator(color: _kPurple, strokeWidth: 2.5)))
+            : _primaryBtn(
+                'Send puzzle to ${widget.partnerName} 📨',
+                (isValid && !_making) ? _submitPuzzle : null),
       ]),
     );
   }
@@ -487,16 +432,17 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
   void _showTopicSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: _kCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 38, height: 4,
-            decoration: BoxDecoration(color: _bd, borderRadius: BorderRadius.circular(2))),
+          Container(width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: _kBorder, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 14),
-          const Text('Choose your topic',
-            style: TextStyle(fontFamily: 'Fredoka One', fontSize: 17, color: _tx)),
+          Text('Choose your topic', style: _f(17, fw: FontWeight.w700)),
           const SizedBox(height: 16),
           GridView.count(
             crossAxisCount: 2, shrinkWrap: true,
@@ -510,14 +456,15 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
                 },
                 child: Container(
                   decoration: BoxDecoration(
-                    color: active ? _pu : _s2,
+                    color: active ? _kPurple : _kCard,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: active ? _pl : _bd, width: 2)),
+                    border: Border.all(
+                      color: active ? _kPurpleL : _kBorder, width: 2)),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Text(kTopicIcons[t] ?? '•', style: const TextStyle(fontSize: 28)),
                     const SizedBox(height: 6),
-                    Text(t, style: TextStyle(fontFamily: 'Fredoka One', fontSize: 14,
-                      color: active ? Colors.white : _tx)),
+                    Text(t, style: _f(14, fw: FontWeight.w700,
+                      c: active ? Colors.white : _kText)),
                   ]),
                 ),
               );
@@ -528,12 +475,10 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     );
   }
 
-  // ── PHASE 2: Waiting for partner to set puzzle ────────────
-  // 4 swipeable pages so user remembers their word and sees live status
+  // ── PHASE 2: Waiting for partner setup ─────────────────────
   Widget _waitingSetupScreen() {
-    final myGame   = _snap.myGame!;
-    final pages    = [_wp_myGrid(myGame), _wp_myWord(myGame), _wp_partnerStatus(false), _wp_partnerView()];
-    final dotCount = pages.length;
+    final myGame = _snap.myGame!;
+    final pages  = [_wp_myGrid(myGame), _wp_myWord(myGame), _wp_partnerStatus(false), _wp_partnerView()];
 
     return Column(children: [
       Expanded(
@@ -542,7 +487,6 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
           child: Column(children: [
             _badge('⏳  YOUR PUZZLE IS SENT'),
             const SizedBox(height: 10),
-            // Partner card
             _partnerCard(sub: '${widget.partnerName} is setting their puzzle for you...'),
             const SizedBox(height: 10),
             _topicBadge(myGame.topic),
@@ -555,10 +499,10 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            _dotRow(dotCount),
+            _dotRow(pages.length),
             const SizedBox(height: 6),
             Text('Swipe · see your puzzle & ${widget.partnerName}\'s status',
-              style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
+              style: _f(11, c: _kMuted)),
             const SizedBox(height: 12),
           ]),
         ),
@@ -566,7 +510,7 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     ]);
   }
 
-  // ── PHASE 3: Solving ─────────────────────────────────────
+  // ── PHASE 3: Solving ───────────────────────────────────────
   Widget _solvingScreen() {
     final partnerGame = _snap.partnerGame!;
     return SingleChildScrollView(
@@ -579,14 +523,9 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
           Row(children: [
             _miniAvatar(),
             const SizedBox(width: 6),
-            Text("${widget.partnerName}'s puzzle",
-              style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
+            Text("${widget.partnerName}'s puzzle", style: _f(11, c: _kMuted)),
           ]),
         ]),
-        // After 3 wrong attempts show the word length.
-        // After 6 wrong attempts reveal the full word so the player cannot
-        // be permanently stuck — the partner chose the word so the solver
-        // has no other way to discover it.
         if (_hint) ...[
           const SizedBox(height: 8),
           _hintPill(
@@ -610,24 +549,22 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
           if (_wrong > 0) ...[
             const SizedBox(width: 12),
             Text('$_wrong wrong attempt${_wrong == 1 ? '' : 's'}',
-              style: const TextStyle(color: _rd, fontFamily: 'Fredoka', fontSize: 12, fontWeight: FontWeight.w700)),
+              style: _f(12, fw: FontWeight.w700, c: _kRed)),
           ],
         ]),
         const SizedBox(height: 10),
-        // My puzzle status — is partner solving mine?
         _myPuzzleStatusBar(partnerSolvedMine: _snap.myGame?.isSolved ?? false),
         const SizedBox(height: 6),
-        const Text('Tap letters in order · must be adjacent',
-          style: TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
+        Text('Tap letters in order · must be adjacent',
+          style: _f(11, c: _kMuted)),
       ]),
     );
   }
 
-  // ── PHASE 4: Waiting for partner to solve mine ───────────
-  // 4 swipeable pages: solved grid, my word reminder, partner live status, summary
+  // ── PHASE 4: Waiting for partner to solve ──────────────────
   Widget _waitingSolveScreen() {
-    final partnerGame = _snap.partnerGame!;
-    final myGame      = _snap.myGame!;
+    final partnerGame       = _snap.partnerGame!;
+    final myGame            = _snap.myGame!;
     final partnerSolvedMine = myGame.isSolved;
     final pages = [
       _wp_solved(partnerGame),
@@ -643,32 +580,28 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
           child: Column(children: [
             _badge('✅  YOU FOUND ${widget.partnerName.toUpperCase()}\'S WORD!'),
             const SizedBox(height: 10),
-            // Partner live status
             Container(
               padding: const EdgeInsets.all(13),
               decoration: BoxDecoration(
                 color: partnerSolvedMine
-                    ? const Color(0xFF0D2B1A)
-                    : _s2,
+                    ? const Color(0xFF0A2010)
+                    : _kCard,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                   color: partnerSolvedMine
-                      ? const Color(0xFF2A6640)
-                      : _bd,
+                      ? _kGreen.withValues(alpha: 0.4)
+                      : _kBorder,
                   width: partnerSolvedMine ? 2 : 1.5)),
               child: Row(children: [
                 _miniAvatar(),
                 const SizedBox(width: 10),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(widget.partnerName,
-                    style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 14, color: _tx)),
+                  Text(widget.partnerName, style: _f(14, fw: FontWeight.w700)),
                   Text(
                     partnerSolvedMine
                         ? '✅ Found your hidden word!'
                         : '${widget.partnerName} is still searching for your word "${myGame.word}"...',
-                    style: TextStyle(
-                      color: partnerSolvedMine ? _gn : _mt,
-                      fontFamily: 'Fredoka', fontSize: 11)),
+                    style: _f(11, c: partnerSolvedMine ? _kGreen : _kMuted)),
                 ])),
                 partnerSolvedMine
                     ? const Text('🎉', style: TextStyle(fontSize: 20))
@@ -686,8 +619,7 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
             const SizedBox(height: 8),
             _dotRow(pages.length),
             const SizedBox(height: 6),
-            Text('Swipe · see progress & your puzzle',
-              style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
+            Text('Swipe · see progress & your puzzle', style: _f(11, c: _kMuted)),
             const SizedBox(height: 12),
           ]),
         ),
@@ -695,59 +627,50 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     ]);
   }
 
-  // ── PHASE 5: Both solved ─────────────────────────────────
+  // ── PHASE 5: Both solved ───────────────────────────────────
   Widget _bothSolvedScreen() {
-    final pg = _snap.partnerGame!;
-    final mg = _snap.myGame!;
-
-    // Determine winner: whoever solved first wins.
-    // pg.solvedAt = when I solved partner's puzzle (my solve time)
-    // mg.solvedAt = when partner solved my puzzle  (their solve time)
-    // Score recording has already been handled by _recordScoreIfNeeded()
-    // called from _refresh(), so we only need the values here for the UI.
-    final iWon = pg.solvedAt != null && mg.solvedAt != null &&
+    final pg    = _snap.partnerGame!;
+    final mg    = _snap.myGame!;
+    final iWon  = pg.solvedAt != null && mg.solvedAt != null &&
         pg.solvedAt!.isBefore(mg.solvedAt!);
     final isDraw = pg.solvedAt != null && mg.solvedAt != null &&
         pg.solvedAt!.isAtSameMomentAs(mg.solvedAt!);
 
+    final resultColor  = iWon ? _kGreen : isDraw ? _kPurpleL : _kRed;
+    final resultEmoji  = isDraw ? '🤝' : iWon ? '🏆' : '😅';
+    final resultTitle  = isDraw ? "It's a draw! 🤝"
+        : iWon ? 'You won this round! 🏆'
+        : '${widget.partnerName} won this round';
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
       child: Column(children: [
-        const SizedBox(height: 12),
-        Text(isDraw ? '🤝' : iWon ? '🏆' : '😅',
-          style: const TextStyle(fontSize: 56)),
-        const SizedBox(height: 12),
+        // Big result emoji
+        _BounceIn(child: Text(resultEmoji, style: const TextStyle(fontSize: 64))),
+        const SizedBox(height: 10),
+
         // Result banner
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: iWon
-                ? [const Color(0xFF1A5C30), const Color(0xFF0D2B1A)]
-                : isDraw
-                    ? [const Color(0xFF1A1A1A), const Color(0xFF2A2A1A)]
-                    : [const Color(0xFF5C1A1A), const Color(0xFF2B0D0D)]),
+            color: resultColor.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: iWon ? _gn : isDraw ? _pl : _rd, width: 1.5)),
-          child: Text(
-            isDraw ? "It's a draw! 🤝" : iWon ? 'You won this round! 🏆' : '${widget.partnerName} won this round',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Fredoka One', fontSize: 18,
-              color: iWon ? _gn : isDraw ? _pl : _rd)),
+            border: Border.all(color: resultColor.withValues(alpha: 0.45), width: 1.5)),
+          child: Text(resultTitle, textAlign: TextAlign.center,
+            style: _f(18, fw: FontWeight.w700, c: resultColor)),
         ),
         const SizedBox(height: 10),
+
         ShaderMask(
           shaderCallback: (b) => const LinearGradient(
-            colors: [Color(0xFFBB8DFF), Colors.white, Color(0xFFBB8DFF)]).createShader(b),
-          child: const Text('Ice broken!',
-            style: TextStyle(fontFamily: 'Fredoka One', fontSize: 24, color: Colors.white)),
+            colors: [_kPurpleL, Colors.white, _kPurpleL]).createShader(b),
+          child: Text('Ice broken!', style: _f(24, fw: FontWeight.w700)),
         ),
         const SizedBox(height: 4),
         Text('You and ${widget.partnerName} solved each other\'s puzzles!',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 13)),
+          textAlign: TextAlign.center, style: _f(13, c: _kMuted)),
+
         const SizedBox(height: 18),
         Row(children: [
           Expanded(child: _wordRevealCard('YOUR WORD', mg.word, mg.topic)),
@@ -757,127 +680,100 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
         const SizedBox(height: 16),
         WordSearchGridWidget(grid: pg.grid, targetWord: pg.word, isInteractive: false),
         const SizedBox(height: 16),
+
+        // Chat unlocked card
         Container(
           width: double.infinity, padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF0D2B1A),
-            border: Border.all(color: const Color(0xFF2A6640), width: 2),
+            color: _kGreen.withValues(alpha: 0.06),
+            border: Border.all(color: _kGreen.withValues(alpha: 0.35), width: 2),
             borderRadius: BorderRadius.circular(16)),
           child: Row(children: [
             Container(width: 46, height: 46,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF1A5C30),
-                border: Border.all(color: _gn, width: 2)),
+                color: _kGreen.withValues(alpha: 0.12),
+                border: Border.all(color: _kGreen, width: 2)),
               child: const Center(child: Text('🔓', style: TextStyle(fontSize: 22)))),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Chat unlocked!',
-                style: TextStyle(fontFamily: 'Fredoka One', fontSize: 16, color: _gn)),
+              Text('Chat unlocked!', style: _f(16, fw: FontWeight.w700, c: _kGreen)),
               Text('Both you and ${widget.partnerName} solved each other\'s puzzles',
-                style: const TextStyle(color: Color(0xFF2A8C50), fontFamily: 'Fredoka', fontSize: 11)),
+                style: _f(11, c: _kGreen.withValues(alpha: 0.6))),
             ])),
           ]),
         ),
         const SizedBox(height: 16),
-        SizedBox(width: double.infinity, height: 52,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _pu, foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
-            onPressed: widget.onChatUnlocked,
-            child: Text('Chat with ${widget.partnerName} 💬',
-              style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 16)),
-          )),
+        _primaryBtn('Chat with ${widget.partnerName} 💬', widget.onChatUnlocked),
         const SizedBox(height: 12),
-        SizedBox(width: double.infinity, height: 48,
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _pl, side: const BorderSide(color: _bd),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            onPressed: _playAgain,
-            child: const Text('Play again 🔄',
-              style: TextStyle(fontFamily: 'Fredoka One', fontSize: 14)),
-          )),
+        _ghostBtn('Play again 🔄', _playAgain),
       ]),
     );
   }
 
-  // ── WAITING PAGE TABS ─────────────────────────────────────
+  // ── WAITING PAGE TABS ──────────────────────────────────────
 
-  // Page: "Your puzzle grid — what partner sees"
   Widget _wp_myGrid(WordSearchGame g) => SingleChildScrollView(child: Column(children: [
     const SizedBox(height: 4),
-    const Text('📋  Your puzzle grid',
-      style: TextStyle(fontFamily: 'Fredoka One', fontSize: 15, color: _tx)),
+    Text('📋  Your puzzle grid', style: _f(15, fw: FontWeight.w700)),
     const SizedBox(height: 4),
     Text('Exactly what ${widget.partnerName} is looking at',
-      style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11), textAlign: TextAlign.center),
+      style: _f(11, c: _kMuted), textAlign: TextAlign.center),
     const SizedBox(height: 10),
     WordSearchGridWidget(grid: g.grid, targetWord: g.word, isInteractive: false),
     const SizedBox(height: 10),
     _infoRow(true, '${widget.partnerName} can see this grid'),
   ]));
 
-  // Page: "Your hidden word — don't forget it!"
   Widget _wp_myWord(WordSearchGame g) => SingleChildScrollView(child: Column(children: [
     const SizedBox(height: 4),
-    const Text('🔑  Your hidden word',
-      style: TextStyle(fontFamily: 'Fredoka One', fontSize: 15, color: _tx)),
+    Text('🔑  Your hidden word', style: _f(15, fw: FontWeight.w700)),
     const SizedBox(height: 4),
-    const Text('In case you forgot — only you can see this!',
-      style: TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11), textAlign: TextAlign.center),
+    Text('In case you forgot — only you can see this!',
+      style: _f(11, c: _kMuted), textAlign: TextAlign.center),
     const SizedBox(height: 14),
     Container(
       width: double.infinity, padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: _s2, borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _pd.withOpacity(0.5), width: 2)),
+      decoration: BoxDecoration(
+        color: _kCard, borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kPurpleD.withValues(alpha: 0.5), width: 2)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('YOUR HIDDEN WORD', style: TextStyle(color: _mt, fontFamily: 'Fredoka',
-          fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1)),
+        Text('YOUR HIDDEN WORD', style: _f(10, fw: FontWeight.w700, c: _kMuted, ls: 1)),
         const SizedBox(height: 6),
-        Text(g.word, style: const TextStyle(fontFamily: 'Fredoka One',
-          fontSize: 28, color: _pl, letterSpacing: 5)),
+        Text(g.word, style: _f(28, fw: FontWeight.w700, c: _kPurpleL, ls: 5)),
         const SizedBox(height: 4),
-        Row(children: [
-          _topicBadge(g.topic),
-        ]),
+        _topicBadge(g.topic),
       ]),
     ),
     const SizedBox(height: 10),
     _infoRow(false, '${widget.partnerName} cannot see this word'),
   ]));
 
-  // Page: live partner status — have they solved mine yet?
   Widget _wp_partnerStatus(bool partnerSolvedMine) => SingleChildScrollView(child: Column(children: [
     const SizedBox(height: 4),
-    Text('👀  ${widget.partnerName}\'s live status',
-      style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 15, color: _tx)),
+    Text('👀  ${widget.partnerName}\'s live status', style: _f(15, fw: FontWeight.w700)),
     const SizedBox(height: 4),
-    const Text('Updated in real time',
-      style: TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
+    Text('Updated in real time', style: _f(11, c: _kMuted)),
     const SizedBox(height: 14),
     Container(
       width: double.infinity, padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: partnerSolvedMine ? const Color(0xFF0D2B1A) : _s2,
+        color: partnerSolvedMine ? _kGreen.withValues(alpha: 0.06) : _kCard,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: partnerSolvedMine ? const Color(0xFF2A6640) : _bd,
+          color: partnerSolvedMine ? _kGreen.withValues(alpha: 0.4) : _kBorder,
           width: partnerSolvedMine ? 2 : 1.5)),
       child: Row(children: [
         _miniAvatar(),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(widget.partnerName,
-            style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 15, color: _tx)),
+          Text(widget.partnerName, style: _f(15, fw: FontWeight.w700)),
           const SizedBox(height: 4),
           Text(
             partnerSolvedMine
                 ? '✅ Found your hidden word!'
                 : '${widget.partnerName} is still looking for your hidden word...',
-            style: TextStyle(fontFamily: 'Fredoka', fontSize: 12,
-              color: partnerSolvedMine ? _gn : _mt)),
+            style: _f(12, c: partnerSolvedMine ? _kGreen : _kMuted)),
         ])),
         partnerSolvedMine
             ? const Text('🎉', style: TextStyle(fontSize: 28))
@@ -889,28 +785,25 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0x206C3FE8),
-          border: Border.all(color: const Color(0x406C3FE8)),
+          color: _kPurple.withValues(alpha: 0.08),
+          border: Border.all(color: _kBorder),
           borderRadius: BorderRadius.circular(12)),
-        child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.lock_outline, color: _pl, size: 16),
-          SizedBox(width: 8),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.lock_outline, color: _kPurpleL, size: 16),
+          const SizedBox(width: 8),
           Text('Chat unlocks when both puzzles are solved',
-            style: TextStyle(color: _pl, fontFamily: 'Fredoka',
-              fontSize: 12, fontWeight: FontWeight.w700)),
+            style: _f(12, fw: FontWeight.w700, c: _kPurpleL)),
         ]),
       ),
     ],
   ]));
 
-  // Page: what partner can see (phase 2)
   Widget _wp_partnerView() => SingleChildScrollView(child: Column(children: [
     const SizedBox(height: 4),
-    Text("📊  What ${widget.partnerName} can see",
-      style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 15, color: _tx)),
+    Text("📊  What ${widget.partnerName} can see", style: _f(15, fw: FontWeight.w700)),
     const SizedBox(height: 4),
-    const Text('What they can and cannot see in your puzzle',
-      style: TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
+    Text('What they can and cannot see in your puzzle',
+      style: _f(11, c: _kMuted)),
     const SizedBox(height: 12),
     _infoRow(true,  'They can see: the topic hint'),
     const SizedBox(height: 8),
@@ -921,35 +814,25 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     _infoRow(false, 'They cannot see: the correct path'),
   ]));
 
-  // Page: solver solved screen showing the solved grid
   Widget _wp_solved(WordSearchGame pg) => SingleChildScrollView(child: Column(children: [
     const SizedBox(height: 4),
     Text('🎯  You solved ${widget.partnerName}\'s puzzle!',
-      style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 14, color: _tx)),
+      style: _f(14, fw: FontWeight.w700)),
     const SizedBox(height: 4),
-    Text("${widget.partnerName}'s word was",
-      style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
+    Text("${widget.partnerName}'s word was", style: _f(11, c: _kMuted)),
     const SizedBox(height: 4),
-    Text(pg.word, style: const TextStyle(fontFamily: 'Fredoka One',
-      fontSize: 22, color: _pl, letterSpacing: 4)),
+    Text(pg.word, style: _f(22, fw: FontWeight.w700, c: _kPurpleL, ls: 4)),
     const SizedBox(height: 10),
     WordSearchGridWidget(grid: pg.grid, targetWord: pg.word, isInteractive: false),
   ]));
 
-  // Page: progress summary — two clearly labelled rows, never "You" twice
   Widget _wp_bothStatus(WordSearchGame pg, WordSearchGame mg, bool partnerSolvedMine) =>
     SingleChildScrollView(child: Column(children: [
       const SizedBox(height: 4),
-      const Text('📊  Progress summary',
-        style: TextStyle(fontFamily: 'Fredoka One', fontSize: 15, color: _tx)),
+      Text('📊  Progress summary', style: _f(15, fw: FontWeight.w700)),
       const SizedBox(height: 12),
-      // Row 1: current user — always ✅ (they are on this screen because they solved)
-      _statusRow(
-        label: 'You',
-        sub: 'Found ${widget.partnerName}\'s word ✅',
-        done: true),
+      _statusRow(label: 'You', sub: 'Found ${widget.partnerName}\'s word ✅', done: true),
       const SizedBox(height: 8),
-      // Row 2: partner — uses their actual name, never "You"
       _statusRow(
         label: widget.partnerName,
         sub: partnerSolvedMine
@@ -961,15 +844,14 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: const Color(0x206C3FE8),
-            border: Border.all(color: const Color(0x406C3FE8)),
+            color: _kPurple.withValues(alpha: 0.08),
+            border: Border.all(color: _kBorder),
             borderRadius: BorderRadius.circular(12)),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.lock_outline, color: _pl, size: 14),
+            const Icon(Icons.lock_outline, color: _kPurpleL, size: 14),
             const SizedBox(width: 7),
             Text('Chat unlocks when ${widget.partnerName} finds your word',
-              style: const TextStyle(color: _pl, fontFamily: 'Fredoka',
-                fontSize: 12, fontWeight: FontWeight.w700)),
+              style: _f(12, fw: FontWeight.w700, c: _kPurpleL)),
           ]),
         ),
     ]));
@@ -978,29 +860,29 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     Container(
       width: double.infinity, padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: done ? const Color(0xFF0D2B1A) : _s2,
+        color: done ? _kGreen.withValues(alpha: 0.06) : _kCard,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: done ? const Color(0xFF2A6640) : _bd,
+          color: done ? _kGreen.withValues(alpha: 0.4) : _kBorder,
           width: done ? 2 : 1.5)),
       child: Row(children: [
         Text(done ? '✅' : '⏳', style: const TextStyle(fontSize: 16)),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 13, color: _tx)),
-          Text(sub, style: TextStyle(fontFamily: 'Fredoka', fontSize: 11,
-            color: done ? _gn : _mt)),
+          Text(label, style: _f(13, fw: FontWeight.w700)),
+          Text(sub, style: _f(11, c: done ? _kGreen : _kMuted)),
         ])),
       ]),
     );
 
   Widget _myPuzzleStatusBar({required bool partnerSolvedMine}) => Container(
-    width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
     decoration: BoxDecoration(
-      color: partnerSolvedMine ? const Color(0xFF0D2B1A) : _s2,
+      color: partnerSolvedMine ? _kGreen.withValues(alpha: 0.06) : _kCard,
       borderRadius: BorderRadius.circular(12),
       border: Border.all(
-        color: partnerSolvedMine ? const Color(0xFF2A6640) : _bd,
+        color: partnerSolvedMine ? _kGreen.withValues(alpha: 0.4) : _kBorder,
         width: partnerSolvedMine ? 2 : 1)),
     child: Row(children: [
       _miniAvatar(),
@@ -1009,9 +891,7 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
         partnerSolvedMine
             ? '${widget.partnerName} found your hidden word! ✅'
             : '${widget.partnerName} is also solving your puzzle...',
-        style: TextStyle(
-          color: partnerSolvedMine ? _gn : _mt,
-          fontFamily: 'Fredoka', fontSize: 11))),
+        style: _f(11, c: partnerSolvedMine ? _kGreen : _kMuted))),
       if (!partnerSolvedMine) const _PulsingDots(),
     ]),
   );
@@ -1019,15 +899,14 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
   Widget _wordRevealCard(String label, String word, String topic) => Container(
     padding: const EdgeInsets.all(13),
     decoration: BoxDecoration(
-      color: _s2, borderRadius: BorderRadius.circular(14), border: Border.all(color: _bd)),
+      color: _kCard, borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _kBorder)),
     child: Column(children: [
-      Text(label, style: const TextStyle(color: _mt, fontFamily: 'Fredoka',
-        fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1)),
+      Text(label, style: _f(9, fw: FontWeight.w700, c: _kMuted, ls: 1)),
       const SizedBox(height: 6),
-      Text(word, style: const TextStyle(fontFamily: 'Fredoka One',
-        fontSize: 16, color: _pl, letterSpacing: 2)),
+      Text(word, style: _f(16, fw: FontWeight.w700, c: _kPurpleL, ls: 2)),
       const SizedBox(height: 4),
-      Text(topic, style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 10)),
+      Text(topic, style: _f(10, c: _kMuted)),
     ]),
   );
 
@@ -1041,108 +920,101 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
         width: _waitPage == i ? 20 : 7, height: 7,
         margin: const EdgeInsets.symmetric(horizontal: 3),
         decoration: BoxDecoration(
-          color: _waitPage == i ? _pu : _bd,
+          color: _waitPage == i ? _kPurple : _kBorder,
           borderRadius: BorderRadius.circular(4)),
       ),
     )),
   );
 
-  // ── Shared helpers ────────────────────────────────────────
+  // ── Shared helpers ─────────────────────────────────────────
   Widget _errScreen() => Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-    const Icon(Icons.error_outline, color: _rd, size: 48),
+    Icon(Icons.error_outline, color: _kRed, size: 48),
     const SizedBox(height: 12),
-    Text(_error!, style: const TextStyle(color: _mt)),
+    Text(_error!, style: _f(13, c: _kMuted)),
     const SizedBox(height: 16),
     TextButton(onPressed: _init,
-      child: const Text('Retry', style: TextStyle(color: _pu, fontFamily: 'Fredoka One'))),
+      child: Text('Retry', style: _f(14, fw: FontWeight.w700, c: _kPurple))),
   ]));
 
   Widget _badge(String t) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
     decoration: BoxDecoration(
-      color: const Color(0x206C3FE8),
-      border: Border.all(color: const Color(0x406C3FE8)),
+      color: _kPurple.withValues(alpha: 0.1),
+      border: Border.all(color: _kBorder),
       borderRadius: BorderRadius.circular(20)),
-    child: Text(t, style: const TextStyle(color: _pl, fontFamily: 'Fredoka',
-      fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: .5)));
+    child: Text(t, style: _f(11, fw: FontWeight.w700, c: _kPurpleL, ls: 0.5)));
 
   Widget _topicBadge(String t) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-    decoration: BoxDecoration(gradient: const LinearGradient(colors: [_pd, _pu]),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(colors: [_kPurpleD, _kPurple]),
       borderRadius: BorderRadius.circular(20)),
     child: Text('${kTopicIcons[t] ?? '🎯'}  $t',
-      style: const TextStyle(color: Colors.white, fontFamily: 'Fredoka One', fontSize: 13)));
+      style: _f(13, fw: FontWeight.w700)));
 
   Widget _stepRow(String n, String lbl) => Row(children: [
     Container(width: 28, height: 28,
-      decoration: const BoxDecoration(color: _pu, shape: BoxShape.circle),
+      decoration: const BoxDecoration(color: _kPurple, shape: BoxShape.circle),
       alignment: Alignment.center,
-      child: Text(n, style: const TextStyle(color: Colors.white,
-        fontFamily: 'Fredoka One', fontSize: 13))),
+      child: Text(n, style: _f(13, fw: FontWeight.w700))),
     const SizedBox(width: 10),
-    Text(lbl, style: const TextStyle(color: _pl, fontFamily: 'Fredoka One', fontSize: 15)),
+    Text(lbl, style: _f(15, fw: FontWeight.w700, c: _kPurpleL)),
   ]);
 
   Widget _infoRow(bool yes, String text) => Container(
-    width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
     decoration: BoxDecoration(
-      color: yes ? const Color(0xFF0D2B1A) : const Color(0xFF2B0D0D),
+      color: yes
+          ? _kGreen.withValues(alpha: 0.06)
+          : _kRed.withValues(alpha: 0.06),
       borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: yes ? const Color(0xFF1A5C30) : const Color(0xFF5C1A1A))),
+      border: Border.all(
+        color: yes ? _kGreen.withValues(alpha: 0.35) : _kRed.withValues(alpha: 0.35))),
     child: Row(children: [
       Text(yes ? '✅' : '🚫', style: const TextStyle(fontSize: 13)),
       const SizedBox(width: 8),
-      Text(text, style: TextStyle(fontFamily: 'Fredoka One', fontSize: 12,
-        color: yes ? _gn : _rd)),
+      Text(text, style: _f(12, fw: FontWeight.w700, c: yes ? _kGreen : _kRed)),
     ]));
 
   Widget _hintPill(String t) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-    decoration: BoxDecoration(color: const Color(0x206C3FE8),
-      border: Border.all(color: _pd), borderRadius: BorderRadius.circular(20)),
+    decoration: BoxDecoration(
+      color: _kPurple.withValues(alpha: 0.1),
+      border: Border.all(color: _kBorder),
+      borderRadius: BorderRadius.circular(20)),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       Container(width: 6, height: 6,
-        decoration: const BoxDecoration(color: _pu, shape: BoxShape.circle)),
+        decoration: const BoxDecoration(color: _kPurple, shape: BoxShape.circle)),
       const SizedBox(width: 6),
-      Text(t, style: const TextStyle(color: _pl, fontFamily: 'Fredoka',
-        fontSize: 12, fontWeight: FontWeight.w700)),
+      Text(t, style: _f(12, fw: FontWeight.w700, c: _kPurpleL)),
     ]));
 
   Widget _partnerCard({required String sub}) => Container(
     width: double.infinity, padding: const EdgeInsets.all(13),
-    decoration: BoxDecoration(color: _s2, borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _bd)),
+    decoration: BoxDecoration(
+      color: _kCard, borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _kBorder)),
     child: Row(children: [
       _miniAvatar(),
       const SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(widget.partnerName,
-          style: const TextStyle(fontFamily: 'Fredoka One', fontSize: 15, color: _tx)),
-        Text(sub, style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 11)),
+        Text(widget.partnerName, style: _f(15, fw: FontWeight.w700)),
+        Text(sub, style: _f(11, c: _kMuted)),
       ])),
       const _PulsingDots(),
     ]));
 
-  /// Mini circular avatar showing the partner's first initial.
-  /// Previously showed a hardcoded 👩 emoji regardless of who the partner is.
   Widget _miniAvatar() {
     final initial = widget.partnerName.isNotEmpty
-        ? widget.partnerName[0].toUpperCase()
-        : '?';
+        ? widget.partnerName[0].toUpperCase() : '?';
     return Container(
       width: 32, height: 32,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)])),
-      child: Center(
-        child: Text(initial,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-          ),
-        ),
-      ),
+        gradient: LinearGradient(colors: [_kPurpleD, _kPurple])),
+      child: Center(child: Text(initial,
+        style: _f(14, fw: FontWeight.w700))),
     );
   }
 
@@ -1150,28 +1022,63 @@ class _WordSearchGameScreenState extends State<WordSearchGameScreen> {
     onTap: _resetBoard,
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      decoration: BoxDecoration(color: const Color(0xFF2B0D0D),
-        border: Border.all(color: const Color(0xFF5C1A1A)),
+      decoration: BoxDecoration(
+        color: _kRed.withValues(alpha: 0.08),
+        border: Border.all(color: _kRed.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(10)),
-      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.refresh, color: _rd, size: 15),
-        SizedBox(width: 5),
-        Text('Reset board', style: TextStyle(color: _rd, fontFamily: 'Fredoka',
-          fontSize: 12, fontWeight: FontWeight.w700)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.refresh, color: _kRed, size: 15),
+        const SizedBox(width: 5),
+        Text('Reset board', style: _f(12, fw: FontWeight.w700, c: _kRed)),
       ])));
 }
 
+// ── Helper widget: pulsing dots ────────────────────────────────
 class _PulsingDots extends StatefulWidget {
   const _PulsingDots();
   @override State<_PulsingDots> createState() => _PulsingDotsState();
 }
 class _PulsingDotsState extends State<_PulsingDots> with SingleTickerProviderStateMixin {
   late AnimationController _c;
-  @override void initState() { super.initState(); _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true); }
+  @override void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat(reverse: true);
+  }
   @override void dispose() { _c.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => Row(children: List.generate(3, (i) =>
-    AnimatedBuilder(animation: _c, builder: (_, __) => Opacity(
-      opacity: ((_c.value - i * 0.3).clamp(0.0, 1.0) * 0.7 + 0.3),
-      child: Container(margin: const EdgeInsets.symmetric(horizontal: 2), width: 7, height: 7,
-        decoration: const BoxDecoration(color: Color(0xFF6C3FE8), shape: BoxShape.circle))))));
+  @override Widget build(BuildContext context) => Row(
+    children: List.generate(3, (i) => AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) => Opacity(
+        opacity: ((_c.value - i * 0.3).clamp(0.0, 1.0) * 0.7 + 0.3),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          width: 7, height: 7,
+          decoration: const BoxDecoration(color: _kPurple, shape: BoxShape.circle))))));
+}
+
+// ── Helper widget: bounce-in ───────────────────────────────────
+class _BounceIn extends StatefulWidget {
+  final Widget child;
+  const _BounceIn({required this.child});
+  @override State<_BounceIn> createState() => _BounceInState();
+}
+class _BounceInState extends State<_BounceIn> with SingleTickerProviderStateMixin {
+  late AnimationController _c;
+  late Animation<double> _s;
+  @override void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..forward();
+    _s = TweenSequence([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.2), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.2, end: 0.9), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.05), weight: 15),
+      TweenSequenceItem(tween: Tween(begin: 1.05, end: 1.0), weight: 15),
+    ]).animate(CurvedAnimation(parent: _c, curve: Curves.easeOut));
+  }
+  @override void dispose() { _c.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _s, builder: (_, child) => Transform.scale(scale: _s.value, child: child),
+    child: widget.child,
+  );
 }
