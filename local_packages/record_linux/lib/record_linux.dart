@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:record_platform_interface/record_platform_interface.dart';
 
@@ -9,16 +10,17 @@ class RecordLinux extends RecordPlatform {
     RecordPlatform.instance = RecordLinux();
   }
 
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
   Future<void> create(String recorderId) async {}
 
   @override
   Future<void> dispose(String recorderId) async {}
 
+  // ── State queries ──────────────────────────────────────────────────────────
   @override
-  Future<Amplitude> getAmplitude(String recorderId) async {
-    return const Amplitude(current: -160.0, max: -160.0);
-  }
+  Future<Amplitude> getAmplitude(String recorderId) async =>
+      Amplitude(current: -160.0, max: -160.0);   // not const — Amplitude has no const ctor
 
   @override
   Future<bool> hasPermission(String recorderId, {bool request = true}) async =>
@@ -30,12 +32,15 @@ class RecordLinux extends RecordPlatform {
   @override
   Future<bool> isRecording(String recorderId) async => false;
 
+  // ── Encoder / device info ──────────────────────────────────────────────────
   @override
-  Future<void> pause(String recorderId) async {}
+  Future<bool> isEncoderSupported(
+      String recorderId, AudioEncoder encoder) async => false;
 
   @override
-  Future<void> resume(String recorderId) async {}
+  Future<List<InputDevice>> listInputDevices(String recorderId) async => [];
 
+  // ── Recording control ──────────────────────────────────────────────────────
   @override
   Future<void> start(
     String recorderId,
@@ -47,10 +52,22 @@ class RecordLinux extends RecordPlatform {
   Future<Stream<Uint8List>> startStream(
     String recorderId,
     RecordConfig config,
-  ) async {
-    return Stream<Uint8List>.empty();
-  }
+  ) async => Stream<Uint8List>.empty();
+
+  @override
+  Future<void> pause(String recorderId) async {}
+
+  @override
+  Future<void> resume(String recorderId) async {}
+
+  @override
+  Future<void> cancel(String recorderId) async {}
 
   @override
   Future<String?> stop(String recorderId) async => null;
+
+  // ── State stream ───────────────────────────────────────────────────────────
+  @override
+  Stream<RecordState> onStateChanged(String recorderId) =>
+      const Stream<RecordState>.empty();
 }

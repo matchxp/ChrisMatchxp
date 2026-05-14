@@ -7,10 +7,16 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:async';
+import 'dart:math' as math;
+import 'package:audioplayers/audioplayers.dart';
 import '../services/matching_service.dart';
 import '../games/game_hub_screen.dart';
 import '../games/word_search/word_search_service.dart';
 import '../games/word_search/word_search_models.dart';
+import '../games/word_search/word_search_supabase_wrapper.dart';
+import '../games/rock_paper_scissors/screens/rps_intro_screen.dart';
+import '../games/emoji_charades/emoji_charades_game_screen.dart';
+import 'full_profile_screen.dart';
 
 class ChatConversationScreen extends StatefulWidget {
   final String matchId;
@@ -42,10 +48,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   bool _loading = true;
   RealtimeChannel? _channel;
 
-  // Game gate — chat is locked until both players solve the word search
+  // Game gate — chat is locked until EITHER game is completed by both players
   bool _chatUnlocked = false;
   bool _gameStatusLoading = true;
-  RealtimeChannel? _gameChannel;
+  MatchGamesSnapshot? _gameSnapshot;     // word-search snapshot (context-aware locked bar)
+  RealtimeChannel? _gameChannel;         // word_search_games realtime
+  RealtimeChannel? _ecChannel;           // emoji_charades_games realtime
+  RealtimeChannel? _matchUnlockChannel;  // matches table — catches any unlock source
 
   // Scoreboard
   int _myWins      = 0;
@@ -64,6 +73,32 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
   static const _quickEmojis = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
 
+  // ── Online status ──────────────────────────────────────────────────────────
+  bool? _isOnline;
+  DateTime? _lastSeenAt;
+  Timer? _onlineTimer;
+
+  // ── Scoreboard collapse ────────────────────────────────────────────────────
+  bool _scoreboardExpanded = false;
+
+  // ── Typing indicator ───────────────────────────────────────────────────────
+  bool _isPartnerTyping = false;
+  Timer? _typingHideTimer;
+  Timer? _myTypingDebounce;
+
+  // ── Scroll-to-bottom FAB ───────────────────────────────────────────────────
+  bool _showScrollToBottom = false;
+  int _unreadWhileScrolled = 0;
+
+  // ── Message GlobalKeys (for reply-tap-to-scroll) ───────────────────────────
+  final Map<String, GlobalKey> _messageKeys = {};
+
+  // ── Voice playback ────────────────────────────────────────────────────────
+  AudioPlayer? _audioPlayer;
+  String? _playingVoiceKey;
+  bool _isVoicePlaying = false;
+  Duration _voicePosition = Duration.zero;
+  Duration _voiceDuration = Duration.zero;
 
   @override
   void initState() {
@@ -74,6 +109,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     _loadMessages();
     _subscribeToMessages();
     _loadScores();
+    _fetchOnlineStatus();
+    _onlineTimer = Timer.periodic(
+        const Duration(seconds: 60), (_) => _fetchOnlineStatus());
+    _scrollController.addListener(_onScrollChanged);
+    _initAudioPlayer();
   }
 
   @override
@@ -84,45 +124,168 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     }
     _channel?.unsubscribe();
     _matchingService.unsubscribeFromChat(widget.matchId);
-    if (_gameChannel != null) _gameService.unsubscribe(_gameChannel!);
-    if (_scoreChannel != null) _gameService.unsubscribe(_scoreChannel!);
+    if (_gameChannel        != null) _gameService.unsubscribe(_gameChannel!);
+    if (_ecChannel          != null) Supabase.instance.client.removeChannel(_ecChannel!);
+    if (_scoreChannel       != null) _gameService.unsubscribe(_scoreChannel!);
+    if (_matchUnlockChannel != null) Supabase.instance.client.removeChannel(_matchUnlockChannel!);
     _messageController.dispose();
     _scrollController.dispose();
     _recordTimer?.cancel();
     _audioRecorder.dispose();
+    _onlineTimer?.cancel();
+    _typingHideTimer?.cancel();
+    _myTypingDebounce?.cancel();
+    _audioPlayer?.dispose();
     super.dispose();
   }
 
-  /// Check whether both players have solved the word search.
+  /// Check whether chat is unlocked via ANY of the three games:
+  ///   1. Word Search    — word_search_games table (both rows solved)
+  ///   2. Emoji Charades — emoji_charades_games table (both rows have solved==true)
+  ///   3. RPS            — local/pass-the-phone; no persistent DB record, so the
+  ///                        onChatUnlocked() callback handles it at play-time only.
   Future<void> _checkGameStatus() async {
+    bool unlocked = false;
+    MatchGamesSnapshot? wsSnap;
+
+    // ── 1. Word Search ─────────────────────────────────────────────────────
     try {
-      final snapshot = await _gameService.getSnapshot(
+      wsSnap = await _gameService.getSnapshot(
         matchId: widget.matchId,
         myUserId: _currentUserId,
       );
-      final unlocked = snapshot.phase == MatchGamePhase.bothSolved;
-      if (mounted) setState(() {
-        if (unlocked) _chatUnlocked = true;
-        _gameStatusLoading = false;
-      });
-
-      _gameChannel = _gameService.subscribeToMatch(
-        widget.matchId,
-        () async {
-          final updated = await _gameService.getSnapshot(
-            matchId: widget.matchId,
-            myUserId: _currentUserId,
-          );
-          if (mounted && updated.phase == MatchGamePhase.bothSolved) {
-            setState(() => _chatUnlocked = true);
-          }
-        },
-        channelSuffix: 'chat',
-      );
+      if (wsSnap.phase == MatchGamePhase.bothSolved) unlocked = true;
     } catch (e) {
-      debugPrint('⚠️ Game status check failed: $e — defaulting to unlocked');
-      if (mounted) setState(() { _chatUnlocked = true; _gameStatusLoading = false; });
+      debugPrint('Word Search status check failed: $e');
     }
+
+    // ── 2. Emoji Charades ──────────────────────────────────────────────────
+    if (!unlocked) {
+      try {
+        final rows = await Supabase.instance.client
+            .from('emoji_charades_games')
+            .select('solved')
+            .eq('match_id', widget.matchId);
+        final list = List<Map<String, dynamic>>.from(rows as List);
+        if (list.length >= 2 && list.every((r) => r['solved'] == true)) {
+          unlocked = true;
+        }
+      } catch (e) {
+        debugPrint('Emoji Charades status check failed: $e');
+      }
+    }
+
+    // ── 3. matches.chat_unlocked — covers RPS and any other unlock path ────
+    if (!unlocked) {
+      try {
+        final matchRow = await Supabase.instance.client
+            .from('matches')
+            .select('chat_unlocked')
+            .eq('id', widget.matchId)
+            .single();
+        if (matchRow['chat_unlocked'] == true) unlocked = true;
+      } catch (e) {
+        debugPrint('matches.chat_unlocked check failed: $e');
+      }
+    }
+
+    if (mounted) setState(() {
+      _gameSnapshot = wsSnap;
+      if (unlocked) _chatUnlocked = true;
+      _gameStatusLoading = false;
+    });
+
+    // ── Realtime: Word Search changes ──────────────────────────────────────
+    _gameChannel = _gameService.subscribeToMatch(
+      widget.matchId,
+      () async {
+        final updated = await _gameService.getSnapshot(
+          matchId: widget.matchId,
+          myUserId: _currentUserId,
+        );
+        if (mounted) setState(() {
+          _gameSnapshot = updated;
+          if (updated.phase == MatchGamePhase.bothSolved) _chatUnlocked = true;
+        });
+      },
+      channelSuffix: 'chat',
+    );
+
+    // ── Realtime: Emoji Charades changes ───────────────────────────────────
+    _ecChannel = Supabase.instance.client
+        .channel('ec_chat_${widget.matchId}')
+        .onPostgresChanges(
+          event:  PostgresChangeEvent.all,
+          schema: 'public',
+          table:  'emoji_charades_games',
+          filter: PostgresChangeFilter(
+            type:   PostgresChangeFilterType.eq,
+            column: 'match_id',
+            value:  widget.matchId,
+          ),
+          callback: (_) async {
+            try {
+              final rows = await Supabase.instance.client
+                  .from('emoji_charades_games')
+                  .select('solved')
+                  .eq('match_id', widget.matchId);
+              final list = List<Map<String, dynamic>>.from(rows as List);
+              if (mounted &&
+                  list.length >= 2 &&
+                  list.every((r) => r['solved'] == true)) {
+                setState(() => _chatUnlocked = true);
+              }
+            } catch (_) {}
+          },
+        )
+        .subscribe();
+
+    // ── Realtime: matches.chat_unlocked — fires for RPS, auto-unlock, any game ──
+    // This is the single source of truth for unlock state. Catches all paths:
+    // complete_game_session(), auto_unlock_expired_sessions(), etc.
+    _matchUnlockChannel = Supabase.instance.client
+        .channel('match_unlock_${widget.matchId}')
+        .onPostgresChanges(
+          event:  PostgresChangeEvent.update,
+          schema: 'public',
+          table:  'matches',
+          filter: PostgresChangeFilter(
+            type:   PostgresChangeFilterType.eq,
+            column: 'id',
+            value:  widget.matchId,
+          ),
+          callback: (payload) {
+            final unlocked = payload.newRecord['chat_unlocked'] as bool? ?? false;
+            if (unlocked && mounted) setState(() => _chatUnlocked = true);
+          },
+        )
+        .subscribe();
+
+    // ── Realtime: messages UPDATE — refreshes challenge card status ─────────
+    // When accept_game_challenge or complete_game_session updates meta,
+    // we patch the local message list so the card re-renders without a reload.
+    Supabase.instance.client
+        .channel('msg_updates_${widget.matchId}')
+        .onPostgresChanges(
+          event:  PostgresChangeEvent.update,
+          schema: 'public',
+          table:  'messages',
+          filter: PostgresChangeFilter(
+            type:   PostgresChangeFilterType.eq,
+            column: 'match_id',
+            value:  widget.matchId,
+          ),
+          callback: (payload) {
+            if (!mounted) return;
+            final updated = Map<String, dynamic>.from(payload.newRecord);
+            setState(() {
+              final idx = _messages.indexWhere(
+                  (m) => m['id'] == updated['id']);
+              if (idx != -1) _messages[idx] = updated;
+            });
+          },
+        )
+        .subscribe();
   }
 
   Future<void> _resetGame() async {
@@ -219,18 +382,231 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     } catch (_) {}
   }
 
+  // ── Online status ──────────────────────────────────────────────────────────
+  Future<void> _fetchOnlineStatus() async {
+    try {
+      final otherUserId = widget.otherProfile['id'] as String?;
+      if (otherUserId == null) return;
+      final data = await Supabase.instance.client
+          .from('profiles')
+          .select('last_seen_at')
+          .eq('id', otherUserId)
+          .maybeSingle();
+      if (!mounted) return;
+      final lastSeenStr = data?['last_seen_at'] as String?;
+      final lastSeen =
+          lastSeenStr != null ? DateTime.tryParse(lastSeenStr)?.toLocal() : null;
+      setState(() {
+        _lastSeenAt = lastSeen;
+        _isOnline = lastSeen != null &&
+            DateTime.now().difference(lastSeen).inMinutes < 5;
+      });
+    } catch (_) {}
+  }
+
+  String _formatOnlineStatus() {
+    if (_isOnline == true) return 'Online';
+    final ls = _lastSeenAt;
+    if (ls == null) return '';
+    final diff = DateTime.now().difference(ls);
+    if (diff.inMinutes < 1) return 'Last seen just now';
+    if (diff.inHours < 1) return 'Last seen ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return 'Last seen ${diff.inHours}h ago';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return 'Last seen ${ls.day} ${months[ls.month - 1]}';
+  }
+
+  // ── Scroll-to-bottom FAB logic ─────────────────────────────────────────────
+  void _onScrollChanged() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final atBottom = pos.pixels >= pos.maxScrollExtent - 120;
+    if (atBottom && (_showScrollToBottom || _unreadWhileScrolled > 0)) {
+      setState(() {
+        _showScrollToBottom = false;
+        _unreadWhileScrolled = 0;
+      });
+    } else if (!atBottom && !_showScrollToBottom) {
+      setState(() => _showScrollToBottom = true);
+    }
+  }
+
+  // ── Typing broadcast ────────────────────────────────────────────────────────
+  void _onTypingChanged() {
+    _myTypingDebounce?.cancel();
+    _myTypingDebounce = Timer(const Duration(milliseconds: 350), () {
+      _matchingService.sendTypingEvent(widget.matchId);
+    });
+  }
+
+  void _handlePartnerTyping() {
+    if (!mounted) return;
+    setState(() => _isPartnerTyping = true);
+    _typingHideTimer?.cancel();
+    _typingHideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _isPartnerTyping = false);
+    });
+  }
+
+  // ── Reaction loader (persisted) ────────────────────────────────────────────
+  Future<void> _loadReactions() async {
+    try {
+      final data = await Supabase.instance.client
+          .from('message_reactions')
+          .select('message_id, emoji')
+          .eq('user_id', _currentUserId);
+      if (!mounted) return;
+      final Map<String, List<String>> loaded = {};
+      for (final row in List<Map<String, dynamic>>.from(data as List)) {
+        final id = row['message_id'] as String;
+        final emoji = row['emoji'] as String;
+        loaded.putIfAbsent(id, () => []).add(emoji);
+      }
+      setState(() => _reactions.addAll(loaded));
+    } catch (_) {}
+  }
+
+  // ── Reply scroll-to-original ────────────────────────────────────────────────
+  void _scrollToMessageByContent(String content) {
+    // Find the earliest message whose content matches the quoted snippet
+    for (final msg in _messages) {
+      final c = msg['content'] as String? ?? '';
+      if (c == content || c.startsWith(content)) {
+        final key = _messageKeys[msg['id'] as String? ??
+            msg['created_at'] as String? ?? ''];
+        if (key?.currentContext != null) {
+          Scrollable.ensureVisible(
+            key!.currentContext!,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOut,
+            alignment: 0.3,
+          );
+        }
+        return;
+      }
+    }
+  }
+
+  // ── Audio player init + playback ───────────────────────────────────────────
+  void _initAudioPlayer() {
+    _audioPlayer = AudioPlayer();
+    _audioPlayer!.onPositionChanged.listen((pos) {
+      if (mounted) setState(() => _voicePosition = pos);
+    });
+    _audioPlayer!.onDurationChanged.listen((dur) {
+      if (mounted) setState(() => _voiceDuration = dur);
+    });
+    _audioPlayer!.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isVoicePlaying = false;
+          _voicePosition = Duration.zero;
+        });
+      }
+    });
+  }
+
+  Future<void> _playVoice(String url, String msgKey) async {
+    if (_audioPlayer == null) return;
+    if (_playingVoiceKey == msgKey && _isVoicePlaying) {
+      await _audioPlayer!.pause();
+      setState(() => _isVoicePlaying = false);
+      return;
+    }
+    if (_playingVoiceKey == msgKey && !_isVoicePlaying) {
+      await _audioPlayer!.resume();
+      setState(() => _isVoicePlaying = true);
+      return;
+    }
+    // New track
+    setState(() {
+      _playingVoiceKey = msgKey;
+      _isVoicePlaying = false;
+      _voicePosition = Duration.zero;
+      _voiceDuration = Duration.zero;
+    });
+    await _audioPlayer!.stop();
+    await _audioPlayer!.play(UrlSource(url));
+    setState(() => _isVoicePlaying = true);
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  // ── Date separator helpers ─────────────────────────────────────────────────
+  String? _getDateLabel(String? isoString) {
+    if (isoString == null) return null;
+    final dt = DateTime.tryParse(isoString)?.toLocal();
+    if (dt == null) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final msgDay = DateTime(dt.year, dt.month, dt.day);
+    final diff = today.difference(msgDay).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return '${days[dt.weekday - 1]} ${dt.day} ${months[dt.month - 1]}';
+  }
+
+  bool _isSameGroup(Map<String, dynamic> a, Map<String, dynamic> b) {
+    if (a['sender_id'] != b['sender_id']) return false;
+    final aTime = DateTime.tryParse(a['created_at'] as String? ?? '');
+    final bTime = DateTime.tryParse(b['created_at'] as String? ?? '');
+    if (aTime == null || bTime == null) return false;
+    return bTime.difference(aTime).inSeconds.abs() <= 60;
+  }
+
+  Widget _buildDateSeparator(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(children: [
+        const Expanded(child: Divider(color: Colors.white12, thickness: 1)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.35),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+        const Expanded(child: Divider(color: Colors.white12, thickness: 1)),
+      ]),
+    );
+  }
+
   Future<void> _loadMessages() async {
     final messages = await _matchingService.getMessages(widget.matchId);
     if (!mounted) return;
     setState(() {
       _messages = messages;
       _loading = false;
-      final hasRealMessages = messages.any((m) =>
-          !(m['content'] as String? ?? '').startsWith(_gameRequestTag));
+      // Unlock if there are real text messages — exclude old game-request tags
+      // AND the new structured game_challenge / game_result system messages.
+      final gameTypes = {'game_challenge', 'game_result'};
+      final hasRealMessages = messages.any((m) {
+        final type = m['message_type'] as String? ?? 'text';
+        if (gameTypes.contains(type)) return false;
+        return !(m['content'] as String? ?? '').startsWith(_gameRequestTag);
+      });
       if (hasRealMessages) _chatUnlocked = true;
     });
     _scrollToBottom();
     _matchingService.markMessagesAsRead(widget.matchId);
+    _loadReactions();
   }
 
   void _subscribeToMessages() {
@@ -246,10 +622,17 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         bool alreadyExists = false;
 
         if (msgId != null) {
-          final idxToUpgrade = _messages.indexWhere((m) =>
-              m['id'] == null &&
-              m['sender_id'] == senderId &&
-              m['content'] == content);
+          // FIG BUG-01: use timestamp-proximity matching so that when the
+          // current user rapidly sends two identical messages (same sender +
+          // content), the incoming real event upgrades the placeholder whose
+          // created_at is closest to the server timestamp — rather than always
+          // blindly taking the first match via indexWhere.
+          final idxToUpgrade = _findClosestOptimistic(
+            messages: _messages,
+            senderId: senderId,
+            content: content,
+            realCreatedAt: msg['created_at'] as String?,
+          );
           if (idxToUpgrade != -1) {
             setState(() => _messages[idxToUpgrade] =
                 {..._messages[idxToUpgrade], ...msg});
@@ -267,14 +650,25 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         }
 
         if (!alreadyExists) {
-          setState(() => _messages.add(msg));
-          _scrollToBottom();
+          final msgType = msg['message_type'] as String? ?? 'text';
+          setState(() {
+            _messages.add(msg);
+            // A game_result message means the game finished — unlock immediately.
+            if (msgType == 'game_result' && !_chatUnlocked) _chatUnlocked = true;
+          });
+          // If partner sent a message and we're scrolled up, badge instead of jump
+          if (senderId != _currentUserId && _showScrollToBottom) {
+            setState(() => _unreadWhileScrolled++);
+          } else {
+            _scrollToBottom();
+          }
         }
 
         if (senderId != _currentUserId) {
           _matchingService.markMessagesAsRead(widget.matchId);
         }
       },
+      onTyping: _handlePartnerTyping,
       onUpdate: (updatedMsg) {
         if (!mounted) return;
         final id = updatedMsg['id'];
@@ -286,6 +680,55 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         });
       },
     );
+  }
+
+  /// Finds the index of the optimistic placeholder that best matches an
+  /// incoming real message.
+  ///
+  /// When the user sends two identical messages in quick succession (same
+  /// sender + content), [indexWhere] always returns the *first* match
+  /// (BUG-01).  This helper instead picks the placeholder whose [created_at]
+  /// is *closest* to the server-assigned [realCreatedAt], so the correct
+  /// placeholder gets upgraded.  Falls back to first-match (FIFO) when
+  /// timestamps are unavailable.
+  static int _findClosestOptimistic({
+    required List<Map<String, dynamic>> messages,
+    required String? senderId,
+    required String? content,
+    String? realCreatedAt,
+  }) {
+    final candidates = messages
+        .asMap()
+        .entries
+        .where((e) =>
+            e.value['id'] == null &&
+            e.value['sender_id'] == senderId &&
+            e.value['content'] == content)
+        .toList();
+
+    if (candidates.isEmpty) return -1;
+    // Single candidate or no real timestamp → FIFO (first match)
+    if (candidates.length == 1 || realCreatedAt == null) {
+      return candidates.first.key;
+    }
+
+    final realTs = DateTime.tryParse(realCreatedAt);
+    if (realTs == null) return candidates.first.key;
+
+    int bestIdx = candidates.first.key;
+    Duration bestDiff = const Duration(days: 999);
+
+    for (final entry in candidates) {
+      final optTs = DateTime.tryParse(
+          entry.value['created_at'] as String? ?? '');
+      if (optTs == null) continue;
+      final diff = realTs.difference(optTs).abs();
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIdx = entry.key;
+      }
+    }
+    return bestIdx;
   }
 
   void _scrollToBottom() {
@@ -306,20 +749,22 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     _messageController.clear();
 
-    // Build the message — attach reply metadata if replying
+    // Capture reply context before clearing it
+    final replyContent = _replyingTo?['content'] as String?;
+    final replySender  = _replyingTo == null
+        ? null
+        : (_replyingTo!['sender_id'] == _currentUserId ? 'You' : _otherName);
+
+    // Build the optimistic message — attach reply metadata if replying
     final Map<String, dynamic> optimistic = {
       'match_id': widget.matchId,
       'sender_id': _currentUserId,
       'content': text,
       'created_at': DateTime.now().toIso8601String(),
       'is_read': false,
+      if (replyContent != null) 'reply_to_content': replyContent,
+      if (replySender  != null) 'reply_to_sender':  replySender,
     };
-
-    if (_replyingTo != null) {
-      optimistic['reply_to_content'] = _replyingTo!['content'];
-      optimistic['reply_to_sender'] =
-          _replyingTo!['sender_id'] == _currentUserId ? 'You' : _otherName;
-    }
 
     setState(() {
       _messages.add(optimistic);
@@ -327,8 +772,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     });
     _scrollToBottom();
 
-    // Persist
-    _matchingService.sendMessage(widget.matchId, text);
+    // Persist — include reply metadata so the partner sees the quote strip too
+    _matchingService.sendMessage(
+      widget.matchId,
+      text,
+      replyToContent: replyContent,
+      replyToSender:  replySender,
+    );
   }
 
   String _formatTime(String? isoString) {
@@ -390,6 +840,39 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _showBlockDialog();
+              },
+            ),
+            const Divider(color: Colors.white12, height: 1),
+            ListTile(
+              leading: const Icon(Icons.refresh_rounded,
+                  color: Colors.white54),
+              title: const Text('Reset game',
+                  style: TextStyle(color: Colors.white70)),
+              subtitle: const Text('Clears active puzzle, keeps scores',
+                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              onTap: () {
+                Navigator.pop(context);
+                _confirmReset(
+                  title: 'Reset game?',
+                  body: 'Deletes the current active puzzle so both players can start a new game. Scores are kept.',
+                  action: _resetGame,
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_sweep_outlined,
+                  color: Color(0xFFF87171)),
+              title: const Text('Reset everything',
+                  style: TextStyle(color: Color(0xFFF87171))),
+              subtitle: const Text('Clears game AND all score history',
+                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              onTap: () {
+                Navigator.pop(context);
+                _confirmReset(
+                  title: 'Reset everything?',
+                  body: 'Deletes the active game AND all score history for this match. This cannot be undone.',
+                  action: _resetAll,
+                );
               },
             ),
             const SizedBox(height: 8),
@@ -681,14 +1164,109 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
       appBar: _buildAppBar(),
-      body: Column(
+      body: Stack(
         children: [
-          if (_scoresLoaded && (_myWins > 0 || _partnerWins > 0))
-            _buildScoreboard(),
-          Expanded(child: _loading ? _buildLoader() : _buildMessageList()),
-          // Reply banner sits just above the input bar
-          if (_replyingTo != null) _buildReplyBanner(),
-          _buildInputBar(),
+          Column(
+            children: [
+              if (_scoresLoaded && (_myWins > 0 || _partnerWins > 0))
+                _buildScoreboard(),
+              Expanded(child: _loading ? _buildLoader() : _buildMessageList()),
+              // Typing indicator sits just above reply banner / input
+              if (_isPartnerTyping) _buildTypingIndicator(),
+              if (_replyingTo != null) _buildReplyBanner(),
+              _buildInputBar(),
+            ],
+          ),
+          // Scroll-to-bottom FAB
+          if (_showScrollToBottom)
+            Positioned(
+              bottom: 90,
+              right: 16,
+              child: _buildScrollToBottomButton(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── Typing indicator row ───────────────────────────────────────────────────
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+      child: Row(
+        children: [
+          if (_otherPhoto.isNotEmpty)
+            ClipOval(
+              child: Image.network(_otherPhoto,
+                  width: 22, height: 22, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox(width: 22, height: 22)),
+            )
+          else
+            Container(
+              width: 22, height: 22,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)]),
+              ),
+            ),
+          const SizedBox(width: 8),
+          const _TypingBubble(),
+        ],
+      ),
+    );
+  }
+
+  // ── Scroll-to-bottom FAB ───────────────────────────────────────────────────
+  Widget _buildScrollToBottomButton() {
+    return GestureDetector(
+      onTap: () {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOut,
+        );
+        setState(() {
+          _showScrollToBottom = false;
+          _unreadWhileScrolled = 0;
+        });
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.4)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 8, offset: const Offset(0, 3)),
+              ],
+            ),
+            child: const Icon(Icons.keyboard_arrow_down_rounded,
+                color: Colors.white70, size: 24),
+          ),
+          if (_unreadWhileScrolled > 0)
+            Positioned(
+              top: -4, right: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C3FE8),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _unreadWhileScrolled > 9 ? '9+' : '$_unreadWhileScrolled',
+                  style: const TextStyle(
+                    color: Colors.white, fontSize: 10,
+                    fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -720,25 +1298,59 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             ],
           ),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _otherName,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    FullProfileScreen(profile: widget.otherProfile),
               ),
-              Text(
-                'Tap to view profile',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white.withValues(alpha: 0.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _otherName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-            ],
+                // ── Live online status ────────────────────────────────
+                if (_isOnline == true)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF22C55E),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'Online',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF22C55E),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  )
+                else if (_lastSeenAt != null || _isOnline == false)
+                  Text(
+                    _formatOnlineStatus(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.45),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -748,22 +1360,27 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           padding: const EdgeInsets.only(right: 8),
           child: GestureDetector(
             onTap: () {
-              final partnerUserId = widget.otherProfile['id'] as String? ?? '';
-              final partnerName   = _otherName;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => GameHubScreen(
-                    matchId:        widget.matchId,
-                    currentUserId:  _currentUserId,
-                    partnerUserId:  partnerUserId,
-                    partnerName:    partnerName,
-                    onChatUnlocked: () {
-                      if (mounted) setState(() => _chatUnlocked = true);
-                    },
+              if (_chatUnlocked) {
+                // Chat already open — send a challenge from within the thread
+                _showInChatGamePicker();
+              } else {
+                // Chat still locked — go to the initial ice-breaker hub
+                final partnerUserId = widget.otherProfile['id'] as String? ?? '';
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GameHubScreen(
+                      matchId:        widget.matchId,
+                      currentUserId:  _currentUserId,
+                      partnerUserId:  partnerUserId,
+                      partnerName:    _otherName,
+                      onChatUnlocked: () {
+                        if (mounted) setState(() => _chatUnlocked = true);
+                      },
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             },
             child: Container(
               padding: const EdgeInsets.all(8),
@@ -806,187 +1423,210 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     );
   }
 
+  // ── Scoreboard — collapsed pill + expanded card ───────────────────────────
   Widget _buildScoreboard() {
     final total = _myWins + _partnerWins;
     final myPct = total == 0 ? 0.5 : _myWins / total;
+    final statusText = total == 0
+        ? 'No games yet'
+        : _myWins == _partnerWins
+            ? "It's tied! 🤝"
+            : _myWins > _partnerWins
+                ? 'You\'re ahead! 🏆'
+                : '$_otherName is ahead! 💪';
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: const Color(0xFF6C3FE8).withValues(alpha: 0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF6C3FE8).withValues(alpha: 0.10),
-            blurRadius: 16, offset: const Offset(0, 4)),
-        ],
-      ),
-      child: Column(children: [
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Icon(Icons.emoji_events_rounded,
-              color: Color(0xFF6C3FE8), size: 14),
-          const SizedBox(width: 5),
-          Text('WORD SEARCH SCOREBOARD',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.45),
-              fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1)),
-        ]),
-        const SizedBox(height: 10),
-
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Column(children: [
-            Text('You',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
-            const SizedBox(height: 2),
-            Text('$_myWins',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 32, fontWeight: FontWeight.w900,
-                fontFamily: 'Fredoka One')),
-          ]),
-
-          Expanded(child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Column(children: [
-              const Text('VS',
-                style: TextStyle(color: Color(0xFF6C3FE8),
-                  fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1)),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  height: 6,
-                  child: Row(children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 600),
-                      curve: Curves.easeOut,
-                      width: (MediaQuery.of(context).size.width - 32 - 32 - 96) * myPct,
-                      color: const Color(0xFF6C3FE8),
+    // ── Collapsed pill ──────────────────────────────────────────────────────
+    if (!_scoreboardExpanded) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+        child: Center(
+          child: GestureDetector(
+            onTap: () => setState(() => _scoreboardExpanded = true),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
+                    width: 1.5),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🏆', style: TextStyle(fontSize: 13)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'You $_myWins – $_partnerWins $_otherName',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Fredoka One',
                     ),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 600),
-                      curve: Curves.easeOut,
-                      width: (MediaQuery.of(context).size.width - 32 - 32 - 96) * (1 - myPct),
-                      color: const Color(0xFF9D50BB),
-                    ),
-                  ]),
-                ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(Icons.chevron_right_rounded,
+                      color: Colors.white.withValues(alpha: 0.45), size: 18),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                total == 0 ? 'No games yet' :
-                _myWins == _partnerWins ? "It's tied! 🤝" :
-                _myWins > _partnerWins ? 'You\'re ahead! 🏆' : '$_otherName is ahead! 💪',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.4),
-                  fontSize: 10),
-                textAlign: TextAlign.center,
-              ),
-            ]),
-          )),
-
-          Column(children: [
-            Text(_otherName,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
-              overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 2),
-            Text('$_partnerWins',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 32, fontWeight: FontWeight.w900,
-                fontFamily: 'Fredoka One')),
-          ]),
-        ]),
-
-        const SizedBox(height: 8),
-
-        GestureDetector(
-          onTap: () {
-            final partnerUserId = widget.otherProfile['id'] as String? ?? '';
-            Navigator.push(context, MaterialPageRoute(
-              builder: (_) => GameHubScreen(
-                matchId:       widget.matchId,
-                currentUserId: _currentUserId,
-                partnerUserId: partnerUserId,
-                partnerName:   _otherName,
-                onChatUnlocked: () {
-                  if (mounted) setState(() => _chatUnlocked = true);
-                },
-              ),
-            )).then((_) => _loadScores());
-          },
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF6C3FE8).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: const Color(0xFF6C3FE8).withValues(alpha: 0.3)),
             ),
-            child: const Text('🎮  Play Again',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF6C3FE8),
-                fontSize: 13, fontWeight: FontWeight.w700)),
           ),
         ),
+      );
+    }
 
-        const SizedBox(height: 8),
-
-        Row(children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _confirmReset(
-                title: 'Reset game?',
-                body: 'Deletes the current active puzzle so both players can start a new game. Scores are kept.',
-                action: _resetGame,
+    // ── Expanded card (no reset buttons — those live in ⋮ menu) ────────────
+    return GestureDetector(
+      onTap: () => setState(() => _scoreboardExpanded = false),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: const Color(0xFF6C3FE8).withValues(alpha: 0.3), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF6C3FE8).withValues(alpha: 0.10),
+              blurRadius: 16, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              // Title centred regardless of the collapse icon width
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.max,
+                children: [
+                  const Icon(Icons.emoji_events_rounded,
+                      color: Color(0xFF6C3FE8), size: 14),
+                  const SizedBox(width: 5),
+                  Text('GAME SCOREBOARD',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                ],
               ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2B0D0D),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF5C1A1A)),
-                ),
-                child: const Text('🔄  Reset game',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFFF87171),
-                    fontSize: 12, fontWeight: FontWeight.w700)),
+              // Collapse arrow pinned to the right
+              Align(
+                alignment: Alignment.centerRight,
+                child: Icon(Icons.expand_less_rounded,
+                    color: Colors.white.withValues(alpha: 0.35), size: 18),
               ),
-            ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _confirmReset(
-                title: 'Reset everything?',
-                body: 'Deletes the active game AND all score history for this match. This cannot be undone.',
-                action: _resetAll,
-              ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2B0D0D),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF5C1A1A)),
+          const SizedBox(height: 10),
+
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Column(children: [
+              Text('You',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
+              const SizedBox(height: 2),
+              Text('$_myWins',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 32, fontWeight: FontWeight.w900,
+                  fontFamily: 'Fredoka One')),
+            ]),
+
+            Expanded(child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Column(children: [
+                const Text('VS',
+                  style: TextStyle(color: Color(0xFF6C3FE8),
+                    fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1)),
+                const SizedBox(height: 6),
+                LayoutBuilder(
+                  builder: (_, constraints) {
+                    final barWidth = constraints.maxWidth;
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        height: 6,
+                        child: Row(children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 600),
+                            curve: Curves.easeOut,
+                            width: barWidth * myPct,
+                            color: const Color(0xFF6C3FE8),
+                          ),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 600),
+                            curve: Curves.easeOut,
+                            width: barWidth * (1 - myPct),
+                            color: const Color(0xFF9D50BB),
+                          ),
+                        ]),
+                      ),
+                    );
+                  },
                 ),
-                child: const Text('🗑  Reset all',
-                  textAlign: TextAlign.center,
+                const SizedBox(height: 4),
+                Text(
+                  statusText,
                   style: TextStyle(
-                    color: Color(0xFFF87171),
-                    fontSize: 12, fontWeight: FontWeight.w700)),
+                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 10),
+                  textAlign: TextAlign.center,
+                ),
+              ]),
+            )),
+
+            Column(children: [
+              Text(_otherName,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
+                overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 2),
+              Text('$_partnerWins',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 32, fontWeight: FontWeight.w900,
+                  fontFamily: 'Fredoka One')),
+            ]),
+          ]),
+
+          const SizedBox(height: 8),
+
+          GestureDetector(
+            onTap: () {
+              setState(() => _scoreboardExpanded = false);
+              final partnerUserId = widget.otherProfile['id'] as String? ?? '';
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => GameHubScreen(
+                  matchId:       widget.matchId,
+                  currentUserId: _currentUserId,
+                  partnerUserId: partnerUserId,
+                  partnerName:   _otherName,
+                  onChatUnlocked: () {
+                    if (mounted) setState(() => _chatUnlocked = true);
+                  },
+                ),
+              )).then((_) => _loadScores());
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6C3FE8).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.3)),
               ),
+              child: const Text('🎮  Play Again',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF6C3FE8),
+                  fontSize: 13, fontWeight: FontWeight.w700)),
             ),
           ),
         ]),
-      ]),
+      ),
     );
   }
 
@@ -1013,11 +1653,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     );
   }
 
-  Widget _buildLoader() {
-    return const Center(
-      child: CircularProgressIndicator(color: Color(0xFF6C3FE8)),
-    );
-  }
+  Widget _buildLoader() => const _ChatShimmer();
 
   Widget _buildMessageList() {
     if (_messages.isEmpty) {
@@ -1053,59 +1689,119 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       );
     }
 
-    return ListView.builder(
+    // Build a flat list of widgets: date separators + message bubbles
+    final widgets = <Widget>[];
+    String? lastDateLabel;
+
+    for (int i = 0; i < _messages.length; i++) {
+      final msg = _messages[i];
+      final isMe = msg['sender_id'] == _currentUserId;
+
+      // ── Date separator ──────────────────────────────────────────────────
+      final dateLabel = _getDateLabel(msg['created_at'] as String?);
+      if (dateLabel != null && dateLabel != lastDateLabel) {
+        widgets.add(_buildDateSeparator(dateLabel));
+        lastDateLabel = dateLabel;
+      }
+
+      // ── Grouping ────────────────────────────────────────────────────────
+      final isLastInGroup = i == _messages.length - 1 ||
+          !_isSameGroup(msg, _messages[i + 1]);
+      final isGrouped = i > 0 && _isSameGroup(_messages[i - 1], msg);
+
+      widgets.add(_buildBubble(msg, isMe, isLastInGroup, isGrouped));
+    }
+
+    return ListView(
       controller: _scrollController,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: _messages.length,
-      itemBuilder: (context, index) {
-        final msg = _messages[index];
-        final isMe = msg['sender_id'] == _currentUserId;
-        final isLastInGroup = index == _messages.length - 1 ||
-            _messages[index + 1]['sender_id'] != msg['sender_id'];
-        return _buildBubble(msg, isMe, isLastInGroup);
-      },
+      children: widgets,
     );
   }
 
   static const _gameRequestTag = '[GAME_REQUEST]';
+
+  // ── Full-screen photo viewer ───────────────────────────────────────────────
+  void _openFullScreenPhoto(String url) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (photoCtx) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: () => Navigator.pop(photoCtx),
+            ),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                loadingBuilder: (ctx, child, progress) {
+                  if (progress == null) return child;
+                  return const Center(
+                    child: CircularProgressIndicator(
+                        color: Color(0xFF6C3FE8), strokeWidth: 2));
+                },
+                errorBuilder: (_, __, ___) => const Icon(
+                    Icons.broken_image_rounded,
+                    color: Colors.white38, size: 64),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   // ── Message content renderer ───────────────────────────────────────────────
   Widget _buildMessageContent(String content, bool isMe) {
     // ── Image ──
     if (content.startsWith('[image]')) {
       final url = content.substring(7); // strip '[image]'
-      return ClipRRect(
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(20),
-          topRight: const Radius.circular(20),
-          bottomLeft: Radius.circular(isMe ? 20 : 4),
-          bottomRight: Radius.circular(isMe ? 4 : 20),
-        ),
-        child: Image.network(
-          url,
-          width: 220,
-          fit: BoxFit.cover,
-          loadingBuilder: (ctx, child, progress) {
-            if (progress == null) return child;
-            return Container(
+      return GestureDetector(
+        onTap: () => _openFullScreenPhoto(url),
+        child: ClipRRect(
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(isMe ? 20 : 4),
+            bottomRight: Radius.circular(isMe ? 4 : 20),
+          ),
+          child: Image.network(
+            url,
+            width: 220,
+            fit: BoxFit.cover,
+            loadingBuilder: (ctx, child, progress) {
+              if (progress == null) return child;
+              return Container(
+                width: 220,
+                height: 180,
+                color: const Color(0xFF2A2A2A),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF6C3FE8),
+                    strokeWidth: 2,
+                  ),
+                ),
+              );
+            },
+            errorBuilder: (ctx, _, __) => Container(
               width: 220,
-              height: 180,
+              height: 80,
               color: const Color(0xFF2A2A2A),
               child: const Center(
-                child: CircularProgressIndicator(
-                  color: Color(0xFF6C3FE8),
-                  strokeWidth: 2,
-                ),
+                child: Icon(Icons.broken_image_rounded,
+                    color: Colors.white38, size: 32),
               ),
-            );
-          },
-          errorBuilder: (ctx, _, __) => Container(
-            width: 220,
-            height: 80,
-            color: const Color(0xFF2A2A2A),
-            child: const Center(
-              child: Icon(Icons.broken_image_rounded,
-                  color: Colors.white38, size: 32),
             ),
           ),
         ),
@@ -1166,19 +1862,81 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     // ── Voice ──
     if (content.startsWith('[voice]')) {
+      final url = content.substring(7);
+      // Use a unique key based on content URL so each bubble has its own key
+      final vKey = url.hashCode.toString();
+      final isThisPlaying = _playingVoiceKey == vKey && _isVoicePlaying;
+      final isThisActive = _playingVoiceKey == vKey;
+
+      // Fixed waveform bar heights for visual variety
+      const barHeights = [
+        10.0, 16.0, 22.0, 14.0, 26.0, 18.0, 12.0, 20.0, 24.0, 16.0,
+        22.0, 14.0, 18.0, 26.0, 12.0, 20.0, 16.0, 22.0, 14.0, 18.0,
+      ];
+      final progressFraction = (isThisActive &&
+              _voiceDuration.inMilliseconds > 0)
+          ? _voicePosition.inMilliseconds / _voiceDuration.inMilliseconds
+          : 0.0;
+
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.mic_rounded,
-                color: isMe ? Colors.white : const Color(0xFF9D70FF), size: 20),
-            const SizedBox(width: 8),
+            // Play / Pause button
+            GestureDetector(
+              onTap: () => _playVoice(url, vKey),
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: isMe
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : const Color(0xFF6C3FE8).withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isThisPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
+                  color: isMe ? Colors.white : const Color(0xFF9D70FF),
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Waveform bars
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: List.generate(barHeights.length, (i) {
+                final active = (i / barHeights.length) < progressFraction;
+                return Container(
+                  width: 3,
+                  height: barHeights[i] * 0.65,
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                  decoration: BoxDecoration(
+                    color: active
+                        ? (isMe ? Colors.white : const Color(0xFF6C3FE8))
+                        : (isMe
+                            ? Colors.white.withValues(alpha: 0.3)
+                            : Colors.white.withValues(alpha: 0.22)),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(width: 10),
+            // Duration / position
             Text(
-              'Voice message',
+              isThisActive && _voiceDuration.inSeconds > 0
+                  ? _formatDuration(_voicePosition)
+                  : 'Voice',
               style: TextStyle(
-                color: isMe ? Colors.white : Colors.white70,
-                fontSize: 14,
+                color: isMe
+                    ? Colors.white.withValues(alpha: 0.75)
+                    : Colors.white60,
+                fontSize: 12,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ],
@@ -1197,9 +1955,20 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     );
   }
 
-  Widget _buildBubble(Map<String, dynamic> msg, bool isMe, bool showTime) {
+  Widget _buildBubble(
+      Map<String, dynamic> msg, bool isMe, bool showTime, bool isGrouped) {
     final content = msg['content'] as String? ?? '';
 
+    // ── Structured game messages (new — takes priority) ────────────────────
+    final msgType = msg['message_type'] as String? ?? 'text';
+    if (msgType == 'game_challenge') {
+      return _buildGameChallengeBubble(msg, isMe, showTime);
+    }
+    if (msgType == 'game_result') {
+      return _buildGameResultBubble(msg, showTime);
+    }
+
+    // ── Legacy plain-text game request tag ──────────────────────────────────
     if (content.startsWith(_gameRequestTag)) {
       return _buildGameRequestBubble(msg, isMe, showTime);
     }
@@ -1212,7 +1981,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     final replyContent = msg['reply_to_content'] as String?;
     final replySender  = msg['reply_to_sender'] as String?;
 
-    return GestureDetector(
+    // Assign a stable GlobalKey so reply-strips can scroll here
+    _messageKeys.putIfAbsent(msgKey, () => GlobalKey());
+
+    return Padding(
+      // Grouped messages (same sender, <60s apart) get tighter top spacing
+      padding: EdgeInsets.only(top: isGrouped ? 1.0 : 8.0),
+      child: GestureDetector(
+      key: _messageKeys[msgKey],
       onLongPress: () => _showMessageOptions(msg, isMe),
       child: Align(
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -1222,40 +1998,43 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           children: [
             // ── Reply quote strip ──────────────────────────────────────────
             if (replyContent != null && replySender != null)
-              Container(
-                margin: EdgeInsets.only(
-                  bottom: 2,
-                  left: isMe ? 48 : 0,
-                  right: isMe ? 0 : 48,
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.circular(12),
-                  border: const Border(
-                    left: BorderSide(color: Color(0xFF6C3FE8), width: 3),
+              GestureDetector(
+                onTap: () => _scrollToMessageByContent(replyContent),
+                child: Container(
+                  margin: EdgeInsets.only(
+                    bottom: 2,
+                    left: isMe ? 48 : 0,
+                    right: isMe ? 0 : 48,
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      replySender,
-                      style: const TextStyle(
-                          color: Color(0xFF9D70FF),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: const Border(
+                      left: BorderSide(color: Color(0xFF6C3FE8), width: 3),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      replyContent,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontSize: 12),
-                    ),
-                  ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        replySender,
+                        style: const TextStyle(
+                            color: Color(0xFF9D70FF),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        replyContent,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 12),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
@@ -1351,6 +2130,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           ],
         ),
       ),
+      ), // end Padding (grouping top margin)
     );
   }
 
@@ -1394,6 +2174,504 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // ── Game challenge bubble (message_type = 'game_challenge') ──────────────
+  // Shown to both players. User B (challenged) sees an Accept button while
+  // status == 'pending'. User A sees a waiting label.
+  Widget _buildGameChallengeBubble(
+      Map<String, dynamic> msg, bool isMe, bool showTime) {
+    final meta      = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+    final gameType  = meta['game_type'] as String? ?? 'rps';
+    final status    = meta['status']    as String? ?? 'pending';
+    final sessionId = meta['session_id'] as String?;
+
+    // Display helpers per game type
+    final gameLabel = switch (gameType) {
+      'word_search'     => 'Word Search',
+      'emoji_charades'  => 'Emoji Charades',
+      _                 => 'Rock Paper Scissors',
+    };
+    final gameEmoji = switch (gameType) {
+      'word_search'    => '🔡',
+      'emoji_charades' => '😂',
+      _                => '✊',
+    };
+    final accentColor = switch (gameType) {
+      'word_search'    => const Color(0xFF6C3FE8),
+      'emoji_charades' => const Color(0xFFFFB800),
+      _                => const Color(0xFF7C3AED),
+    };
+
+    final isPending   = status == 'pending';
+    final isCompleted = status == 'completed' || status == 'auto_unlocked';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Align(
+        // Challenge cards are centred in the thread
+        alignment: Alignment.center,
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.82,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141414),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: accentColor.withValues(alpha: 0.5),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accentColor.withValues(alpha: 0.10),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row
+              Row(children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: Text(gameEmoji,
+                        style: const TextStyle(fontSize: 20)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        gameLabel,
+                        style: TextStyle(
+                          color: accentColor,
+                          fontFamily: 'Fredoka One',
+                          fontSize: 15,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      Text(
+                        isMe
+                          ? 'You sent a challenge'
+                          : '$_otherName challenged you!',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontFamily: 'Fredoka',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Status badge
+                if (isCompleted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('Done ✓',
+                        style: TextStyle(color: Color(0xFF22C55E),
+                            fontSize: 11, fontWeight: FontWeight.w700)),
+                  ),
+              ]),
+
+              const SizedBox(height: 14),
+
+              // Action area
+              if (!isCompleted) ...[
+                if (!isMe && isPending && sessionId != null)
+                  // User B sees the Accept button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => _acceptChallenge(sessionId, gameType),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Accept & Play  $gameEmoji',
+                        style: const TextStyle(
+                            fontFamily: 'Fredoka One', fontSize: 15),
+                      ),
+                    ),
+                  )
+                else if (isMe && isPending)
+                  // User A sees a waiting label
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 12, height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: accentColor.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Waiting for $_otherName to accept…',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontFamily: 'Fredoka',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  // Status == 'active' — game is in progress
+                  Center(
+                    child: Text(
+                      'Game in progress…',
+                      style: TextStyle(
+                        color: accentColor.withValues(alpha: 0.8),
+                        fontFamily: 'Fredoka One',
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+              ],
+
+              // Timestamp
+              if (showTime) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _formatTime(msg['created_at'] as String?),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white.withValues(alpha: 0.3),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Game result bubble (message_type = 'game_result') ─────────────────────
+  Widget _buildGameResultBubble(Map<String, dynamic> msg, bool showTime) {
+    final meta       = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+    final gameType   = meta['game_type']    as String? ?? 'rps';
+    final resultLabel= meta['result_label'] as String? ?? '';
+    final winnerId   = meta['winner_id']    as String?;
+    final isAutoUnlock = resultLabel == 'auto_unlocked';
+
+    final gameEmoji = switch (gameType) {
+      'word_search'    => '🔡',
+      'emoji_charades' => '😂',
+      _                => '✊',
+    };
+
+    String headline;
+    if (isAutoUnlock) {
+      headline = '⏰  Chat unlocked automatically';
+    } else if (winnerId == null) {
+      headline = '$gameEmoji  It\'s a draw!';
+    } else if (winnerId == _currentUserId) {
+      headline = '$gameEmoji  You won! 🏆';
+    } else {
+      headline = '$gameEmoji  $_otherName won!';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: const Color(0xFF22C55E).withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              Text(
+                headline,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontFamily: 'Fredoka One',
+                  fontSize: 15,
+                ),
+              ),
+              if (!isAutoUnlock) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '🔓 Chat unlocked!',
+                  style: TextStyle(
+                    color: const Color(0xFF22C55E).withValues(alpha: 0.85),
+                    fontFamily: 'Fredoka',
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+              if (showTime) ...[
+                const SizedBox(height: 6),
+                Text(
+                  _formatTime(msg['created_at'] as String?),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white.withValues(alpha: 0.3),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Accept game challenge ──────────────────────────────────────────────────
+  // Routes directly to the correct game screen using the existing sessionId so
+  // no orphan sessions are created and RPS both players share the same session.
+  Future<void> _acceptChallenge(String sessionId, String gameType) async {
+    try {
+      await Supabase.instance.client
+          .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      // If the session is already active (double-tap / realtime lag), just
+      // proceed to navigate to the game — don't block the user.
+      if (!msg.contains('active') && !msg.contains('no longer pending')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not accept: $e')));
+        }
+        return;
+      }
+    }
+
+    // Optimistically patch the local card to "active" so the Accept button
+    // disappears immediately without waiting for a realtime UPDATE event.
+    if (mounted) {
+      setState(() {
+        for (int i = 0; i < _messages.length; i++) {
+          final meta = (_messages[i]['meta'] as Map?)?.cast<String, dynamic>();
+          if (meta != null && meta['session_id'] == sessionId) {
+            _messages[i] = {
+              ..._messages[i],
+              'meta': {...meta, 'status': 'active'},
+            };
+            break;
+          }
+        }
+      });
+    }
+
+    if (!mounted) return;
+
+    final partnerUserId = widget.otherProfile['id'] as String? ?? '';
+
+    void onUnlocked() {
+      if (mounted) setState(() => _chatUnlocked = true);
+    }
+
+    switch (gameType) {
+      // ── RPS: go directly to intro with the shared session ID ──────────────
+      case 'rps':
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => RPSIntroScreen(
+            currentUserId:   _currentUserId,
+            currentUserName: 'You',
+            opponentId:      partnerUserId,
+            opponentName:    _otherName,
+            sessionId:       sessionId,
+            onChatUnlocked:  onUnlocked,
+          ),
+        ));
+        break;
+
+      // ── Word Search: go directly to the game (no session ID needed) ───────
+      case 'word_search':
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => WordSearchSupabaseWrapper(
+            matchId:        widget.matchId,
+            currentUserId:  _currentUserId,
+            partnerUserId:  partnerUserId,
+            partnerName:    _otherName,
+            onChatUnlocked: () {
+              int pops = 0;
+              Navigator.of(context).popUntil((_) => pops++ >= 1);
+              onUnlocked();
+            },
+          ),
+        ));
+        break;
+
+      // ── Emoji Charades: go directly to the game ───────────────────────────
+      case 'emoji_charades':
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => EmojiCharadesGameScreen(
+            matchId:        widget.matchId,
+            currentUserId:  _currentUserId,
+            partnerUserId:  partnerUserId,
+            partnerName:    _otherName,
+            onChatUnlocked: () {
+              int pops = 0;
+              Navigator.of(context).popUntil((_) => pops++ >= 1);
+              onUnlocked();
+            },
+          ),
+        ));
+        break;
+
+      default:
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => GameHubScreen(
+            matchId:        widget.matchId,
+            currentUserId:  _currentUserId,
+            partnerUserId:  partnerUserId,
+            partnerName:    _otherName,
+            onChatUnlocked: onUnlocked,
+          ),
+        ));
+    }
+  }
+
+  // ── Send in-chat game challenge ────────────────────────────────────────────
+  // Used for post-unlock game requests within the conversation.
+  // The RPC inserts a game_challenge message which appears via realtime.
+  Future<void> _sendGameChallenge(String gameType) async {
+    try {
+      await Supabase.instance.client.rpc('create_game_challenge', params: {
+        'p_match_id':      widget.matchId,
+        'p_challenged_id': widget.otherProfile['id'] as String? ?? '',
+        'p_game_type':     gameType,
+        'p_is_initial':    false,
+      });
+      // The challenge card arrives via the existing realtime subscription.
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send challenge: $e')));
+      }
+    }
+  }
+
+  // ── In-chat game picker bottom sheet ──────────────────────────────────────
+  // Shown when the Game button is tapped while chat is already unlocked.
+  void _showInChatGamePicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle
+              Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                'Challenge to a game',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                'A challenge card will appear in the chat',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _gamePickerTile(ctx, '🔡', 'Word Search',
+                  'word_search', const Color(0xFF6C3FE8)),
+              const SizedBox(height: 10),
+              _gamePickerTile(ctx, '✊', 'Rock Paper Scissors',
+                  'rps', const Color(0xFF7C3AED)),
+              const SizedBox(height: 10),
+              _gamePickerTile(ctx, '😂', 'Emoji Charades',
+                  'emoji_charades', const Color(0xFFFFB800)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _gamePickerTile(
+    BuildContext ctx,
+    String emoji,
+    String label,
+    String gameType,
+    Color color,
+  ) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(ctx);
+        _sendGameChallenge(gameType);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: color.withValues(alpha: 0.3), width: 1.2),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(emoji,
+                    style: const TextStyle(fontSize: 22)),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Icon(Icons.send_rounded, color: color, size: 18),
+          ],
         ),
       ),
     );
@@ -1649,31 +2927,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                         _startVoiceRecording();
                       },
                     ),
-                    // Game
+                    // Game — always goes through the challenge flow since
+                    // the media picker is only reachable when chat is unlocked
                     _buildMediaOption(
                       icon: Icons.sports_esports_rounded,
                       label: 'Game',
                       color: const Color(0xFF9D50BB),
                       onTap: () {
                         Navigator.pop(ctx);
-                        final partnerUserId =
-                            widget.otherProfile['id'] as String? ?? '';
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => GameHubScreen(
-                              matchId: widget.matchId,
-                              currentUserId: _currentUserId,
-                              partnerUserId: partnerUserId,
-                              partnerName: _otherName,
-                              onChatUnlocked: () {
-                                if (mounted) {
-                                  setState(() => _chatUnlocked = true);
-                                }
-                              },
-                            ),
-                          ),
-                        );
+                        _showInChatGamePicker();
                       },
                     ),
                   ],
@@ -1892,36 +3154,49 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 ),
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => _sendMessage(),
+                onChanged: (_) => _onTypingChanged(),
                 maxLines: 4,
                 minLines: 1,
               ),
             ),
           ),
           const SizedBox(width: 8),
-          GestureDetector(
-            onTap: _sendMessage,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _messageController,
+            builder: (_, value, __) {
+              final hasText = value.text.trim().isNotEmpty;
+              return GestureDetector(
+                onTap: hasText ? _sendMessage : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: hasText
+                        ? const LinearGradient(
+                            colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                          )
+                        : null,
+                    color: hasText ? null : const Color(0xFF2A2A2A),
+                    shape: BoxShape.circle,
+                    boxShadow: hasText
+                        ? [
+                            BoxShadow(
+                              color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : null,
                   ),
-                ],
-              ),
-              child: const Icon(
-                Icons.send_rounded,
-                color: Colors.white,
-                size: 22,
-              ),
-            ),
+                  child: Icon(
+                    Icons.send_rounded,
+                    color: hasText ? Colors.white : Colors.white24,
+                    size: 22,
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -1930,6 +3205,115 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
   // ── Locked bar (shown before game is completed) ────────────────────────────
   Widget _buildLockedBar() {
+    // While game status is still loading, show a soft loading state so
+    // users who already completed the game don't see a locked flash.
+    if (_gameStatusLoading) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0A0A0A),
+          border: Border(
+              top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(
+                color: Colors.white.withValues(alpha: 0.3),
+                strokeWidth: 1.5,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text('Checking game status…',
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.3),
+                    fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    // ── Option B: context-aware locked bar ────────────────────────────────────
+    final phase = _gameSnapshot?.phase ?? MatchGamePhase.setup;
+    final partnerUserId = widget.otherProfile['id'] as String? ?? '';
+
+    // Helper to push to the game hub
+    void goToGame() {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GameHubScreen(
+            matchId: widget.matchId,
+            currentUserId: _currentUserId,
+            partnerUserId: partnerUserId,
+            partnerName: _otherName,
+            onChatUnlocked: () {
+              if (mounted) setState(() => _chatUnlocked = true);
+            },
+          ),
+        ),
+      ).then((_) => _checkGameStatus());
+    }
+
+    // Phase-specific content
+    late final String statusText;
+    late final IconData statusIcon;
+    late final Color statusColor;
+    String? buttonLabel;
+    IconData? buttonIcon;
+    List<Color>? buttonColors;
+    VoidCallback? buttonAction;
+
+    switch (phase) {
+      case MatchGamePhase.setup:
+        // No Word Search game started — show a generic prompt covering RPS / any game
+        statusText   = _gameSnapshot == null
+            ? 'Play a game to unlock chat 🎮'
+            : 'Create a puzzle to start unlocking chat';
+        statusIcon   = _gameSnapshot == null
+            ? Icons.sports_esports_rounded
+            : Icons.extension_rounded;
+        statusColor  = const Color(0xFF6C3FE8);
+        buttonLabel  = _gameSnapshot == null ? 'Play a Game' : 'Create My Puzzle';
+        buttonIcon   = _gameSnapshot == null ? Icons.sports_esports_rounded : Icons.add_rounded;
+        buttonColors = const [Color(0xFF6C3FE8), Color(0xFF9D50BB)];
+        buttonAction = goToGame;
+        break;
+
+      case MatchGamePhase.waitingPartnerSetup:
+        statusText   = '${_otherName} hasn\'t created their puzzle yet 🧩';
+        statusIcon   = Icons.hourglass_top_rounded;
+        statusColor  = Colors.white.withValues(alpha: 0.4);
+        // No action button — just waiting
+        break;
+
+      case MatchGamePhase.solving:
+        statusText   = '${_otherName} made a puzzle for you — solve it to unlock chat! 🔐';
+        statusIcon   = Icons.search_rounded;
+        statusColor  = const Color(0xFFF59E0B);
+        buttonLabel  = 'Solve Now!';
+        buttonIcon   = Icons.play_arrow_rounded;
+        buttonColors = const [Color(0xFFD97706), Color(0xFFF59E0B)];
+        buttonAction = goToGame;
+        break;
+
+      case MatchGamePhase.waitingPartnerSolve:
+        statusText   = 'You solved it! ✅  Waiting for ${_otherName} to solve yours…';
+        statusIcon   = Icons.hourglass_empty_rounded;
+        statusColor  = const Color(0xFF22C55E);
+        // No action button — just waiting
+        break;
+
+      case MatchGamePhase.bothSolved:
+        // Should never reach here; chat unlocks instantly when bothSolved
+        statusText   = 'Chat unlocked!';
+        statusIcon   = Icons.lock_open_rounded;
+        statusColor  = const Color(0xFF22C55E);
+        break;
+    }
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       decoration: BoxDecoration(
@@ -1941,77 +3325,198 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Status row
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.lock_rounded,
-                  size: 14, color: Colors.white.withValues(alpha: 0.35)),
+              Icon(statusIcon, size: 14, color: statusColor),
               const SizedBox(width: 6),
-              Text(
-                'Play a word search to unlock chat',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontSize: 13,
+              Flexible(
+                child: Text(
+                  statusText,
+                  style: TextStyle(color: statusColor, fontSize: 13),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () {
-              final partnerUserId =
-                  widget.otherProfile['id'] as String? ?? '';
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => GameHubScreen(
-                    matchId: widget.matchId,
-                    currentUserId: _currentUserId,
-                    partnerUserId: partnerUserId,
-                    partnerName: _otherName,
-                    onChatUnlocked: () {
-                      if (mounted) setState(() => _chatUnlocked = true);
-                    },
+          // Action button (only when there's something to do)
+          if (buttonLabel != null && buttonAction != null) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: buttonAction,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: buttonColors ?? const [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
                   ),
-                ),
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
-                ),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.35),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.sports_esports_rounded,
-                      color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    'Play Word Search',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (buttonColors?.first ?? const Color(0xFF6C3FE8))
+                          .withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(buttonIcon ?? Icons.sports_esports_rounded,
+                        color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      buttonLabel!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+// ── Typing indicator bubble ───────────────────────────────────────────────────
+class _TypingBubble extends StatefulWidget {
+  const _TypingBubble();
+
+  @override
+  State<_TypingBubble> createState() => _TypingBubbleState();
+}
+
+class _TypingBubbleState extends State<_TypingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+              bottomLeft: Radius.circular(4),
+              bottomRight: Radius.circular(20),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(3, (i) {
+              final delay = i / 3;
+              final t = (_ctrl.value - delay).clamp(0.0, 1.0);
+              final opacity = 0.3 + 0.7 * (math.sin(t * 2 * math.pi) + 1) / 2;
+              return Container(
+                margin: EdgeInsets.only(right: i < 2 ? 4.0 : 0),
+                width: 7, height: 7,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: opacity),
+                  shape: BoxShape.circle,
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Shimmer placeholder (shown while messages are loading) ────────────────────
+class _ChatShimmer extends StatefulWidget {
+  const _ChatShimmer();
+
+  @override
+  State<_ChatShimmer> createState() => _ChatShimmerState();
+}
+
+class _ChatShimmerState extends State<_ChatShimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) {
+        final shimmerColor = Color.lerp(
+          const Color(0xFF1E1E1E),
+          const Color(0xFF333333),
+          _anim.value,
+        )!;
+        return ListView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: 8,
+          itemBuilder: (_, i) {
+            final isMe = i.isEven;
+            final width = 100.0 + (i % 3) * 60.0;
+            return Align(
+              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                width: width,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: shimmerColor,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(18),
+                    topRight: const Radius.circular(18),
+                    bottomLeft: Radius.circular(isMe ? 18 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 18),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

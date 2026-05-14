@@ -2,10 +2,9 @@
 //  Rock Paper Scissors – Waiting Screen
 // ─────────────────────────────────────────────────────────────
 
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/rps_models.dart';
-import '../data/rps_local_match_store.dart';
+import '../data/rps_supabase_service.dart';
 import '../rps_theme.dart';
 import '../widgets/rps_widgets.dart';
 import 'rps_reveal_screen.dart';
@@ -17,12 +16,18 @@ class RPSWaitingScreen extends StatefulWidget {
     required this.currentUserName,
     required this.opponentId,
     required this.opponentName,
+    required this.sessionId,
+    required this.myMove,
+    required this.onChatUnlocked,
   });
 
   final String currentUserId;
   final String currentUserName;
   final String opponentId;
   final String opponentName;
+  final String sessionId;
+  final RPSMove myMove;
+  final VoidCallback onChatUnlocked;
 
   @override
   State<RPSWaitingScreen> createState() => _RPSWaitingScreenState();
@@ -30,8 +35,8 @@ class RPSWaitingScreen extends StatefulWidget {
 
 class _RPSWaitingScreenState extends State<RPSWaitingScreen>
     with TickerProviderStateMixin {
-  final _store = RPSLocalMatchStore.instance;
-  Timer? _poll;
+  final _svc = RPSSupabaseService();
+  bool _opponentReady = false;
 
   late final AnimationController _rippleCtrl;
   late final AnimationController _floatCtrl;
@@ -59,44 +64,57 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
         vsync: this, duration: const Duration(milliseconds: 2400))
       ..repeat(reverse: true);
 
-    // Poll every 500 ms — in a real app replace with Supabase real-time
-    _poll = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (!mounted) return;
-      if (_store.bothSubmitted) {
-        _poll?.cancel();
-        _goReveal();
-      } else {
-        setState(() {});
+    // Primary: subscribe to rps_moves INSERT — fires when opponent submits
+    _svc.subscribeToMoves(
+      widget.sessionId,
+      widget.currentUserId,
+      (myMove, opponentMove, result) {
+        if (!mounted) return;
+        setState(() => _opponentReady = true);
+        _goReveal(myMove, opponentMove);
+      },
+    );
+
+    // Fallback: subscribe to game_sessions UPDATE — fires reliably even when
+    // the rps_moves RLS realtime event is blocked for User A.
+    _svc.subscribeToSession(widget.sessionId, (status) async {
+      if (status == 'completed' || status == 'auto_unlocked') {
+        if (!mounted || _opponentReady) return; // already handled by primary
+        final result = await _svc.fetchResult(widget.sessionId, widget.currentUserId);
+        if (result == null || !mounted) return;
+        setState(() => _opponentReady = true);
+        _goReveal(result.myMove!, result.opponentMove!);
       }
     });
   }
 
   @override
   void dispose() {
-    _poll?.cancel();
+    _svc.dispose();
     _rippleCtrl.dispose();
     _floatCtrl.dispose();
     _glowCtrl.dispose();
     super.dispose();
   }
 
-  void _goReveal() {
+  void _goReveal(RPSMove myMove, RPSMove opponentMove) {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => RPSRevealScreen(
-        currentUserId: widget.currentUserId,
+        currentUserId:   widget.currentUserId,
         currentUserName: widget.currentUserName,
-        opponentId: widget.opponentId,
-        opponentName: widget.opponentName,
+        opponentId:      widget.opponentId,
+        opponentName:    widget.opponentName,
+        myMove:          myMove,
+        opponentMove:    opponentMove,
+        onChatUnlocked:  widget.onChatUnlocked,
       ),
     ));
   }
 
-  bool get _opponentReady => _store.hasSubmitted(widget.opponentId);
-
   @override
   Widget build(BuildContext context) {
-    final myMove = _store.moveForPlayer(widget.currentUserId);
+    final myMove = widget.myMove;
 
     return Scaffold(
       backgroundColor: RPSTheme.bg,
@@ -111,13 +129,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     RPSNavBar(
-                      onBack: () {
-                        // Cancel the opponent-poll, reset game state,
-                        // then pop once to land back on GameHubScreen.
-                        _poll?.cancel();
-                        _store.reset();
-                        Navigator.pop(context);
-                      },
+                      onBack: () => Navigator.pop(context),
                     ),
 
                     const SizedBox(height: 48),

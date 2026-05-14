@@ -1,7 +1,8 @@
 // lib/games/game_hub_screen.dart
 
 import 'package:flutter/material.dart';
-import 'word_search/word_search_game_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'word_search/word_search_supabase_wrapper.dart';
 import 'rock_paper_scissors/screens/rps_intro_screen.dart';
 import 'emoji_charades/emoji_charades_game_screen.dart';
 
@@ -69,23 +70,36 @@ class GameHubScreen extends StatelessWidget {
           Expanded(child: ListView(children: [
             // ── Word Search (active) ──
             GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => WordSearchGameScreen(
-                  matchId:        matchId,
-                  currentUserId:  currentUserId,
-                  partnerUserId:  partnerUserId,
-                  partnerName:    partnerName,
-                  onChatUnlocked: () {
-                    // Pop exactly 2 routes: WordSearchGameScreen + GameHubScreen.
-                    // We must NOT use popUntil((r) => r.isFirst) because that
-                    // would also pop ChatConversationScreen, dumping the user on
-                    // the home screen instead of the now-unlocked chat.
-                    int _pops = 0;
-                    Navigator.of(context).popUntil((_) => _pops++ >= 2);
-                    onChatUnlocked(); // setState in ChatConversationScreen
-                  },
-                ),
-              )),
+              onTap: () async {
+                // Send a challenge notification to the partner before entering
+                // the game, so they see who challenged them and with what game.
+                try {
+                  await Supabase.instance.client
+                      .rpc('create_game_challenge', params: {
+                    'p_match_id':      matchId,
+                    'p_challenged_id': partnerUserId,
+                    'p_game_type':     'word_search',
+                    'p_is_initial':    true,
+                  });
+                } catch (_) {
+                  // Non-fatal — game continues even if the RPC fails
+                }
+                if (!context.mounted) return;
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => WordSearchSupabaseWrapper(
+                    matchId:        matchId,
+                    currentUserId:  currentUserId,
+                    partnerUserId:  partnerUserId,
+                    partnerName:    partnerName,
+                    onChatUnlocked: () {
+                      // Pop exactly 2 routes: WordSearchGameScreen + GameHubScreen.
+                      int _pops = 0;
+                      Navigator.of(context).popUntil((_) => _pops++ >= 2);
+                      onChatUnlocked();
+                    },
+                  ),
+                ));
+              },
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -133,14 +147,41 @@ class GameHubScreen extends StatelessWidget {
             const SizedBox(height: 12),
             // ── Rock Paper Scissors ──
             GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => RPSIntroScreen(
-                  currentUserId:   currentUserId,
-                  currentUserName: 'You',
-                  opponentId:      partnerUserId,
-                  opponentName:    partnerName,
-                ),
-              )),
+              onTap: () async {
+                // Create a game_session in Supabase and get the session id
+                // before navigating so both players share the same session.
+                try {
+                  final sessionId = await Supabase.instance.client
+                      .rpc('create_game_challenge', params: {
+                    'p_match_id':      matchId,
+                    'p_challenged_id': partnerUserId,
+                    'p_game_type':     'rps',
+                    'p_is_initial':    true,
+                  }) as String;
+
+                  if (!context.mounted) return;
+
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => RPSIntroScreen(
+                      currentUserId:   currentUserId,
+                      currentUserName: 'You',
+                      opponentId:      partnerUserId,
+                      opponentName:    partnerName,
+                      sessionId:       sessionId,
+                      onChatUnlocked: () {
+                        int pops = 0;
+                        Navigator.of(context).popUntil((_) => pops++ >= 2);
+                        onChatUnlocked();
+                      },
+                    ),
+                  ));
+                } catch (e) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Could not start game: $e')),
+                  );
+                }
+              },
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -186,19 +227,31 @@ class GameHubScreen extends StatelessWidget {
             const SizedBox(height: 12),
             // ── Emoji Charades ──
             GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => EmojiCharadesGameScreen(
-                  matchId:        matchId,
-                  currentUserId:  currentUserId,
-                  partnerUserId:  partnerUserId,
-                  partnerName:    partnerName,
-                  onChatUnlocked: () {
-                    int pops = 0;
-                    Navigator.of(context).popUntil((_) => pops++ >= 2);
-                    onChatUnlocked();
-                  },
-                ),
-              )),
+              onTap: () async {
+                try {
+                  await Supabase.instance.client
+                      .rpc('create_game_challenge', params: {
+                    'p_match_id':      matchId,
+                    'p_challenged_id': partnerUserId,
+                    'p_game_type':     'emoji_charades',
+                    'p_is_initial':    true,
+                  });
+                } catch (_) {}
+                if (!context.mounted) return;
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => EmojiCharadesGameScreen(
+                    matchId:        matchId,
+                    currentUserId:  currentUserId,
+                    partnerUserId:  partnerUserId,
+                    partnerName:    partnerName,
+                    onChatUnlocked: () {
+                      int pops = 0;
+                      Navigator.of(context).popUntil((_) => pops++ >= 2);
+                      onChatUnlocked();
+                    },
+                  ),
+                ));
+              },
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(

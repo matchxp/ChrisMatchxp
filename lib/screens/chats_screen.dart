@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/matching_service.dart';
+import '../games/word_search/word_search_service.dart';
+import '../games/word_search/word_search_models.dart';
 import 'chat_conversation_screen.dart';
+import 'game_status_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
@@ -17,6 +20,7 @@ class ChatsScreen extends StatefulWidget {
 class _ChatsScreenState extends State<ChatsScreen>
     with TickerProviderStateMixin {
   final MatchingService _matchingService = MatchingService();
+  final WordSearchService _wordSearchService = WordSearchService();
   final String _currentUserId =
       Supabase.instance.client.auth.currentUser?.id ?? '';
 
@@ -28,12 +32,14 @@ class _ChatsScreenState extends State<ChatsScreen>
   bool _showMatchPopup = false;
   Map<String, dynamic>? _selectedMatch;
 
-  // Each item: { match_id, profile, last_message }
+  // Each item: { match_id, profile, last_message, unread_count, game_phase }
   List<Map<String, dynamic>> _matchesWithProfiles = [];
   bool _loading = true;
 
+  // ── Current user's own profile photo (for match popup) ────────────────────
+  String _myPhoto = '';
+
   // ── Online presence ────────────────────────────────────────────────────────
-  // A simple in-memory set; in production you'd subscribe to a presence channel.
   final Set<String> _onlineUserIds = {};
 
   @override
@@ -44,7 +50,7 @@ class _ChatsScreenState extends State<ChatsScreen>
       vsync: this,
     );
     _loadMatches();
-    // Listen for new messages arriving from other screens (e.g. MainNavigation)
+    _loadMyPhoto();
     ChatsScreen.refreshNotifier.addListener(_onExternalRefresh);
     _searchController.addListener(_onSearchChanged);
   }
@@ -65,48 +71,109 @@ class _ChatsScreenState extends State<ChatsScreen>
     setState(() => _searchQuery = _searchController.text.toLowerCase().trim());
   }
 
+  Future<void> _loadMyPhoto() async {
+    try {
+      final row = await Supabase.instance.client
+          .from('profiles')
+          .select('photos')
+          .eq('id', _currentUserId)
+          .maybeSingle();
+      final photos = row?['photos'];
+      if (photos is List && photos.isNotEmpty && mounted) {
+        setState(() => _myPhoto = photos[0] as String);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadMatches() async {
     final matches = await _matchingService.getMatchesWithProfiles();
 
-    // For each match fetch the last message + unread count in parallel
+    // For each match fetch last message + unread count + game phase in parallel
     final enriched = await Future.wait(matches.map((m) async {
-      final last = await _matchingService.getLastMessage(m['match_id'] as String);
-      // Fetch unread count — try; fall back to 0 if not implemented yet
+      final matchId = m['match_id'] as String;
+      final last = await _matchingService.getLastMessage(matchId);
+
+      // Fetch unread count
       int unreadCount = 0;
       try {
         final rows = await Supabase.instance.client
             .from('messages')
             .select('id')
-            .eq('match_id', m['match_id'] as String)
+            .eq('match_id', matchId)
             .neq('sender_id', _currentUserId)
             .eq('is_read', false);
         unreadCount = (rows as List).length;
       } catch (_) {}
-      return {...m, 'last_message': last, 'unread_count': unreadCount};
+
+      // Fetch game phase — checks Word Search first, then Emoji Charades
+      MatchGamePhase? gamePhase;
+      try {
+        final snap = await _wordSearchService.getSnapshot(
+          matchId: matchId,
+          myUserId: _currentUserId,
+        );
+        gamePhase = snap.phase;
+      } catch (_) {}
+
+      // If word search not completed, also check Emoji Charades
+      if (gamePhase != MatchGamePhase.bothSolved) {
+        try {
+          final ecRows = await Supabase.instance.client
+              .from('emoji_charades_games')
+              .select('solved')
+              .eq('match_id', matchId);
+          final ecList = List<Map<String, dynamic>>.from(ecRows as List);
+          if (ecList.length >= 2 && ecList.every((r) => r['solved'] == true)) {
+            gamePhase = MatchGamePhase.bothSolved;
+          } else if (ecList.isNotEmpty && gamePhase == null) {
+            gamePhase = MatchGamePhase.solving;
+          }
+        } catch (_) {}
+      }
+
+      return {
+        ...m,
+        'last_message': last,
+        'unread_count': unreadCount,
+        'game_phase': gamePhase,
+      };
     }));
 
-    // Fetch online presence via last_seen column (if available)
+    // Fetch online presence via last_seen
     final Set<String> online = {};
-    for (final m in enriched) {
-      final profile = m['profile'] as Map<String, dynamic>;
-      final userId = profile['id'] as String?;
-      if (userId == null) continue;
+    final userIds = enriched
+        .map((m) => (m['profile'] as Map<String, dynamic>)['id'] as String?)
+        .whereType<String>()
+        .toList();
+    if (userIds.isNotEmpty) {
       try {
-        final row = await Supabase.instance.client
+        final rows = await Supabase.instance.client
             .from('profiles')
-            .select('last_seen')
-            .eq('id', userId)
-            .maybeSingle();
-        final raw = row?['last_seen'] as String?;
-        if (raw != null) {
-          final dt = DateTime.tryParse(raw);
-          if (dt != null &&
-              DateTime.now().difference(dt.toLocal()).inMinutes < 5) {
-            online.add(userId);
+            .select('id, last_seen')
+            .inFilter('id', userIds);
+        final cutoff = DateTime.now().subtract(const Duration(minutes: 5));
+        for (final row in rows as List) {
+          final raw = row['last_seen'] as String?;
+          if (raw == null) continue;
+          final dt = DateTime.tryParse(raw)?.toLocal();
+          if (dt != null && dt.isAfter(cutoff)) {
+            online.add(row['id'] as String);
           }
         }
       } catch (_) {}
     }
+
+    // Sort: most recent message first
+    enriched.sort((a, b) {
+      final aMsg = a['last_message'] as Map<String, dynamic>?;
+      final bMsg = b['last_message'] as Map<String, dynamic>?;
+      if (aMsg == null && bMsg == null) return 0;
+      if (aMsg == null) return 1;
+      if (bMsg == null) return -1;
+      final aTime = DateTime.tryParse(aMsg['created_at'] as String? ?? '') ?? DateTime(0);
+      final bTime = DateTime.tryParse(bMsg['created_at'] as String? ?? '') ?? DateTime(0);
+      return bTime.compareTo(aTime);
+    });
 
     if (!mounted) return;
     setState(() {
@@ -144,7 +211,7 @@ class _ChatsScreenState extends State<ChatsScreen>
           otherProfile: match['profile'] as Map<String, dynamic>,
         ),
       ),
-    ).then((_) => _loadMatches()); // refresh on return
+    ).then((_) => _loadMatches());
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -159,8 +226,29 @@ class _ChatsScreenState extends State<ChatsScreen>
       profile['first_name'] as String? ?? 'Match';
 
   String _lastMessagePreview(Map<String, dynamic>? lastMsg) {
-    if (lastMsg == null) return 'Say hello 👋';
-    return lastMsg['content'] as String? ?? '';
+    if (lastMsg == null) return 'Say hello \u{1F44B}';
+
+    // ── Structured message types (new) ────────────────────────────────────────
+    final msgType = lastMsg['message_type'] as String? ?? 'text';
+    if (msgType == 'game_challenge') {
+      final meta     = (lastMsg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+      final gameType = meta['game_type'] as String? ?? 'rps';
+      final label    = switch (gameType) {
+        'word_search'    => 'Word Search',
+        'emoji_charades' => 'Emoji Charades',
+        _                => 'Rock Paper Scissors',
+      };
+      return '\u{1F3AE} $label challenge';
+    }
+    if (msgType == 'game_result') return '\u{1F3C6} Game finished';
+
+    // ── Legacy content-prefix checks ─────────────────────────────────────────
+    final content = lastMsg['content'] as String? ?? '';
+    if (content.startsWith('[image]'))        return '\u{1F4F7} Photo';
+    if (content.startsWith('[video]'))        return '\u{1F3A5} Video';
+    if (content.startsWith('[voice]'))        return '\u{1F3A4} Voice message';
+    if (content.startsWith('[GAME_REQUEST]')) return '\u{1F3AE} Game challenge';
+    return content;
   }
 
   String _lastMessageTime(Map<String, dynamic>? lastMsg) {
@@ -177,7 +265,6 @@ class _ChatsScreenState extends State<ChatsScreen>
     return '${diff.inDays}d';
   }
 
-  /// Filtered list based on current search query
   List<Map<String, dynamic>> get _filtered {
     if (_searchQuery.isEmpty) return _matchesWithProfiles;
     return _matchesWithProfiles.where((m) {
@@ -188,6 +275,40 @@ class _ChatsScreenState extends State<ChatsScreen>
           .toLowerCase();
       return name.contains(_searchQuery) || preview.contains(_searchQuery);
     }).toList();
+  }
+
+  // ── Game phase helpers ─────────────────────────────────────────────────────
+
+  String _matchSection(Map<String, dynamic> match) {
+    final phase = match['game_phase'] as MatchGamePhase?;
+    if (phase == MatchGamePhase.bothSolved) return 'unlocked';
+    if (phase == null || phase == MatchGamePhase.setup) return 'locked';
+    return 'inProgress';
+  }
+
+  String? _gameBadgeLabel(Map<String, dynamic> match) {
+    final phase = match['game_phase'] as MatchGamePhase?;
+    switch (phase) {
+      case MatchGamePhase.setup:
+        return 'LOCKED';
+      case MatchGamePhase.waitingPartnerSetup:
+      case MatchGamePhase.waitingPartnerSolve:
+        return 'WAITING';
+      case MatchGamePhase.solving:
+        return 'SOLVING';
+      case MatchGamePhase.bothSolved:
+        return null;
+      case null:
+        return 'LOCKED';
+    }
+  }
+
+  Color _gameBadgeColor(String label) {
+    switch (label) {
+      case 'SOLVING':  return const Color(0xFFF59E0B);
+      case 'WAITING':  return const Color(0xFF6C3FE8);
+      default:         return const Color(0xFF6B7280);
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -263,24 +384,41 @@ class _ChatsScreenState extends State<ChatsScreen>
               ),
             ],
           ),
-          GestureDetector(
-            onTap: _loadMatches,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(10),
+          Row(
+            children: [
+              // ── Game status notification button ───────────────────────
+              GestureDetector(
+                onTap: _showGameStatusPage,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.sports_esports_rounded,
+                      color: Color(0xFF6C3FE8), size: 20),
+                ),
               ),
-              child: const Icon(Icons.refresh,
-                  color: Color(0xFF6C3FE8), size: 20),
-            ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _loadMatches,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.refresh,
+                      color: Color(0xFF6C3FE8), size: 20),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // ── Functional search bar ──────────────────────────────────────────────────
   Widget _buildSearchBar() {
     return Container(
       margin: const EdgeInsets.fromLTRB(24, 0, 24, 12),
@@ -367,9 +505,7 @@ class _ChatsScreenState extends State<ChatsScreen>
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
           itemCount: list.length,
-          itemBuilder: (context, index) {
-            return _buildMatchAvatar(list[index]);
-          },
+          itemBuilder: (context, index) => _buildMatchAvatar(list[index]),
         ),
       ),
     );
@@ -423,7 +559,6 @@ class _ChatsScreenState extends State<ChatsScreen>
                     ),
                   ),
                 ),
-                // Online dot on carousel avatar
                 if (isOnline)
                   Positioned(
                     bottom: 2,
@@ -528,9 +663,7 @@ class _ChatsScreenState extends State<ChatsScreen>
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: list.length,
-                itemBuilder: (context, index) {
-                  return _buildChatItem(list[index]);
-                },
+                itemBuilder: (context, index) => _buildChatItem(list[index]),
               ),
             ),
         ],
@@ -538,14 +671,15 @@ class _ChatsScreenState extends State<ChatsScreen>
     );
   }
 
-  /// True when the last message was sent by the other person and not yet read
   bool _isUnread(Map<String, dynamic>? lastMsg) {
     if (lastMsg == null) return false;
     final senderId = lastMsg['sender_id'] as String?;
     final isRead = lastMsg['is_read'];
+    // FIX BUG-02: use != true so that null is_read (field absent from DB row)
+    // is correctly treated as unread, not silently skipped as read.
     return senderId != null &&
         senderId != _currentUserId &&
-        isRead == false;
+        isRead != true;
   }
 
   Widget _buildChatItem(Map<String, dynamic> match) {
@@ -567,7 +701,7 @@ class _ChatsScreenState extends State<ChatsScreen>
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: unread
-              ? const Color(0xFF1F1A2E) // subtle purple tint when unread
+              ? const Color(0xFF1F1A2E)
               : const Color(0xFF1A1A1A),
           borderRadius: BorderRadius.circular(16),
           border: unread
@@ -616,19 +750,53 @@ class _ChatsScreenState extends State<ChatsScreen>
               ],
             ),
             const SizedBox(width: 12),
-            // Name + preview
+            // ── Name + badge + preview ──────────────────────────────────
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight:
-                          unread ? FontWeight.w800 : FontWeight.w700,
-                      color: Colors.white,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight:
+                                unread ? FontWeight.w800 : FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // ── Game status pill ─────────────────────────────
+                      Builder(builder: (_) {
+                        final badgeLabel = _gameBadgeLabel(match);
+                        if (badgeLabel == null) return const SizedBox.shrink();
+                        final badgeColor = _gameBadgeColor(badgeLabel);
+                        return Container(
+                          margin: const EdgeInsets.only(left: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: badgeColor.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: badgeColor.withValues(alpha: 0.5),
+                                width: 0.8),
+                          ),
+                          child: Text(
+                            badgeLabel,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: badgeColor,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -647,7 +815,7 @@ class _ChatsScreenState extends State<ChatsScreen>
                 ],
               ),
             ),
-            // Time + unread count badge
+            // ── Time + unread badge ─────────────────────────────────────
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -664,10 +832,9 @@ class _ChatsScreenState extends State<ChatsScreen>
                 ),
                 if (unread && unreadCount > 0) ...[
                   const SizedBox(height: 6),
-                  // ── Numbered badge ─────────────────────────────────
                   Container(
-                    constraints: const BoxConstraints(
-                        minWidth: 20, minHeight: 20),
+                    constraints:
+                        const BoxConstraints(minWidth: 20, minHeight: 20),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -687,7 +854,6 @@ class _ChatsScreenState extends State<ChatsScreen>
                     ),
                   ),
                 ] else if (unread) ...[
-                  // Fallback dot if count fetch failed but still unread
                   const SizedBox(height: 6),
                   Container(
                     width: 12,
@@ -708,6 +874,21 @@ class _ChatsScreenState extends State<ChatsScreen>
     );
   }
 
+  // ── Game status page ────────────────────────────────────────────────────────
+  void _showGameStatusPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameStatusScreen(
+          matches: _matchesWithProfiles,
+          currentUserId: _currentUserId,
+          onOpenMatch: _openConversation,
+        ),
+      ),
+    );
+  }
+
+  // ── Match popup ─────────────────────────────────────────────────────────────
   Widget _buildMatchPopup() {
     final profile = _selectedMatch!['profile'] as Map<String, dynamic>;
     final photo = _profilePhoto(profile);
@@ -779,7 +960,8 @@ class _ChatsScreenState extends State<ChatsScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            _popupAvatar(null, const Color(0xFF6C3FE8)),
+                            _popupAvatar(_myPhoto.isNotEmpty ? _myPhoto : null,
+                                const Color(0xFF6C3FE8)),
                             const SizedBox(width: 40),
                             _popupAvatar(photo, const Color(0xFFFF6B8A)),
                           ],
@@ -788,7 +970,10 @@ class _ChatsScreenState extends State<ChatsScreen>
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF6C3FE8), Color(0xFFFF6B8A)],
+                              colors: [
+                                Color(0xFF6C3FE8),
+                                Color(0xFFFF6B8A)
+                              ],
                             ),
                             shape: BoxShape.circle,
                             boxShadow: [

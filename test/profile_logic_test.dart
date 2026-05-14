@@ -14,11 +14,13 @@ import 'package:flutter_test/flutter_test.dart';
 // ── Logic under test (copied verbatim from profile_screen.dart) ─────────────
 // =============================================================================
 
-/// Mirrors ProfileScreen._calcCompletion
+/// Mirrors ProfileScreen._calcCompletion (fixed — BUG-03 resolved)
 double calcCompletion(Map<String, dynamic> p) {
   int done = 0;
-  if ((p['first_name'] as String?)?.isNotEmpty == true) done++;
-  if ((p['gender'] as String?)?.isNotEmpty == true) done++;
+  // FIX BUG-03: trim() before isNotEmpty so whitespace-only names don't
+  // falsely count as a completed step.
+  if ((p['first_name'] as String?)?.trim().isNotEmpty == true) done++;
+  if ((p['gender'] as String?)?.trim().isNotEmpty == true) done++;
   if (p['birthday'] != null) done++;
   if (p['height_cm'] != null) done++;
   if ((p['location'] as String?)?.isNotEmpty == true) done++;
@@ -38,11 +40,13 @@ String displayName(Map<String, dynamic> p) {
   return n.isNotEmpty ? n : 'Your Name';
 }
 
-/// Mirrors the missing-step count logic inside ProfileScreen._missingSteps
+/// Mirrors ProfileScreen._missingSteps count logic (fixed — BUG-03 resolved)
 int countMissingSteps(Map<String, dynamic> p) {
   int missing = 0;
-  if ((p['first_name'] as String?)?.isEmpty != false) missing++;
-  if ((p['gender'] as String?)?.isEmpty != false) missing++;
+  // FIX BUG-03 (mirror of calcCompletion): trim() so whitespace-only strings
+  // are treated the same as empty/null.
+  if ((p['first_name'] as String?)?.trim().isEmpty != false) missing++;
+  if ((p['gender'] as String?)?.trim().isEmpty != false) missing++;
   if (p['birthday'] == null) missing++;
   if (p['height_cm'] == null) missing++;
   if ((p['location'] as String?)?.isEmpty != false) missing++;
@@ -193,11 +197,11 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // TC-16: BUG-03 — whitespace-only first_name incorrectly satisfies name step
+  // TC-16: BUG-03 FIXED — whitespace-only first_name no longer satisfies step
   // ---------------------------------------------------------------------------
   test(
-      'TC-16 · calcCompletion should NOT count whitespace-only first_name as '
-      'done (BUG-03)', () {
+      'TC-16 · calcCompletion does NOT count whitespace-only first_name as '
+      'done (BUG-03 fixed)', () {
     final profile = <String, dynamic>{
       'first_name': '   ', // ← three spaces — not a real name
       'gender': 'male',
@@ -214,8 +218,30 @@ void main() {
       ],
     };
 
-    // Expected (correct): 7/8 — whitespace name should NOT count
-    // Actual: 8/8 — .isNotEmpty is true for '   '  → BUG-03
-    expect(calcCompletion(profile), equals(7 / 8)); // ← this FAILS (BUG-03)
+    // With trim().isNotEmpty, '   ' no longer counts → 7/8.
+    expect(calcCompletion(profile), equals(7 / 8));
+  });
+
+  // ---------------------------------------------------------------------------
+  // TC-17: BUG-03 FIXED — countMissingSteps also rejects whitespace-only name
+  // ---------------------------------------------------------------------------
+  test(
+      'TC-17 · countMissingSteps marks name step missing for whitespace-only '
+      'first_name (BUG-03 fixed)', () {
+    final profile = <String, dynamic>{
+      'first_name': '   ',
+      'gender': null,
+      'birthday': null,
+      'height_cm': null,
+      'location': null,
+      'drinking_habit': null,
+      'smoking_habit': null,
+      'workout_habit': null,
+      'interests': [],
+      'photos': [],
+    };
+
+    // Both name step AND gender step are missing → 8 missing total.
+    expect(countMissingSteps(profile), equals(8));
   });
 }

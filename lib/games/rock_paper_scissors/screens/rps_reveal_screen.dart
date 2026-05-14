@@ -6,7 +6,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/rps_models.dart';
-import '../data/rps_local_match_store.dart';
 import '../rps_theme.dart';
 import '../widgets/rps_widgets.dart';
 import 'rps_result_screen.dart';
@@ -18,12 +17,18 @@ class RPSRevealScreen extends StatefulWidget {
     required this.currentUserName,
     required this.opponentId,
     required this.opponentName,
+    required this.myMove,
+    required this.opponentMove,
+    required this.onChatUnlocked,
   });
 
   final String currentUserId;
   final String currentUserName;
   final String opponentId;
   final String opponentName;
+  final RPSMove myMove;
+  final RPSMove opponentMove;
+  final VoidCallback onChatUnlocked;
 
   @override
   State<RPSRevealScreen> createState() => _RPSRevealScreenState();
@@ -31,7 +36,6 @@ class RPSRevealScreen extends StatefulWidget {
 
 class _RPSRevealScreenState extends State<RPSRevealScreen>
     with TickerProviderStateMixin {
-  final _store = RPSLocalMatchStore.instance;
 
   int _count = 3;
   bool _showReveal = false;
@@ -91,12 +95,17 @@ class _RPSRevealScreenState extends State<RPSRevealScreen>
 
   void _goResult() {
     if (!mounted) return;
+    final result = computeResult(widget.myMove, widget.opponentMove);
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => RPSResultScreen(
-        currentUserId: widget.currentUserId,
+        currentUserId:   widget.currentUserId,
         currentUserName: widget.currentUserName,
-        opponentId: widget.opponentId,
-        opponentName: widget.opponentName,
+        opponentId:      widget.opponentId,
+        opponentName:    widget.opponentName,
+        myMove:          widget.myMove,
+        opponentMove:    widget.opponentMove,
+        result:          result,
+        onChatUnlocked:  widget.onChatUnlocked,
       ),
     ));
   }
@@ -116,11 +125,7 @@ class _RPSRevealScreenState extends State<RPSRevealScreen>
                   children: [
                     RPSNavBar(
                       onBack: () {
-                        // Cancel the countdown, clean up state, go back
-                        // to GameHubScreen (one pop since pushReplacement
-                        // is used throughout the RPS flow).
                         _cdTimer?.cancel();
-                        _store.reset();
                         Navigator.pop(context);
                       },
                     ),
@@ -223,8 +228,8 @@ class _RPSRevealScreenState extends State<RPSRevealScreen>
   }
 
   Widget _buildReveal() {
-    final myMove = _store.moveForPlayer(widget.currentUserId);
-    final oppMove = _store.opponentMoveForPlayer(widget.currentUserId);
+    final myMove = widget.myMove;
+    final oppMove = widget.opponentMove;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,

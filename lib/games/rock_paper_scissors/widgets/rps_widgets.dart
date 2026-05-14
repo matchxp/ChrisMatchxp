@@ -141,11 +141,14 @@ class _RPSMoveCardState extends State<RPSMoveCard>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: widget.animDuration);
-    _float = Tween<double>(begin: 0, end: -12).animate(
+    // All cards use the same 2s duration — identical to Word Search's
+    // _floatCtrl. Staggering is done via animDelay so they stay out of
+    // phase without drifting apart over time.
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2000));
+    _float = Tween<double>(begin: 0, end: 1).animate(
         CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
 
-    // Start repeat only AFTER the delay so cards float out of phase
     Future.delayed(widget.animDelay, () {
       if (mounted) _ctrl.repeat(reverse: true);
     });
@@ -169,9 +172,7 @@ class _RPSMoveCardState extends State<RPSMoveCard>
           builder: (_, child) => Transform.translate(
             offset: widget.isSelected
                 ? Offset.zero
-                // Round to whole pixels — bitmap emojis blur when
-                // they get sub-pixel-positioned by Transform.translate.
-                : Offset(0, _float.value.roundToDouble()),
+                : Offset(0, _float.value * -18),
             child: child,
           ),
           child: Column(

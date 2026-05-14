@@ -306,16 +306,23 @@ class MatchingService {
 
   /// Send a message — broadcasts instantly over WebSocket for real-time delivery,
   /// then persists to DB in the background for message history.
-  Future<bool> sendMessage(String matchId, String content) async {
+  Future<bool> sendMessage(
+    String matchId,
+    String content, {
+    String? replyToContent,
+    String? replyToSender,
+  }) async {
     try {
       final currentUserId = _supabase.auth.currentUser?.id;
       if (currentUserId == null) return false;
 
-      final payload = {
+      final payload = <String, dynamic>{
         'match_id': matchId,
         'sender_id': currentUserId,
         'content': content,
         'created_at': DateTime.now().toUtc().toIso8601String(),
+        if (replyToContent != null) 'reply_to_content': replyToContent,
+        if (replyToSender  != null) 'reply_to_sender':  replyToSender,
       };
 
       // 1️⃣ Broadcast instantly over WebSocket (~50ms) so the other person
@@ -325,12 +332,16 @@ class MatchingService {
         channel.sendBroadcastMessage(event: 'msg', payload: payload);
       }
 
-      // 2️⃣ Persist to DB in the background (don't await — keeps UI snappy)
-      _supabase.from('messages').insert({
+      // 2️⃣ Persist to DB (including reply metadata)
+      final dbRow = <String, dynamic>{
         'match_id': matchId,
         'sender_id': currentUserId,
         'content': content,
-      }).catchError((e) => debugPrint('❌ DB persist error: $e'));
+        if (replyToContent != null) 'reply_to_content': replyToContent,
+        if (replyToSender  != null) 'reply_to_sender':  replyToSender,
+      };
+      _supabase.from('messages').insert(dbRow)
+          .catchError((e) => debugPrint('❌ DB persist error: $e'));
 
       return true;
     } catch (e) {
@@ -398,6 +409,12 @@ class MatchingService {
         });
   }
 
+  /// Broadcast a typing event on the chat channel (best-effort, no-op if not connected).
+  void sendTypingEvent(String matchId) {
+    _chatChannels[matchId]
+        ?.sendBroadcastMessage(event: 'typing', payload: {});
+  }
+
   /// Subscribe to new messages using Supabase Broadcast (WebSocket, ~50ms latency).
   /// Falls back to postgres_changes as a safety net for messages missed during
   /// a brief disconnect. Also listens for UPDATE events (read receipts).
@@ -405,6 +422,7 @@ class MatchingService {
       String matchId,
       void Function(Map<String, dynamic>) onMessage, {
       void Function(Map<String, dynamic>)? onUpdate,
+      void Function()? onTyping,
   }) {
     late RealtimeChannel channel;
 
@@ -416,6 +434,11 @@ class MatchingService {
           callback: (payload) {
             onMessage(Map<String, dynamic>.from(payload));
           },
+        )
+        // Typing indicator
+        .onBroadcast(
+          event: 'typing',
+          callback: (_) { if (onTyping != null) onTyping(); },
         )
         // Fallback: postgres_changes INSERT — catches messages if broadcast missed
         .onPostgresChanges(

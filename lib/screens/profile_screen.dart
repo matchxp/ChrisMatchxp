@@ -50,8 +50,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   double _calcCompletion(Map<String, dynamic> p) {
     int done = 0;
-    if ((p['first_name'] as String?)?.isNotEmpty == true) done++;
-    if ((p['gender']     as String?)?.isNotEmpty == true) done++;
+    // FIX BUG-03: trim() before isNotEmpty so whitespace-only strings don't
+    // falsely count as a completed step.
+    if ((p['first_name'] as String?)?.trim().isNotEmpty == true) done++;
+    if ((p['gender']     as String?)?.trim().isNotEmpty == true) done++;
     if (p['birthday']   != null) done++;
     if (p['height_cm']  != null) done++;
     if ((p['location']  as String?)?.isNotEmpty == true) done++;
@@ -336,7 +338,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<_CompletionStep> _missingSteps(Map<String, dynamic> p) {
     final steps = <_CompletionStep>[];
 
-    if ((p['first_name'] as String?)?.isEmpty != false)
+    // FIX BUG-03 (mirror of _calcCompletion): trim() so whitespace-only
+    // strings are treated the same as empty/null and the step stays visible.
+    if ((p['first_name'] as String?)?.trim().isEmpty != false)
       steps.add(_CompletionStep(
         label: 'Add your name',
         icon: Icons.person_outline_rounded,
@@ -345,7 +349,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             MaterialPageRoute(builder: (_) => const ProfileDetailsScreen())),
       ));
 
-    if ((p['gender'] as String?)?.isEmpty != false)
+    if ((p['gender'] as String?)?.trim().isEmpty != false)
       steps.add(_CompletionStep(
         label: 'Select your gender',
         icon: Icons.wc_rounded,

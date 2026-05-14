@@ -1,13 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-//  Rock Paper Scissors – Pick Move Screen
+//  Rock Paper Scissors – Pick Move Screen (online)
 // ─────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
 import '../data/rps_models.dart';
-import '../data/rps_local_match_store.dart';
+import '../data/rps_supabase_service.dart';
 import '../rps_theme.dart';
 import '../widgets/rps_widgets.dart';
 import 'rps_waiting_screen.dart';
+import 'rps_reveal_screen.dart';
 
 class RPSPickScreen extends StatefulWidget {
   const RPSPickScreen({
@@ -16,12 +17,16 @@ class RPSPickScreen extends StatefulWidget {
     required this.currentUserName,
     required this.opponentId,
     required this.opponentName,
+    required this.sessionId,
+    required this.onChatUnlocked,
   });
 
   final String currentUserId;
   final String currentUserName;
   final String opponentId;
   final String opponentName;
+  final String sessionId;
+  final VoidCallback onChatUnlocked;
 
   @override
   State<RPSPickScreen> createState() => _RPSPickScreenState();
@@ -33,21 +38,11 @@ class _RPSPickScreenState extends State<RPSPickScreen>
   bool _submitting = false;
   late final AnimationController _glowCtrl;
 
-  final _store = RPSLocalMatchStore.instance;
+  final _svc = RPSSupabaseService();
 
   @override
   void initState() {
     super.initState();
-    if (_store.moveForPlayer(widget.currentUserId) == null &&
-        !_store.bothSubmitted) {
-      _store.initGame(
-        player1Id: widget.currentUserId,
-        player2Id: widget.opponentId,
-        player1Name: widget.currentUserName,
-        player2Name: widget.opponentName,
-      );
-    }
-
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2400))
       ..repeat(reverse: true);
@@ -56,23 +51,52 @@ class _RPSPickScreenState extends State<RPSPickScreen>
   @override
   void dispose() {
     _glowCtrl.dispose();
+    _svc.dispose();
     super.dispose();
   }
 
   Future<void> _lockIn() async {
     if (_selected == null || _submitting) return;
     setState(() => _submitting = true);
-    _store.submitMove(widget.currentUserId, _selected!);
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(
-      builder: (_) => RPSWaitingScreen(
-        currentUserId: widget.currentUserId,
-        currentUserName: widget.currentUserName,
-        opponentId: widget.opponentId,
-        opponentName: widget.opponentName,
-      ),
-    ));
+
+    try {
+      final result = await _svc.submitMove(widget.sessionId, _selected!);
+      if (!mounted) return;
+
+      if (result.waiting) {
+        // Opponent hasn't submitted yet — go to waiting screen
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => RPSWaitingScreen(
+            currentUserId:   widget.currentUserId,
+            currentUserName: widget.currentUserName,
+            opponentId:      widget.opponentId,
+            opponentName:    widget.opponentName,
+            sessionId:       widget.sessionId,
+            myMove:          _selected!,
+            onChatUnlocked:  widget.onChatUnlocked,
+          ),
+        ));
+      } else {
+        // Both submitted at the same moment — skip waiting, go to reveal
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => RPSRevealScreen(
+            currentUserId:   widget.currentUserId,
+            currentUserName: widget.currentUserName,
+            opponentId:      widget.opponentId,
+            opponentName:    widget.opponentName,
+            myMove:          result.myMove!,
+            opponentMove:    result.opponentMove!,
+            onChatUnlocked:  widget.onChatUnlocked,
+          ),
+        ));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to submit: $e')),
+      );
+    }
   }
 
   @override
@@ -90,13 +114,7 @@ class _RPSPickScreenState extends State<RPSPickScreen>
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     RPSNavBar(
-                      onBack: () {
-                        // Reset any partial move state, then go back to
-                        // the Games hub (GameHubScreen is one pop away
-                        // because all RPS screens use pushReplacement).
-                        _store.reset();
-                        Navigator.pop(context);
-                      },
+                      onBack: () => Navigator.pop(context),
                     ),
 
                     const SizedBox(height: 36),
@@ -139,8 +157,6 @@ class _RPSPickScreenState extends State<RPSPickScreen>
                               onTap: () =>
                                   setState(() => _selected = RPSMove.rock),
                               animDelay: Duration.zero,
-                              animDuration:
-                                  const Duration(milliseconds: 2800),
                             ),
                             const SizedBox(width: 24),
                             RPSMoveCard(
@@ -149,10 +165,7 @@ class _RPSPickScreenState extends State<RPSPickScreen>
                               isSelected: _selected == RPSMove.paper,
                               onTap: () =>
                                   setState(() => _selected = RPSMove.paper),
-                              animDelay:
-                                  const Duration(milliseconds: 400),
-                              animDuration:
-                                  const Duration(milliseconds: 3200),
+                              animDelay: const Duration(milliseconds: 600),
                             ),
                             const SizedBox(width: 24),
                             RPSMoveCard(
@@ -161,10 +174,7 @@ class _RPSPickScreenState extends State<RPSPickScreen>
                               isSelected: _selected == RPSMove.scissors,
                               onTap: () =>
                                   setState(() => _selected = RPSMove.scissors),
-                              animDelay:
-                                  const Duration(milliseconds: 200),
-                              animDuration:
-                                  const Duration(milliseconds: 2600),
+                              animDelay: const Duration(milliseconds: 1200),
                             ),
                           ],
                         ),

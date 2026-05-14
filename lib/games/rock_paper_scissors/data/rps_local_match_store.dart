@@ -5,11 +5,21 @@
 //  when wiring online multiplayer.
 // ─────────────────────────────────────────────────────────────
 
+import 'package:flutter/foundation.dart';
 import 'rps_models.dart';
 
 class RPSLocalMatchStore {
   RPSLocalMatchStore._();
   static final RPSLocalMatchStore instance = RPSLocalMatchStore._();
+
+  // ── Match context (set by GameHubScreen before launching RPS) ───────────
+  // matchId is needed by RPSResultScreen to record scores.
+  String? matchId;
+
+  // ── Chat unlock callback ─────────────────────────────────
+  // Set by GameHubScreen before launching RPS; called once from
+  // RPSResultScreen._startChat() so the chat page unlocks immediately.
+  VoidCallback? onChatUnlocked;
 
   String? _player1Id;
   String? _player2Id;
@@ -77,5 +87,7 @@ class RPSLocalMatchStore {
   void reset() {
     _player1Id = _player2Id = _player1Name = _player2Name = null;
     _player1Move = _player2Move = null;
+    onChatUnlocked = null;
+    matchId = null;
   }
 }

@@ -16,6 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:confetti/confetti.dart';
 import 'emoji_charades_data.dart';
+import '../word_search/word_search_service.dart';
 
 // ── Palette ──────────────────────────────────────────────────
 const _kBg     = Color(0xFF07060F);
@@ -369,6 +370,31 @@ class _State extends State<EmojiCharadesGameScreen> with TickerProviderStateMixi
       });
   }
 
+  /// Record EC win/loss to the shared game_scores table.
+  /// Called by whoever finishes second (the one who triggers onChatUnlocked).
+  void _recordEcScore() {
+    switch (_outcome) {
+      case _Outcome.iSolvedTheySkipped:
+        WordSearchService().recordWinner(
+          matchId:  widget.matchId,
+          winnerId: widget.currentUserId,
+          loserId:  widget.partnerUserId,
+        );
+        break;
+      case _Outcome.iSkippedTheySolved:
+        WordSearchService().recordWinner(
+          matchId:  widget.matchId,
+          winnerId: widget.partnerUserId,
+          loserId:  widget.currentUserId,
+        );
+        break;
+      case _Outcome.bothSolved:
+      case _Outcome.bothSkipped:
+        // Draw — no score recorded.
+        break;
+    }
+  }
+
   void _onPartnerUpdate() {
     if (_phase == _Phase.waiting && _partnerSubmitted) {
       setState(() {});
@@ -376,6 +402,7 @@ class _State extends State<EmojiCharadesGameScreen> with TickerProviderStateMixi
     if (_phase == _Phase.waitSolve && _partnerFinished) {
       _goTo(_Phase.done);
       if (_outcome == _Outcome.bothSolved) _confetti.play();
+      _recordEcScore();
       widget.onChatUnlocked();
     }
   }
@@ -1029,68 +1056,83 @@ class _State extends State<EmojiCharadesGameScreen> with TickerProviderStateMixi
     return Column(children: [
       _topBar(onBack: () => _goTo(_Phase.waiting)),
 
-      const SizedBox(height: 12),
+      // ── Category + sub-label ─────────────────────────────────
+      const SizedBox(height: 20),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text(_partnerCat.icon, style: const TextStyle(fontSize: 20)),
-        const SizedBox(width: 8),
-        Text(_partnerCat.label, style: _f(17, fw: FontWeight.w600,
+        Text(_partnerCat.icon, style: const TextStyle(fontSize: 26)),
+        const SizedBox(width: 10),
+        Text(_partnerCat.label, style: _f(20, fw: FontWeight.w600,
           c: _partnerCat.neon)),
       ]),
-      const SizedBox(height: 3),
+      const SizedBox(height: 8),
       RichText(text: TextSpan(
-        style: _f(13, c: _kSub),
+        style: _f(16, c: _kSub),
         children: [
           const TextSpan(text: 'Guess '),
           TextSpan(text: "${widget.partnerName}'s",
-            style: _f(13, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
+            style: _f(16, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
           const TextSpan(text: ' phrase'),
         ],
       )),
 
-      const SizedBox(height: 28),
+      // ── Emoji display ─────────────────────────────────────────
+      const SizedBox(height: 40),
       Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(_partnerEmojis.isEmpty ? '🤔' : _partnerEmojis,
-            style: const TextStyle(fontSize: 56, letterSpacing: 4)),
+            style: const TextStyle(fontSize: 76, letterSpacing: 6)),
         ),
       ),
 
+      // ── Timer ─────────────────────────────────────────────────
       if (showTimer) ...[
-        const SizedBox(height: 14),
+        const SizedBox(height: 20),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           _TimerCircle(value: _timerVal, urgent: _timerVal <= 5),
-          const SizedBox(width: 4),
-          Text('seconds', style: _f(12, c: const Color(0xFF4E3D72))),
+          const SizedBox(width: 6),
+          Text('seconds', style: _f(14, c: const Color(0xFF4E3D72))),
         ]),
       ] else
-        const SizedBox(height: 10),
+        const SizedBox(height: 14),
 
       const Spacer(),
 
+      // ── Answer area ───────────────────────────────────────────
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18),
         child: Column(children: [
           if (_skipped) ...[
-            _card(child: Column(children: [
-              Text('The answer was', style: _f(11, fw: FontWeight.w600,
-                c: _kRed, ls: 0.8)),
-              const SizedBox(height: 6),
-              Text(_partnerPhrase, style: _f(20, fw: FontWeight.w700),
-                textAlign: TextAlign.center),
-            ])),
-            const SizedBox(height: 6),
-            Text('Better luck next time!', style: _f(12, c: _kSub)),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              decoration: BoxDecoration(
+                color: _kCard,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _kBorder.withOpacity(0.7), width: 1.5),
+              ),
+              child: Column(children: [
+                Text('The answer was', style: _f(14, fw: FontWeight.w600,
+                  c: _kRed, ls: 0.8)),
+                const SizedBox(height: 12),
+                Text(_partnerPhrase, style: _f(28, fw: FontWeight.w700),
+                  textAlign: TextAlign.center),
+              ]),
+            ),
+            const SizedBox(height: 10),
+            Text('Better luck next time!', style: _f(15, c: _kSub)),
           ] else if (_ansCorrect) ...[
             TextField(
               controller: _ansCtrl,
               readOnly: true,
               textAlign: TextAlign.center,
-              style: _f(17, fw: FontWeight.w500, c: _kGreen),
+              style: _f(19, fw: FontWeight.w500, c: _kGreen),
               decoration: InputDecoration(
                 filled: true,
                 fillColor: _kGreen.withOpacity(0.1),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 18),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                   borderSide: const BorderSide(color: _kGreen, width: 2)),
@@ -1102,8 +1144,8 @@ class _State extends State<EmojiCharadesGameScreen> with TickerProviderStateMixi
                   borderSide: const BorderSide(color: _kGreen, width: 2)),
               ),
             ),
-            const SizedBox(height: 6),
-            Text('✅ You got it!', style: _f(14, c: _kGreen)),
+            const SizedBox(height: 10),
+            Text('✅ You got it!', style: _f(16, c: _kGreen)),
           ] else ...[
             _ShakeWidget(
               shake: _ansWrong,
@@ -1115,13 +1157,15 @@ class _State extends State<EmojiCharadesGameScreen> with TickerProviderStateMixi
                 }),
                 onSubmitted: (_) => _submitAnswer(),
                 textAlign: TextAlign.center,
-                style: _f(17, fw: FontWeight.w500,
+                style: _f(19, fw: FontWeight.w500,
                   c: _ansWrong ? const Color(0xFFFF6B6B) : _kText),
                 decoration: InputDecoration(
                   hintText: 'Type your guess...',
-                  hintStyle: _f(17, c: const Color(0xFF4E3D72)),
+                  hintStyle: _f(19, c: const Color(0xFF4E3D72)),
                   filled: true,
                   fillColor: _kCard,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 18),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide(
@@ -1140,33 +1184,33 @@ class _State extends State<EmojiCharadesGameScreen> with TickerProviderStateMixi
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
             if (_ansWrong)
               RichText(text: TextSpan(
-                style: _f(12, c: _kRed),
+                style: _f(14, c: _kRed),
                 children: [
                   const TextSpan(text: 'Hint: '),
                   TextSpan(text: hint,
-                    style: _f(12, fw: FontWeight.w600,
+                    style: _f(14, fw: FontWeight.w600,
                       c: const Color(0xFFC4A8FF))),
                 ],
               ))
             else
               Text('Press Enter or tap Submit',
-                style: _f(12, c: const Color(0xFF4E3D72))),
+                style: _f(15, c: const Color(0xFF4E3D72))),
           ],
         ]),
       ),
 
       if (_timerDone && !_ansCorrect && !_skipped) ...[
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         _SlimOutlineBtn('Skip', () => _skipAnswer()),
       ],
 
       const Spacer(),
 
       Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
         child: _ansCorrect || _skipped
           ? _primaryBtn('Continue', _afterSolve)
           : _primaryBtn('Submit Answer', _submitAnswer),
@@ -1221,6 +1265,7 @@ class _State extends State<EmojiCharadesGameScreen> with TickerProviderStateMixi
     if (_partnerFinished) {
       _goTo(_Phase.done);
       if (_outcome == _Outcome.bothSolved) _confetti.play();
+      _recordEcScore();
       widget.onChatUnlocked();
     } else {
       _goTo(_Phase.waitSolve);

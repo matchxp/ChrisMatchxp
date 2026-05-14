@@ -17,12 +17,16 @@ class RPSIntroScreen extends StatefulWidget {
     required this.currentUserName,
     required this.opponentId,
     required this.opponentName,
+    required this.sessionId,
+    required this.onChatUnlocked,
   });
 
   final String currentUserId;
   final String currentUserName;
   final String opponentId;
   final String opponentName;
+  final String sessionId;
+  final VoidCallback onChatUnlocked;
 
   @override
   State<RPSIntroScreen> createState() => _RPSIntroScreenState();
@@ -34,34 +38,44 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
   List<int> _order = [0, 1, 2];
   Timer? _shuffleTimer;
 
-  late final List<AnimationController> _floatCtrls;
-  late final List<Animation<double>> _floats;
+  // Three staggered controllers — same pattern as Word Search welcome screen.
+  // All use 2s easeInOut repeating, started 600ms apart so they float
+  // independently while staying silky smooth.
+  late final AnimationController _fc0, _fc1, _fc2;
+  late final Animation<double>   _fa0, _fa1, _fa2;
+
+  // Amplitude (px) per emoji slot
+  static const _amps = [18.0, 22.0, 15.0];
 
   final _rng = Random();
 
   @override
   void initState() {
     super.initState();
-    _floatCtrls = List.generate(
-      3,
-      (i) => AnimationController(
-        vsync: this,
-        duration: Duration(milliseconds: 2800 + i * 400),
-      )..repeat(reverse: true),
-    );
-    _floats = List.generate(
-      3,
-      (i) => Tween<double>(begin: 0, end: -13).animate(
-        CurvedAnimation(parent: _floatCtrls[i], curve: Curves.easeInOut),
-      ),
-    );
+
+    Animation<double> _make(AnimationController c) =>
+        Tween<double>(begin: 0, end: 1).animate(
+          CurvedAnimation(parent: c, curve: Curves.easeInOut));
+
+    _fc0 = AnimationController(duration: const Duration(milliseconds: 2000), vsync: this)..repeat(reverse: true);
+    _fc1 = AnimationController(duration: const Duration(milliseconds: 2000), vsync: this);
+    _fc2 = AnimationController(duration: const Duration(milliseconds: 2000), vsync: this);
+
+    _fa0 = _make(_fc0);
+    _fa1 = _make(_fc1);
+    _fa2 = _make(_fc2);
+
+    // Stagger starts so they are offset from each other
+    Future.delayed(const Duration(milliseconds: 600),  () { if (mounted) _fc1.repeat(reverse: true); });
+    Future.delayed(const Duration(milliseconds: 1200), () { if (mounted) _fc2.repeat(reverse: true); });
+
     _scheduleNextShuffle();
   }
 
   @override
   void dispose() {
     _shuffleTimer?.cancel();
-    for (final c in _floatCtrls) c.dispose();
+    _fc0.dispose(); _fc1.dispose(); _fc2.dispose();
     super.dispose();
   }
 
@@ -91,10 +105,12 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
   void _play() {
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => RPSPickScreen(
-        currentUserId: widget.currentUserId,
+        currentUserId:   widget.currentUserId,
         currentUserName: widget.currentUserName,
-        opponentId: widget.opponentId,
-        opponentName: widget.opponentName,
+        opponentId:      widget.opponentId,
+        opponentName:    widget.opponentName,
+        sessionId:       widget.sessionId,
+        onChatUnlocked:  widget.onChatUnlocked,
       ),
     ));
   }
@@ -126,32 +142,26 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
                         style: RPSTheme.font(62,
                             fw: FontWeight.w700, color: RPSTheme.gold)),
 
-                    // Floating hand emojis
+                    // Floating hand emojis — smooth easeInOut, staggered
                     Expanded(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(3, (i) {
-                          return Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 10),
-                            child: RepaintBoundary(
+                        children: [
+                          for (int i = 0; i < 3; i++)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
                               child: AnimatedBuilder(
-                                animation: _floats[i],
+                                animation: [_fa0, _fa1, _fa2][i],
                                 builder: (_, __) => Transform.translate(
-                                  // Snap to whole pixels — sub-pixel
-                                  // offsets cause bitmap-emoji blur.
-                                  offset: Offset(
-                                      0, _floats[i].value.roundToDouble()),
+                                  offset: Offset(0, [_fa0, _fa1, _fa2][i].value * -_amps[i]),
                                   child: Text(
                                     _emojis[_order[i]],
-                                    style: TextStyle(
-                                        fontSize: i == 1 ? 80 : 70),
+                                    style: TextStyle(fontSize: i == 1 ? 80 : 70),
                                   ),
                                 ),
                               ),
                             ),
-                          );
-                        }),
+                        ],
                       ),
                     ),
 

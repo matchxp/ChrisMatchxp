@@ -6,7 +6,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../data/rps_models.dart';
-import '../data/rps_local_match_store.dart';
 import '../rps_theme.dart';
 import '../widgets/rps_widgets.dart';
 import 'rps_intro_screen.dart';
@@ -18,12 +17,22 @@ class RPSResultScreen extends StatefulWidget {
     required this.currentUserName,
     required this.opponentId,
     required this.opponentName,
+    required this.myMove,
+    required this.opponentMove,
+    required this.result,
+    required this.onChatUnlocked,
+    this.sessionId,
   });
 
   final String currentUserId;
   final String currentUserName;
   final String opponentId;
   final String opponentName;
+  final RPSMove myMove;
+  final RPSMove opponentMove;
+  final RPSResult result;
+  final VoidCallback onChatUnlocked;
+  final String? sessionId;   // kept for Play Again routing (future use)
 
   @override
   State<RPSResultScreen> createState() => _RPSResultScreenState();
@@ -31,7 +40,6 @@ class RPSResultScreen extends StatefulWidget {
 
 class _RPSResultScreenState extends State<RPSResultScreen>
     with TickerProviderStateMixin {
-  final _store = RPSLocalMatchStore.instance;
 
   late final AnimationController _float1Ctrl;
   late final AnimationController _float2Ctrl;
@@ -59,7 +67,7 @@ class _RPSResultScreenState extends State<RPSResultScreen>
     // previously it repeated for everyone and then redundantly called forward().
     _confettiCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 4));
-    if (result == RPSResult.win) {
+    if (widget.result == RPSResult.win) {
       _confettiCtrl.repeat();
     }
   }
@@ -72,9 +80,9 @@ class _RPSResultScreenState extends State<RPSResultScreen>
     super.dispose();
   }
 
-  RPSMove get myMove => _store.moveForPlayer(widget.currentUserId)!;
-  RPSMove get oppMove => _store.opponentMoveForPlayer(widget.currentUserId)!;
-  RPSResult get result => _store.resultForPlayer(widget.currentUserId)!;
+  RPSMove get myMove => widget.myMove;
+  RPSMove get oppMove => widget.opponentMove;
+  RPSResult get result => widget.result;
 
   String get outcomeText {
     switch (result) {
@@ -101,24 +109,14 @@ class _RPSResultScreenState extends State<RPSResultScreen>
   }
 
   void _playAgain() {
-    _store.reset();
-    Navigator.of(context).pushReplacement(MaterialPageRoute(
-      builder: (_) => RPSIntroScreen(
-        currentUserId: widget.currentUserId,
-        currentUserName: widget.currentUserName,
-        opponentId: widget.opponentId,
-        opponentName: widget.opponentName,
-      ),
-    ));
+    // Play Again is not supported for online matches (would need a new
+    // session). For now, navigate back to the game hub.
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
-  /// Pop back to ChatConversationScreen.
-  /// Navigation stack at this point: [..., ChatConversation, GameHub, RPSResult]
-  /// Two pops: RPSResult → GameHub → ChatConversation.
+  /// Pop back to ChatConversationScreen and fire the unlock callback.
   void _startChat() {
-    _store.reset();
-    int pops = 0;
-    Navigator.of(context).popUntil((_) => pops++ >= 2);
+    widget.onChatUnlocked();
   }
 
   @override
@@ -147,11 +145,7 @@ class _RPSResultScreenState extends State<RPSResultScreen>
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     RPSNavBar(
-                      onBack: () {
-                        // Reset game state and pop back to GameHubScreen.
-                        _store.reset();
-                        Navigator.pop(context);
-                      },
+                      onBack: () => Navigator.pop(context),
                     ),
 
                     const SizedBox(height: 48),

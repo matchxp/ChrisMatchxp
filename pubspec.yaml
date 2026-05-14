@@ -26,6 +26,7 @@ dependencies:
   shared_preferences: ^2.2.2 # For persisting theme preference
   google_fonts: ^6.1.0       # For Emoji Charades UI
   confetti: ^0.7.0           # For Emoji Charades win animation
+  audioplayers: ^5.2.1       # For voice message playback
 
 dependency_overrides:
   record_linux:
