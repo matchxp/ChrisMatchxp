@@ -58,6 +58,10 @@ class _FullProfileScreenState extends State<FullProfileScreen> {
                           return Image.network(
                             images[index],
                             fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey[900],
+                              child: const Icon(Icons.person, size: 80, color: Colors.white24),
+                            ),
                           );
                         },
                       ),
@@ -337,6 +341,10 @@ class _FullProfileScreenState extends State<FullProfileScreen> {
                                   child: Image.network(
                                     images[index],
                                     fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: Colors.grey[900],
+                                      child: const Icon(Icons.broken_image_rounded, color: Colors.white24),
+                                    ),
                                   ),
                                 ),
                               );

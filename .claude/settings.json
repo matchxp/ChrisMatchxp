@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze *)",
+      "Bash(Select-String -Pattern \"error -\")",
+      "Bash(flutter pub *)",
+      "Bash(./gradlew signingReport)",
+      "PowerShell(keytool -list -v -keystore \"$env:USERPROFILE\\\\.android\\\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android 2>&1 | Select-String \"SHA1\")",
+      "PowerShell($javacmd = Get-Command java -ErrorAction SilentlyContinue; if \\($javacmd\\) { $javaHome = Split-Path \\(Split-Path $javacmd.Source\\) }; $keytool = Join-Path $javaHome \"bin\\\\keytool.exe\"; Write-Host \"keytool path: $keytool\"; if \\(Test-Path $keytool\\) { & $keytool -list -v -keystore \"$env:USERPROFILE\\\\.android\\\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android 2>&1 | Select-String \"SHA1\" } else { Get-ChildItem \"C:\\\\Program Files\\\\Android\" -Recurse -Filter \"keytool.exe\" -ErrorAction SilentlyContinue | Select-Object -First 3 FullName })",
+      "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\Common Files\\\\Oracle\\\\Java\\\\bin\\\\keytool.exe\" -list -v -keystore \"$env:USERPROFILE\\\\.android\\\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android 2>&1 | Select-String \"SHA1|SHA-1\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\Android Studio\" -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem \"$env:USERPROFILE\\\\.android\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\\" -ErrorAction SilentlyContinue | Select-Object Name; Test-Path \"$env:USERPROFILE\\\\.android\\\\debug.keystore\")",
+      "Bash(flutter doctor *)",
+      "Bash(java -XshowSettings:all)",
+      "Bash(flutter build *)",
+      "Bash(flutter emulators *)",
+      "Bash(flutter run *)",
+      "Bash(flutter devices *)",
+      "PowerShell($env:ANDROID_SDK_ROOT; $env:ANDROID_HOME; if \\(Test-Path \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\"\\) { \"SDK found at: $env:LOCALAPPDATA\\\\Android\\\\Sdk\" } else { \"Not found in LOCALAPPDATA\" })",
+      "PowerShell($env:ANDROID_SDK_ROOT = \"C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\"; $env:ANDROID_HOME = \"C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\"; Set-Location \"c:\\\\group prj\\\\matchxp\"; flutter emulators --launch pixel_7_-_api_35_1 2>&1)",
+      "Read(//c/Users/tranp/AppData/Local/Android/Sdk/**)",
+      "Read(//c/Users/tranp/AppData/Local/Android/**)",
+      "PowerShell(cmd /c \"dir C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\")",
+      "PowerShell(cmd /c \"dir C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\system-images\")",
+      "PowerShell(cmd /c \"dir C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\system-images\\\\android-36\")",
+      "PowerShell($env:ANDROID_SDK_ROOT = \"C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\"; $env:ANDROID_HOME = \"C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\"; Set-Location \"c:\\\\group prj\\\\matchxp\"; flutter emulators --launch Medium_Phone_API_36.0)"
+    ]
+  }
+}

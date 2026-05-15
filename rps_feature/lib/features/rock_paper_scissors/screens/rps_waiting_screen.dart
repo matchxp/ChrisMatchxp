@@ -10,6 +10,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/rps_local_match_store.dart';
+import '../data/rps_models.dart';
 import '../rps_theme.dart';
 import '../widgets/rps_widgets.dart';
 import 'rps_reveal_screen.dart';

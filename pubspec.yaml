@@ -14,10 +14,10 @@ dependencies:
 
   supabase_flutter: ^2.0.0
   image_picker: ^1.0.4
+  google_sign_in: ^6.1.5
   url_launcher: ^6.2.0
   record: ^5.1.2
   path_provider: ^2.1.0
-  google_sign_in: ^6.1.5  # ← Add this for Google Sign-In
 
   geolocator: ^10.1.0        # For GPS location
   geocoding: ^2.1.1          # For address conversion

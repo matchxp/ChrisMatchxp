@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 
     <application
-        android:label="MatchX"
+        android:label="MatchXP"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         
@@ -38,6 +38,11 @@
                     android:host="login-callback" />
             </intent-filter>
             
+            <!-- Disable Impeller — fixes black screen on emulators -->
+            <meta-data
+              android:name="io.flutter.embedding.android.EnableImpeller"
+              android:value="false" />
+
             <!-- Splash screen (KEEP THIS) -->
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"

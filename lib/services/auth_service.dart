@@ -6,7 +6,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 class AuthService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    serverClientId: '768959137285-t6ok79g0ca9rnniaom640it2s644ltfd.apps.googleusercontent.com',
+    serverClientId:
+        '41887238104-28ibvegl19bo712v60678m9qj184sphc.apps.googleusercontent.com',
   );
 
   // ⚡ TEST MODE - Set to false when you have Twilio configured
