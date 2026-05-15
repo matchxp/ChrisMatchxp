@@ -73,6 +73,9 @@ class EmojiCharadesGameScreen extends StatefulWidget {
   final String partnerName;
   final VoidCallback onChatUnlocked;
 
+  /// When true, skip the intro animation and start at the category picker.
+  final bool skipIntro;
+
   const EmojiCharadesGameScreen({
     super.key,
     required this.matchId,
@@ -80,6 +83,7 @@ class EmojiCharadesGameScreen extends StatefulWidget {
     required this.partnerUserId,
     required this.partnerName,
     required this.onChatUnlocked,
+    this.skipIntro = false,
   });
 
   @override
@@ -202,7 +206,11 @@ class _State extends State<EmojiCharadesGameScreen> with TickerProviderStateMixi
       duration: const Duration(seconds: 60))..repeat();
     _particleTick.addListener(_tickParticles);
 
-    _startIntro();
+    if (widget.skipIntro) {
+      _phase = _Phase.category;
+    } else {
+      _startIntro();
+    }
     _subscribeRealtime();
     _loadMyRecord();
   }

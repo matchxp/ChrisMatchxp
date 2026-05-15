@@ -23,7 +23,24 @@
       "PowerShell(cmd /c \"dir C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\")",
       "PowerShell(cmd /c \"dir C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\system-images\")",
       "PowerShell(cmd /c \"dir C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\system-images\\\\android-36\")",
-      "PowerShell($env:ANDROID_SDK_ROOT = \"C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\"; $env:ANDROID_HOME = \"C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\"; Set-Location \"c:\\\\group prj\\\\matchxp\"; flutter emulators --launch Medium_Phone_API_36.0)"
+      "PowerShell($env:ANDROID_SDK_ROOT = \"C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\"; $env:ANDROID_HOME = \"C:\\\\Users\\\\tranp\\\\AppData\\\\Local\\\\Android\\\\Sdk\"; Set-Location \"c:\\\\group prj\\\\matchxp\"; flutter emulators --launch Medium_Phone_API_36.0)",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Bash(dart analyze *)",
+      "mcp__claude_ai_Supabase__list_tables",
+      "Bash(adb devices *)",
+      "Bash(where adb *)",
+      "Read(//c/Users/**)",
+      "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 shell screencap -p /sdcard/screen.png)",
+      "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 pull /sdcard/screen.png /tmp/screen.png)",
+      "Bash(ADB=\"/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe\" *)",
+      "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 shell input tap 270 448)",
+      "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 shell input tap 270 450)",
+      "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 exec-out screencap -p)"
+    ],
+    "additionalDirectories": [
+      "\\tmp",
+      "C:\\Users\\tranp"
     ]
   }
 }

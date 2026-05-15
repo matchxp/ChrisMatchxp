@@ -62,6 +62,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   bool _scoresLoaded = false;
   RealtimeChannel? _scoreChannel;
 
+  // Live game session states — keyed by session id, updated via .stream()
+  final Map<String, Map<String, dynamic>> _sessionStates = {};
+  RealtimeChannel? _sessionChannel; // kept for legacy disposal safety
+  StreamSubscription<List<Map<String, dynamic>>>? _messageStream;
+  StreamSubscription<List<Map<String, dynamic>>>? _sessionStream;
+
   // ── Reply / quote ──────────────────────────────────────────────────────────
   /// The message being replied to (null = no active reply)
   Map<String, dynamic>? _replyingTo;
@@ -106,9 +112,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     // Tell the global listener which chat is open so it suppresses that notif
     ChatConversationScreen.activeChatMatchId = widget.matchId;
     _checkGameStatus();
-    _loadMessages();
-    _subscribeToMessages();
+    _subscribeMessages();      // replaces _loadMessages + _subscribeToMessages
     _loadScores();
+    _subscribeSessionStream(); // replaces _loadSessionStates + _subscribeToSessions
     _fetchOnlineStatus();
     _onlineTimer = Timer.periodic(
         const Duration(seconds: 60), (_) => _fetchOnlineStatus());
@@ -122,12 +128,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     if (ChatConversationScreen.activeChatMatchId == widget.matchId) {
       ChatConversationScreen.activeChatMatchId = null;
     }
+    _messageStream?.cancel();
+    _sessionStream?.cancel();
     _channel?.unsubscribe();
     _matchingService.unsubscribeFromChat(widget.matchId);
     if (_gameChannel        != null) _gameService.unsubscribe(_gameChannel!);
     if (_ecChannel          != null) Supabase.instance.client.removeChannel(_ecChannel!);
     if (_scoreChannel       != null) _gameService.unsubscribe(_scoreChannel!);
     if (_matchUnlockChannel != null) Supabase.instance.client.removeChannel(_matchUnlockChannel!);
+    if (_sessionChannel     != null) Supabase.instance.client.removeChannel(_sessionChannel!);
     _messageController.dispose();
     _scrollController.dispose();
     _recordTimer?.cancel();
@@ -351,6 +360,28 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       ),
     );
     if (ok == true) await action();
+  }
+
+  // ── Session stream: initial load + live INSERT/UPDATE via .stream() ──────────
+
+  void _subscribeSessionStream() {
+    if (_sessionStream != null) return; // guard: don't create duplicates
+    _sessionStream = Supabase.instance.client
+        .from('game_sessions')
+        .stream(primaryKey: ['id'])
+        .eq('match_id', widget.matchId)
+        .listen((rows) {
+          if (!mounted) return;
+          setState(() {
+            _sessionStates.clear();
+            for (final row in rows) {
+              final id = row['id'] as String?;
+              if (id != null) {
+                _sessionStates[id] = Map<String, dynamic>.from(row as Map);
+              }
+            }
+          });
+        });
   }
 
   Future<void> _loadScores() async {
@@ -609,67 +640,133 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     _loadReactions();
   }
 
-  void _subscribeToMessages() {
+  // ── Message stream: initial load + live delivery via .stream() ───────────────
+  // The broadcast channel (via subscribeToMessages) is kept solely for:
+  //   • typing indicators (_handlePartnerTyping)
+  //   • the send path (sendMessage uses the stored broadcast channel)
+  //   • instant read-receipt patches (onUpdate)
+  // Message *delivery* is fully handled by the .stream() listener below.
+
+  // Starts (or restarts) only the .stream() subscription.
+  // Safe to call multiple times — cancels the old one first.
+  // Does NOT touch _channel (broadcast/typing) so there are no duplicates.
+  void _restartMessageStream() {
+    _messageStream?.cancel();
+    _messageStream = Supabase.instance.client
+        .from('messages')
+        .stream(primaryKey: ['id'])
+        .eq('match_id', widget.matchId)
+        .order('created_at')
+        .listen(_onMessageStreamRows);
+  }
+
+  void _onMessageStreamRows(List<Map<String, dynamic>> rows) {
+    if (!mounted) return;
+
+    final serverMsgs      = List<Map<String, dynamic>>.from(rows);
+    final wasEmpty        = _messages.isEmpty;
+    final prevServerCount = _messages.where((m) => m['id'] != null).length;
+
+    setState(() {
+      // Preserve pending optimistic messages (id == null) that haven't
+      // been confirmed by the server yet.
+      final pending = _messages.where((m) {
+        if (m['id'] != null) return false; // already confirmed
+        final msgType = m['message_type'] as String? ?? 'text';
+        final sender  = m['sender_id'] as String?;
+        final optTime = DateTime.tryParse(m['created_at'] as String? ?? '');
+
+        if (msgType == 'game_challenge') {
+          // game_challenge rows all have content:'', so we can't dedup by content.
+          // Only evict this optimistic when a server row with the same game_type
+          // appears within 5 s — that's the real DB confirmation of THIS invite.
+          final gameType = (m['meta'] as Map?)?['game_type'] as String?;
+          return !serverMsgs.any((s) {
+            if (s['message_type'] != 'game_challenge') return false;
+            if (s['sender_id'] != sender) return false;
+            final sMeta = (s['meta'] as Map?)?.cast<String, dynamic>();
+            if (sMeta?['game_type'] != gameType) return false;
+            if (optTime != null) {
+              final svrTime = DateTime.tryParse(s['created_at'] as String? ?? '');
+              if (svrTime != null &&
+                  optTime.difference(svrTime).inSeconds.abs() > 5) { return false; }
+            }
+            return true;
+          });
+        }
+
+        // Regular messages: match by sender + content, within 60 s.
+        final content = m['content'] as String? ?? '';
+        return !serverMsgs.any((s) {
+          if (s['sender_id'] != sender || s['content'] != content) return false;
+          if (optTime != null) {
+            final svrTime = DateTime.tryParse(s['created_at'] as String? ?? '');
+            if (svrTime != null &&
+                optTime.difference(svrTime).inSeconds.abs() > 60) { return false; }
+          }
+          return true;
+        });
+      }).toList();
+
+      _messages = [...serverMsgs, ...pending];
+      _loading = false;
+
+      // Unlock chat if server list contains real (non-game) messages.
+      if (!_chatUnlocked) {
+        const gameTypes = {'game_challenge', 'game_result'};
+        if (serverMsgs.any((m) {
+          final type = m['message_type'] as String? ?? 'text';
+          if (gameTypes.contains(type)) return false;
+          return !(m['content'] as String? ?? '').startsWith(_gameRequestTag);
+        })) {
+          _chatUnlocked = true;
+        }
+      }
+
+      // Also unlock immediately when a game_result arrives.
+      if (!_chatUnlocked &&
+          serverMsgs.any((m) => m['message_type'] == 'game_result')) {
+        _chatUnlocked = true;
+      }
+    });
+
+    if (wasEmpty) {
+      // Initial load — jump to bottom and run one-time side effects.
+      _scrollToBottom();
+      _matchingService.markMessagesAsRead(widget.matchId);
+      _loadReactions();
+    } else if (serverMsgs.length > prevServerCount) {
+      // New message(s) arrived.
+      final newMsgs = serverMsgs.sublist(prevServerCount);
+      final hasPartnerMsg = newMsgs.any(
+          (m) => m['sender_id'] != _currentUserId);
+      if (hasPartnerMsg) {
+        _matchingService.markMessagesAsRead(widget.matchId);
+      }
+      if (_showScrollToBottom && hasPartnerMsg) {
+        // User is scrolled up — show badge instead of jumping.
+        setState(() => _unreadWhileScrolled++);
+      } else {
+        _scrollToBottom();
+      }
+    }
+  }
+
+  void _subscribeMessages() {
+    if (_messageStream != null) return; // guard: don't create duplicates
+
+    // 1. Stream: initial load + every INSERT/UPDATE fires a full list update.
+    _restartMessageStream();
+
+    // 2. Broadcast channel: typing events, send path, and instant read-receipt
+    //    patches. On any incoming message broadcast, restart the stream so the
+    //    partner's new message is fetched from DB and added to the list.
     _channel = _matchingService.subscribeToMessages(
       widget.matchId,
-      (msg) {
-        if (!mounted) return;
-
-        final senderId = msg['sender_id'] as String?;
-        final content = msg['content'] as String?;
-
-        final msgId = msg['id'] as String?;
-        bool alreadyExists = false;
-
-        if (msgId != null) {
-          // FIG BUG-01: use timestamp-proximity matching so that when the
-          // current user rapidly sends two identical messages (same sender +
-          // content), the incoming real event upgrades the placeholder whose
-          // created_at is closest to the server timestamp — rather than always
-          // blindly taking the first match via indexWhere.
-          final idxToUpgrade = _findClosestOptimistic(
-            messages: _messages,
-            senderId: senderId,
-            content: content,
-            realCreatedAt: msg['created_at'] as String?,
-          );
-          if (idxToUpgrade != -1) {
-            setState(() => _messages[idxToUpgrade] =
-                {..._messages[idxToUpgrade], ...msg});
-            alreadyExists = true;
-          } else {
-            alreadyExists = _messages.any((m) => m['id'] == msgId);
-          }
-        } else {
-          if (senderId == _currentUserId) {
-            alreadyExists = _messages.any((m) =>
-                m['id'] == null &&
-                m['sender_id'] == senderId &&
-                m['content'] == content);
-          }
-        }
-
-        if (!alreadyExists) {
-          final msgType = msg['message_type'] as String? ?? 'text';
-          setState(() {
-            _messages.add(msg);
-            // A game_result message means the game finished — unlock immediately.
-            if (msgType == 'game_result' && !_chatUnlocked) _chatUnlocked = true;
-          });
-          // If partner sent a message and we're scrolled up, badge instead of jump
-          if (senderId != _currentUserId && _showScrollToBottom) {
-            setState(() => _unreadWhileScrolled++);
-          } else {
-            _scrollToBottom();
-          }
-        }
-
-        if (senderId != _currentUserId) {
-          _matchingService.markMessagesAsRead(widget.matchId);
-        }
-      },
+      (_) { if (mounted) _restartMessageStream(); },
       onTyping: _handlePartnerTyping,
       onUpdate: (updatedMsg) {
+        // Patch in-place for snappier is_read / reaction updates.
         if (!mounted) return;
         final id = updatedMsg['id'];
         setState(() {
@@ -680,55 +777,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         });
       },
     );
-  }
-
-  /// Finds the index of the optimistic placeholder that best matches an
-  /// incoming real message.
-  ///
-  /// When the user sends two identical messages in quick succession (same
-  /// sender + content), [indexWhere] always returns the *first* match
-  /// (BUG-01).  This helper instead picks the placeholder whose [created_at]
-  /// is *closest* to the server-assigned [realCreatedAt], so the correct
-  /// placeholder gets upgraded.  Falls back to first-match (FIFO) when
-  /// timestamps are unavailable.
-  static int _findClosestOptimistic({
-    required List<Map<String, dynamic>> messages,
-    required String? senderId,
-    required String? content,
-    String? realCreatedAt,
-  }) {
-    final candidates = messages
-        .asMap()
-        .entries
-        .where((e) =>
-            e.value['id'] == null &&
-            e.value['sender_id'] == senderId &&
-            e.value['content'] == content)
-        .toList();
-
-    if (candidates.isEmpty) return -1;
-    // Single candidate or no real timestamp → FIFO (first match)
-    if (candidates.length == 1 || realCreatedAt == null) {
-      return candidates.first.key;
-    }
-
-    final realTs = DateTime.tryParse(realCreatedAt);
-    if (realTs == null) return candidates.first.key;
-
-    int bestIdx = candidates.first.key;
-    Duration bestDiff = const Duration(days: 999);
-
-    for (final entry in candidates) {
-      final optTs = DateTime.tryParse(
-          entry.value['created_at'] as String? ?? '');
-      if (optTs == null) continue;
-      final diff = realTs.difference(optTs).abs();
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        bestIdx = entry.key;
-      }
-    }
-    return bestIdx;
   }
 
   void _scrollToBottom() {
@@ -1361,25 +1409,20 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           child: GestureDetector(
             onTap: () {
               if (_chatUnlocked) {
-                // Chat already open — send a challenge from within the thread
                 _showInChatGamePicker();
               } else {
-                // Chat still locked — go to the initial ice-breaker hub
                 final partnerUserId = widget.otherProfile['id'] as String? ?? '';
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => GameHubScreen(
-                      matchId:        widget.matchId,
-                      currentUserId:  _currentUserId,
-                      partnerUserId:  partnerUserId,
-                      partnerName:    _otherName,
-                      onChatUnlocked: () {
-                        if (mounted) setState(() => _chatUnlocked = true);
-                      },
-                    ),
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => GameHubScreen(
+                    matchId:        widget.matchId,
+                    currentUserId:  _currentUserId,
+                    partnerUserId:  partnerUserId,
+                    partnerName:    _otherName,
+                    onChatUnlocked: () {
+                      if (mounted) setState(() => _chatUnlocked = true);
+                    },
                   ),
-                );
+                ));
               }
             },
             child: Container(
@@ -1959,19 +2002,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       Map<String, dynamic> msg, bool isMe, bool showTime, bool isGrouped) {
     final content = msg['content'] as String? ?? '';
 
-    // ── Structured game messages (new — takes priority) ────────────────────
+    // ── Structured game messages ────────────────────────────────────────────
     final msgType = msg['message_type'] as String? ?? 'text';
-    if (msgType == 'game_challenge') {
-      return _buildGameChallengeBubble(msg, isMe, showTime);
-    }
-    if (msgType == 'game_result') {
-      return _buildGameResultBubble(msg, showTime);
-    }
+    if (msgType == 'game_result')    return _buildGameResultBubble(msg, showTime);
+    if (msgType == 'game_challenge') return _buildGameChallengeBubble(msg, isMe, showTime);
 
-    // ── Legacy plain-text game request tag ──────────────────────────────────
-    if (content.startsWith(_gameRequestTag)) {
-      return _buildGameRequestBubble(msg, isMe, showTime);
-    }
+    // ── Skip legacy game-request tag messages ───────────────────────────────
+    if (content.startsWith(_gameRequestTag)) return const SizedBox.shrink();
 
     final isRead = msg['is_read'] == true;
     final msgKey = msg['id'] as String? ?? msg['created_at'] as String? ?? '';
@@ -2134,241 +2171,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     );
   }
 
-  // ── Game request bubble ────────────────────────────────────────────────────
-  Widget _buildGameRequestBubble(
-      Map<String, dynamic> msg, bool isMe, bool showTime) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Align(
-        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.72,
-          ),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.sports_esports_rounded,
-                  color: Color(0xFF6C3FE8), size: 20),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  isMe
-                      ? 'You sent a game challenge! 🎮'
-                      : '$_otherName challenged you to a game! 🎮',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Game challenge bubble (message_type = 'game_challenge') ──────────────
-  // Shown to both players. User B (challenged) sees an Accept button while
-  // status == 'pending'. User A sees a waiting label.
-  Widget _buildGameChallengeBubble(
-      Map<String, dynamic> msg, bool isMe, bool showTime) {
-    final meta      = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
-    final gameType  = meta['game_type'] as String? ?? 'rps';
-    final status    = meta['status']    as String? ?? 'pending';
-    final sessionId = meta['session_id'] as String?;
-
-    // Display helpers per game type
-    final gameLabel = switch (gameType) {
-      'word_search'     => 'Word Search',
-      'emoji_charades'  => 'Emoji Charades',
-      _                 => 'Rock Paper Scissors',
-    };
-    final gameEmoji = switch (gameType) {
-      'word_search'    => '🔡',
-      'emoji_charades' => '😂',
-      _                => '✊',
-    };
-    final accentColor = switch (gameType) {
-      'word_search'    => const Color(0xFF6C3FE8),
-      'emoji_charades' => const Color(0xFFFFB800),
-      _                => const Color(0xFF7C3AED),
-    };
-
-    final isPending   = status == 'pending';
-    final isCompleted = status == 'completed' || status == 'auto_unlocked';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Align(
-        // Challenge cards are centred in the thread
-        alignment: Alignment.center,
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.82,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF141414),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: accentColor.withValues(alpha: 0.5),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: accentColor.withValues(alpha: 0.10),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header row
-              Row(children: [
-                Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(
-                    child: Text(gameEmoji,
-                        style: const TextStyle(fontSize: 20)),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        gameLabel,
-                        style: TextStyle(
-                          color: accentColor,
-                          fontFamily: 'Fredoka One',
-                          fontSize: 15,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                      Text(
-                        isMe
-                          ? 'You sent a challenge'
-                          : '$_otherName challenged you!',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontFamily: 'Fredoka',
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Status badge
-                if (isCompleted)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF22C55E).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('Done ✓',
-                        style: TextStyle(color: Color(0xFF22C55E),
-                            fontSize: 11, fontWeight: FontWeight.w700)),
-                  ),
-              ]),
-
-              const SizedBox(height: 14),
-
-              // Action area
-              if (!isCompleted) ...[
-                if (!isMe && isPending && sessionId != null)
-                  // User B sees the Accept button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => _acceptChallenge(sessionId, gameType),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: accentColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        'Accept & Play  $gameEmoji',
-                        style: const TextStyle(
-                            fontFamily: 'Fredoka One', fontSize: 15),
-                      ),
-                    ),
-                  )
-                else if (isMe && isPending)
-                  // User A sees a waiting label
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 12, height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: accentColor.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Waiting for $_otherName to accept…',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontFamily: 'Fredoka',
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  // Status == 'active' — game is in progress
-                  Center(
-                    child: Text(
-                      'Game in progress…',
-                      style: TextStyle(
-                        color: accentColor.withValues(alpha: 0.8),
-                        fontFamily: 'Fredoka One',
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-              ],
-
-              // Timestamp
-              if (showTime) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _formatTime(msg['created_at'] as String?),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white.withValues(alpha: 0.3),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   // ── Game result bubble (message_type = 'game_result') ─────────────────────
   Widget _buildGameResultBubble(Map<String, dynamic> msg, bool showTime) {
     final meta       = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -2443,53 +2245,193 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     );
   }
 
-  // ── Accept game challenge ──────────────────────────────────────────────────
-  // Routes directly to the correct game screen using the existing sessionId so
-  // no orphan sessions are created and RPS both players share the same session.
-  Future<void> _acceptChallenge(String sessionId, String gameType) async {
-    try {
-      await Supabase.instance.client
-          .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
-    } catch (e) {
-      final msg = e.toString().toLowerCase();
-      // If the session is already active (double-tap / realtime lag), just
-      // proceed to navigate to the game — don't block the user.
-      if (!msg.contains('active') && !msg.contains('no longer pending')) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not accept: $e')));
-        }
-        return;
+  // ── Game challenge card ───────────────────────────────────────────────────
+
+  Widget _buildGameChallengeBubble(
+      Map<String, dynamic> msg, bool isMe, bool showTime) {
+    final meta      = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+    final gameType  = meta['game_type']  as String? ?? 'rps';
+    final sessionId = meta['session_id'] as String?;
+
+    final gameLabel = switch (gameType) {
+      'word_search'    => 'Word Search',
+      'emoji_charades' => 'Emoji Charades',
+      _                => 'Rock Paper Scissors',
+    };
+    final gameEmoji = switch (gameType) {
+      'word_search'    => '🔡',
+      'emoji_charades' => '😂',
+      _                => '✊',
+    };
+    final accentColor = switch (gameType) {
+      'word_search'    => const Color(0xFF6C3FE8),
+      'emoji_charades' => const Color(0xFFFFB800),
+      _                => const Color(0xFF7C3AED),
+    };
+
+    // Live status from session stream; fall back to 'pending' while loading.
+    final liveSession = sessionId != null ? _sessionStates[sessionId] : null;
+    final liveStatus  = liveSession?['status'] as String? ?? 'pending';
+    final isPending   = liveStatus == 'pending';
+    final isCompleted = liveStatus == 'completed' || liveStatus == 'auto_unlocked';
+
+    String statusText() {
+      switch (liveStatus) {
+        case 'completed':     return 'Game completed ✓';
+        case 'active':        return 'In Progress…';
+        case 'submitted':     return 'Puzzle submitted — waiting for partner';
+        default:              return isMe
+            ? 'Waiting for $_otherName to accept…'
+            : '$_otherName challenged you!';
       }
     }
 
-    // Optimistically patch the local card to "active" so the Accept button
-    // disappears immediately without waiting for a realtime UPDATE event.
-    if (mounted) {
-      setState(() {
-        for (int i = 0; i < _messages.length; i++) {
-          final meta = (_messages[i]['meta'] as Map?)?.cast<String, dynamic>();
-          if (meta != null && meta['session_id'] == sessionId) {
-            _messages[i] = {
-              ..._messages[i],
-              'meta': {...meta, 'status': 'active'},
-            };
-            break;
-          }
-        }
-      });
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      child: Align(
+        alignment: Alignment.center,
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.82,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141414),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: accentColor.withValues(alpha: 0.5), width: 1.5),
+            boxShadow: [BoxShadow(
+              color: accentColor.withValues(alpha: 0.10),
+              blurRadius: 16, offset: const Offset(0, 4),
+            )],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(child: Text(gameEmoji,
+                      style: const TextStyle(fontSize: 20))),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(gameLabel, style: TextStyle(
+                      color: accentColor, fontFamily: 'Fredoka One',
+                      fontSize: 15, letterSpacing: 0.3,
+                    )),
+                    Text(
+                      isMe ? 'You sent a challenge'
+                           : '$_otherName challenged you!',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontFamily: 'Fredoka', fontSize: 12,
+                      ),
+                    ),
+                  ],
+                )),
+                if (isCompleted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('Done ✓', style: TextStyle(
+                        color: Color(0xFF22C55E), fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+                  ),
+              ]),
+
+              const SizedBox(height: 14),
+
+              if (!isCompleted)
+                if (!isMe && isPending && sessionId != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => _acceptChallenge(sessionId, gameType),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        elevation: 0,
+                      ),
+                      child: Text('Accept & Play  $gameEmoji',
+                          style: const TextStyle(
+                              fontFamily: 'Fredoka One', fontSize: 15)),
+                    ),
+                  )
+                else
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 12, height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: accentColor.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(child: Text(
+                        statusText(),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontFamily: 'Fredoka', fontSize: 12,
+                        ),
+                      )),
+                    ],
+                  ),
+
+              if (showTime) ...[
+                const SizedBox(height: 10),
+                Text(_formatTime(msg['created_at'] as String?),
+                    style: TextStyle(fontSize: 10,
+                        color: Colors.white.withValues(alpha: 0.3))),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Accept game challenge ─────────────────────────────────────────────────
+
+  Future<void> _acceptChallenge(String sessionId, String gameType) async {
+    final db = Supabase.instance.client;
+    try {
+      await db
+          .from('game_sessions')
+          .update({'status': 'active', 'accepted_at': DateTime.now().toIso8601String()})
+          .eq('id', sessionId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not accept: $e')));
+      }
+      return;
     }
 
     if (!mounted) return;
-
     final partnerUserId = widget.otherProfile['id'] as String? ?? '';
 
     void onUnlocked() {
+      db.from('matches')
+          .update({'chat_unlocked': true})
+          .eq('id', widget.matchId)
+          .then((_) {}).catchError((_) {});
       if (mounted) setState(() => _chatUnlocked = true);
     }
 
     switch (gameType) {
-      // ── RPS: go directly to intro with the shared session ID ──────────────
       case 'rps':
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => RPSIntroScreen(
@@ -2501,9 +2443,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             onChatUnlocked:  onUnlocked,
           ),
         ));
-        break;
-
-      // ── Word Search: go directly to the game (no session ID needed) ───────
       case 'word_search':
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => WordSearchSupabaseWrapper(
@@ -2512,15 +2451,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             partnerUserId:  partnerUserId,
             partnerName:    _otherName,
             onChatUnlocked: () {
-              int pops = 0;
-              Navigator.of(context).popUntil((_) => pops++ >= 1);
+              int p = 0;
+              Navigator.of(context).popUntil((_) => p++ >= 1);
               onUnlocked();
             },
           ),
         ));
-        break;
-
-      // ── Emoji Charades: go directly to the game ───────────────────────────
       case 'emoji_charades':
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => EmojiCharadesGameScreen(
@@ -2528,15 +2464,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             currentUserId:  _currentUserId,
             partnerUserId:  partnerUserId,
             partnerName:    _otherName,
+            skipIntro:      true,
             onChatUnlocked: () {
-              int pops = 0;
-              Navigator.of(context).popUntil((_) => pops++ >= 1);
+              int p = 0;
+              Navigator.of(context).popUntil((_) => p++ >= 1);
               onUnlocked();
             },
           ),
         ));
-        break;
-
       default:
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => GameHubScreen(
@@ -2550,28 +2485,82 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     }
   }
 
-  // ── Send in-chat game challenge ────────────────────────────────────────────
-  // Used for post-unlock game requests within the conversation.
-  // The RPC inserts a game_challenge message which appears via realtime.
+  // ── Send in-chat game challenge ───────────────────────────────────────────
+
   Future<void> _sendGameChallenge(String gameType) async {
+    final db            = Supabase.instance.client;
+    final partnerUserId = widget.otherProfile['id'] as String? ?? '';
+    final now           = DateTime.now().toIso8601String();
+
+    // Show card immediately — same as text message optimistic.
+    final optimistic = <String, dynamic>{
+      'id':           null,
+      'match_id':     widget.matchId,
+      'sender_id':    _currentUserId,
+      'content':      '',
+      'message_type': 'game_challenge',
+      'created_at':   now,
+      'is_read':      false,
+      'meta':         <String, dynamic>{'game_type': gameType},
+    };
+    setState(() => _messages.add(optimistic));
+    _scrollToBottom();
+
     try {
-      await Supabase.instance.client.rpc('create_game_challenge', params: {
-        'p_match_id':      widget.matchId,
-        'p_challenged_id': widget.otherProfile['id'] as String? ?? '',
-        'p_game_type':     gameType,
-        'p_is_initial':    false,
-      });
-      // The challenge card arrives via the existing realtime subscription.
+      // 1. Create the game session.
+      final sessionRes = await db
+          .from('game_sessions')
+          .insert({
+            'match_id':      widget.matchId,
+            'challenger_id': _currentUserId,
+            'challenged_id': partnerUserId,
+            'game_type':     gameType,
+          })
+          .select('id')
+          .single();
+      final sessionId = sessionRes['id'] as String;
+
+      // 2. Insert the message and get the real row back.
+      final realMsg = await db
+          .from('messages')
+          .insert({
+            'match_id':     widget.matchId,
+            'sender_id':    _currentUserId,
+            'content':      '',
+            'message_type': 'game_challenge',
+            'meta':         {'session_id': sessionId, 'game_type': gameType},
+          })
+          .select()
+          .single();
+
+      // 3. Replace the optimistic with the confirmed DB row.
+      if (mounted) {
+        setState(() {
+          _messages.removeWhere(
+              (m) => m['id'] == null && m['message_type'] == 'game_challenge'
+                  && m['created_at'] == now);
+          _messages.add(Map<String, dynamic>.from(realMsg));
+          _messages.sort((a, b) =>
+              (a['created_at'] as String).compareTo(b['created_at'] as String));
+        });
+      }
+
+      // 4. Broadcast so the partner's client calls _restartMessageStream()
+      //    and fetches the new message from DB.
+      _matchingService.broadcastMessage(widget.matchId, realMsg);
     } catch (e) {
       if (mounted) {
+        setState(() => _messages.removeWhere(
+            (m) => m['id'] == null && m['message_type'] == 'game_challenge'
+                && m['created_at'] == now));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not send challenge: $e')));
+            SnackBar(content: Text('Could not send challenge: $e')));
       }
     }
   }
 
-  // ── In-chat game picker bottom sheet ──────────────────────────────────────
-  // Shown when the Game button is tapped while chat is already unlocked.
+  // ── Game picker bottom sheet ──────────────────────────────────────────────
+
   void _showInChatGamePicker() {
     showModalBottomSheet(
       context: context,
@@ -2585,7 +2574,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Drag handle
               Container(
                 width: 40, height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
@@ -2594,28 +2582,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const Text(
-                'Challenge to a game',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                'A challenge card will appear in the chat',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.45),
-                  fontSize: 13,
-                ),
-              ),
+              const Text('Challenge to a game',
+                  style: TextStyle(color: Colors.white, fontSize: 17,
+                      fontWeight: FontWeight.w700)),
               const SizedBox(height: 20),
               _gamePickerTile(ctx, '🔡', 'Word Search',
-                  'word_search', const Color(0xFF6C3FE8)),
+                  'word_search',    const Color(0xFF6C3FE8)),
               const SizedBox(height: 10),
               _gamePickerTile(ctx, '✊', 'Rock Paper Scissors',
-                  'rps', const Color(0xFF7C3AED)),
+                  'rps',            const Color(0xFF7C3AED)),
               const SizedBox(height: 10),
               _gamePickerTile(ctx, '😂', 'Emoji Charades',
                   'emoji_charades', const Color(0xFFFFB800)),
@@ -2626,13 +2601,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     );
   }
 
-  Widget _gamePickerTile(
-    BuildContext ctx,
-    String emoji,
-    String label,
-    String gameType,
-    Color color,
-  ) {
+  Widget _gamePickerTile(BuildContext ctx, String emoji, String label,
+      String gameType, Color color) {
     return GestureDetector(
       onTap: () {
         Navigator.pop(ctx);
@@ -2643,36 +2613,24 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: color.withValues(alpha: 0.3), width: 1.2),
+          border: Border.all(color: color.withValues(alpha: 0.3), width: 1.2),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: Text(emoji,
-                    style: const TextStyle(fontSize: 22)),
-              ),
+        child: Row(children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Icon(Icons.send_rounded, color: color, size: 18),
-          ],
-        ),
+            child: Center(child: Text(emoji,
+                style: const TextStyle(fontSize: 22))),
+          ),
+          const SizedBox(width: 14),
+          Expanded(child: Text(label, style: const TextStyle(
+              color: Colors.white, fontSize: 15,
+              fontWeight: FontWeight.w600))),
+          Icon(Icons.send_rounded, color: color, size: 18),
+        ]),
       ),
     );
   }
@@ -2927,8 +2885,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                         _startVoiceRecording();
                       },
                     ),
-                    // Game — always goes through the challenge flow since
-                    // the media picker is only reachable when chat is unlocked
+                    // Game challenge
                     _buildMediaOption(
                       icon: Icons.sports_esports_rounded,
                       label: 'Game',
@@ -3290,13 +3247,28 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         break;
 
       case MatchGamePhase.solving:
-        statusText   = '${_otherName} made a puzzle for you — solve it to unlock chat! 🔐';
+        statusText   = '$_otherName made a puzzle for you — solve it to unlock chat! 🔐';
         statusIcon   = Icons.search_rounded;
         statusColor  = const Color(0xFFF59E0B);
         buttonLabel  = 'Solve Now!';
         buttonIcon   = Icons.play_arrow_rounded;
         buttonColors = const [Color(0xFFD97706), Color(0xFFF59E0B)];
-        buttonAction = goToGame;
+        buttonAction = () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => WordSearchSupabaseWrapper(
+                matchId:        widget.matchId,
+                currentUserId:  _currentUserId,
+                partnerUserId:  partnerUserId,
+                partnerName:    _otherName,
+                onChatUnlocked: () {
+                  if (mounted) setState(() => _chatUnlocked = true);
+                },
+              ),
+            ),
+          ).then((_) => _checkGameStatus());
+        };
         break;
 
       case MatchGamePhase.waitingPartnerSolve:
@@ -3369,7 +3341,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                         color: Colors.white, size: 18),
                     const SizedBox(width: 8),
                     Text(
-                      buttonLabel!,
+                      buttonLabel,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,

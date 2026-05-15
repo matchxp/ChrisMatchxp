@@ -92,10 +92,14 @@ class WordSearchGameScreen extends StatefulWidget {
   ///   event = 'chatPressed'
   final void Function(Map<String, dynamic> event)? onGameEvent;
 
+  /// When true, skip the welcome screen and start at the category picker.
+  final bool skipWelcome;
+
   const WordSearchGameScreen({
     super.key,
     required this.partnerName,
     this.onGameEvent,
+    this.skipWelcome = false,
   });
 
   @override
@@ -142,6 +146,9 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   void initState() {
     super.initState();
     _initAnimations();
+    if (widget.skipWelcome) {
+      _me = _me.copyWith(step: WSStep.category);
+    }
   }
 
   void _initAnimations() {

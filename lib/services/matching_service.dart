@@ -415,6 +415,13 @@ class MatchingService {
         ?.sendBroadcastMessage(event: 'typing', payload: {});
   }
 
+  /// Broadcast a raw message payload on the chat channel so the partner's
+  /// client receives it instantly via WebSocket (used for game challenges).
+  void broadcastMessage(String matchId, Map<String, dynamic> payload) {
+    _chatChannels[matchId]
+        ?.sendBroadcastMessage(event: 'msg', payload: payload);
+  }
+
   /// Subscribe to new messages using Supabase Broadcast (WebSocket, ~50ms latency).
   /// Falls back to postgres_changes as a safety net for messages missed during
   /// a brief disconnect. Also listens for UPDATE events (read receipts).

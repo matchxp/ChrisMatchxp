@@ -151,6 +151,20 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
         break;
 
       case 'chatPressed':
+        // Ensure matches.chat_unlocked is set — idempotent (only writes if false).
+        try {
+          final row = await Supabase.instance.client
+              .from('matches')
+              .select('chat_unlocked')
+              .eq('id', widget.matchId)
+              .single();
+          if (row['chat_unlocked'] != true) {
+            await Supabase.instance.client
+                .from('matches')
+                .update({'chat_unlocked': true})
+                .eq('id', widget.matchId);
+          }
+        } catch (_) {}
         widget.onChatUnlocked();
         break;
     }
@@ -179,6 +193,39 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
           'status':     'waiting',
         });
 
+    // Also update game_sessions so the chat card reflects the correct status.
+    try {
+      final sessionRow = await Supabase.instance.client
+          .from('game_sessions')
+          .select('id, player_a_id, player_a_submitted, player_b_submitted')
+          .eq('match_id', widget.matchId)
+          .eq('game_type', 'word_search')
+          .neq('status', 'completed')
+          .maybeSingle();
+
+      if (sessionRow != null) {
+        final sessionId  = sessionRow['id'] as String;
+        final playerAId  = sessionRow['player_a_id'] as String?;
+        final iAmPlayerA = playerAId == widget.currentUserId;
+
+        final aAlreadySubmitted = sessionRow['player_a_submitted'] as bool? ?? false;
+        final bAlreadySubmitted = sessionRow['player_b_submitted'] as bool? ?? false;
+
+        final newA = iAmPlayerA ? true : aAlreadySubmitted;
+        final newB = iAmPlayerA ? bAlreadySubmitted : true;
+        final newStatus = (newA && newB) ? 'active' : 'submitted';
+
+        await Supabase.instance.client
+            .from('game_sessions')
+            .update({
+              'status': newStatus,
+              if (iAmPlayerA) 'player_a_submitted': true
+              else            'player_b_submitted': true,
+            })
+            .eq('id', sessionId);
+      }
+    } catch (_) {}
+
     await _refresh();
   }
 
@@ -196,6 +243,7 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
       key:          _gameKey,
       partnerName:  widget.partnerName,
       onGameEvent:  _onGameEvent,
+      skipWelcome:  true,
     );
   }
 }

@@ -3,10 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'word_search/word_search_supabase_wrapper.dart';
-import 'rock_paper_scissors/screens/rps_intro_screen.dart';
+import 'rock_paper_scissors/screens/rps_pick_screen.dart';
 import 'emoji_charades/emoji_charades_game_screen.dart';
 
-class GameHubScreen extends StatelessWidget {
+class GameHubScreen extends StatefulWidget {
   final String matchId;
   final String currentUserId;
   final String partnerUserId;
@@ -22,6 +22,11 @@ class GameHubScreen extends StatelessWidget {
     required this.onChatUnlocked,
   });
 
+  @override
+  State<GameHubScreen> createState() => _GameHubScreenState();
+}
+
+class _GameHubScreenState extends State<GameHubScreen> {
   // ── App colour palette (matches MainNavigation / HomeScreen) ──
   static const _bg   = Color(0xFF0A0A0A);
   static const _surf = Color(0xFF1A1A1A);
@@ -31,8 +36,56 @@ class GameHubScreen extends StatelessWidget {
   static const _tx   = Colors.white;
   static const _mt   = Color(0xFF888888);
 
+  bool _loading = false;
+
+  /// Returns true if an active (non-completed) session already exists for
+  /// this match + game type. Shows an alert and returns true so the caller
+  /// can bail out early.
+  Future<bool> _duplicateGuard(String gameType, String gameLabel) async {
+    try {
+      final existing = await Supabase.instance.client
+          .from('game_sessions')
+          .select('id')
+          .eq('match_id', widget.matchId)
+          .eq('game_type', gameType)
+          .neq('status', 'completed')
+          .maybeSingle();
+
+      if (existing != null && context.mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            backgroundColor: _surf,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text('Game in progress',
+                style: const TextStyle(color: _tx, fontFamily: 'Fredoka One')),
+            content: Text(
+              'A $gameLabel game is already in progress! Check your chat to continue.',
+              style: const TextStyle(color: _mt, fontFamily: 'Fredoka'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('OK', style: TextStyle(color: _pu, fontFamily: 'Fredoka One')),
+              ),
+            ],
+          ),
+        );
+        return true;
+      }
+    } catch (_) {
+      // If the check fails, allow the flow to continue.
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final matchId       = widget.matchId;
+    final currentUserId = widget.currentUserId;
+    final partnerUserId = widget.partnerUserId;
+    final partnerName   = widget.partnerName;
+    final onChatUnlocked = widget.onChatUnlocked;
     return Scaffold(
       backgroundColor: _bg,
       appBar: _appBar(context),
@@ -71,34 +124,36 @@ class GameHubScreen extends StatelessWidget {
             // ── Word Search (active) ──
             GestureDetector(
               onTap: () async {
-                // Send a challenge notification to the partner before entering
-                // the game, so they see who challenged them and with what game.
+                if (_loading) return;
+                setState(() => _loading = true);
                 try {
-                  await Supabase.instance.client
-                      .rpc('create_game_challenge', params: {
-                    'p_match_id':      matchId,
-                    'p_challenged_id': partnerUserId,
-                    'p_game_type':     'word_search',
-                    'p_is_initial':    true,
-                  });
-                } catch (_) {
-                  // Non-fatal — game continues even if the RPC fails
+                  if (await _duplicateGuard('word_search', 'Word Search')) return;
+                  try {
+                    await Supabase.instance.client
+                        .rpc('create_game_challenge', params: {
+                      'p_match_id':      matchId,
+                      'p_challenged_id': partnerUserId,
+                      'p_game_type':     'word_search',
+                      'p_is_initial':    true,
+                    });
+                  } catch (_) {}
+                  if (!context.mounted) return;
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => WordSearchSupabaseWrapper(
+                      matchId:        matchId,
+                      currentUserId:  currentUserId,
+                      partnerUserId:  partnerUserId,
+                      partnerName:    partnerName,
+                      onChatUnlocked: () {
+                        int pops = 0;
+                        Navigator.of(context).popUntil((_) => pops++ >= 2);
+                        onChatUnlocked();
+                      },
+                    ),
+                  ));
+                } finally {
+                  if (mounted) setState(() => _loading = false);
                 }
-                if (!context.mounted) return;
-                Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => WordSearchSupabaseWrapper(
-                    matchId:        matchId,
-                    currentUserId:  currentUserId,
-                    partnerUserId:  partnerUserId,
-                    partnerName:    partnerName,
-                    onChatUnlocked: () {
-                      // Pop exactly 2 routes: WordSearchGameScreen + GameHubScreen.
-                      int _pops = 0;
-                      Navigator.of(context).popUntil((_) => _pops++ >= 2);
-                      onChatUnlocked();
-                    },
-                  ),
-                ));
               },
               child: Container(
                 padding: const EdgeInsets.all(16),
@@ -148,9 +203,10 @@ class GameHubScreen extends StatelessWidget {
             // ── Rock Paper Scissors ──
             GestureDetector(
               onTap: () async {
-                // Create a game_session in Supabase and get the session id
-                // before navigating so both players share the same session.
+                if (_loading) return;
+                setState(() => _loading = true);
                 try {
+                  if (await _duplicateGuard('rps', 'Rock Paper Scissors')) return;
                   final sessionId = await Supabase.instance.client
                       .rpc('create_game_challenge', params: {
                     'p_match_id':      matchId,
@@ -162,7 +218,7 @@ class GameHubScreen extends StatelessWidget {
                   if (!context.mounted) return;
 
                   Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => RPSIntroScreen(
+                    builder: (_) => RPSPickScreen(
                       currentUserId:   currentUserId,
                       currentUserName: 'You',
                       opponentId:      partnerUserId,
@@ -180,6 +236,8 @@ class GameHubScreen extends StatelessWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Could not start game: $e')),
                   );
+                } finally {
+                  if (mounted) setState(() => _loading = false);
                 }
               },
               child: Container(
@@ -228,29 +286,44 @@ class GameHubScreen extends StatelessWidget {
             // ── Emoji Charades ──
             GestureDetector(
               onTap: () async {
+                if (_loading) return;
+                setState(() => _loading = true);
                 try {
-                  await Supabase.instance.client
-                      .rpc('create_game_challenge', params: {
-                    'p_match_id':      matchId,
-                    'p_challenged_id': partnerUserId,
-                    'p_game_type':     'emoji_charades',
-                    'p_is_initial':    true,
-                  });
-                } catch (_) {}
-                if (!context.mounted) return;
-                Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => EmojiCharadesGameScreen(
-                    matchId:        matchId,
-                    currentUserId:  currentUserId,
-                    partnerUserId:  partnerUserId,
-                    partnerName:    partnerName,
-                    onChatUnlocked: () {
-                      int pops = 0;
-                      Navigator.of(context).popUntil((_) => pops++ >= 2);
-                      onChatUnlocked();
-                    },
-                  ),
-                ));
+                  if (await _duplicateGuard('emoji_charades', 'Emoji Charades')) return;
+                  try {
+                    await Supabase.instance.client
+                        .rpc('create_game_challenge', params: {
+                      'p_match_id':      matchId,
+                      'p_challenged_id': partnerUserId,
+                      'p_game_type':     'emoji_charades',
+                      'p_is_initial':    true,
+                    });
+                  } catch (_) {}
+                  if (!context.mounted) return;
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => EmojiCharadesGameScreen(
+                      matchId:        matchId,
+                      currentUserId:  currentUserId,
+                      partnerUserId:  partnerUserId,
+                      partnerName:    partnerName,
+                      skipIntro:      true,
+                      onChatUnlocked: () async {
+                        final nav = Navigator.of(context);
+                        try {
+                          await Supabase.instance.client
+                              .from('matches')
+                              .update({'chat_unlocked': true})
+                              .eq('id', matchId);
+                        } catch (_) {}
+                        int pops = 0;
+                        nav.popUntil((_) => pops++ >= 2);
+                        onChatUnlocked();
+                      },
+                    ),
+                  ));
+                } finally {
+                  if (mounted) setState(() => _loading = false);
+                }
               },
               child: Container(
                 padding: const EdgeInsets.all(16),

@@ -549,25 +549,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 ),
                                 borderRadius: BorderRadius.circular(28),
                               ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text('🎮', style: TextStyle(fontSize: 18)),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'PLAY GAME',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                      letterSpacing: 1,
-                                    ),
-                                  ),
-                                ],
+                              child: const Text(
+                                'Play Game',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: 1,
+                                ),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Play a mini icebreaker game to unlock chat — it\'s interactive & fun!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
                           // Secondary: Keep Swiping
                           TextButton(
                             onPressed: _closeMatchPopup,
