@@ -22,7 +22,7 @@ import '../word_search/word_search_service.dart';
 const _kBg = Color(0xFF07060F);
 const _kBgMid = Color(0xFF120D2E);
 const _kPurple = Color(0xFF8B5CF6);
-const _kPurpleD = Color(0xFF6930C3);
+const _kPurpleD = Color(0xFF6930C3); //use for noti color
 const _kPurpleL = Color(0xFFA78BFA);
 const _kAmber = Color(0xFFFFB800);
 const _kCyan = Color(0xFF00E5FF);
@@ -420,12 +420,16 @@ class _State extends State<EmojiCharadesGameScreen>
           ),
           callback: (payload) {
             final row = payload.newRecord;
-            if (row['user_id'] != widget.partnerUserId) { return; }
+            if (row['user_id'] != widget.partnerUserId) {
+              return;
+            }
             // Ignore events from a different session (same match, old game)
             final rowSession = row['session_id'] as String?;
             if (widget.sessionId != null &&
                 rowSession != null &&
-                rowSession != widget.sessionId) { return; }
+                rowSession != widget.sessionId) {
+              return;
+            }
             setState(() => _partnerRow = row);
             _onPartnerUpdate();
           },
@@ -1132,6 +1136,8 @@ class _State extends State<EmojiCharadesGameScreen>
       'phrase': _phrase,
       'emojis': _myEmojis,
       'submitted': true,
+      'solved': false,   // reset stale flags from any previous session on this match
+      'skipped': false,
     });
     _goTo(_partnerSubmitted ? _Phase.solve : _Phase.waiting);
   }

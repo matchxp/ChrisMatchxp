@@ -81,11 +81,11 @@ class WordSearchService {
   Future<MatchGamesSnapshot> getSnapshot({
     required String matchId,
     required String myUserId,
+    String? sessionId,
   }) async {
-    final rows = await _db
-        .from(_table)
-        .select()
-        .eq('match_id', matchId);
+    var query = _db.from(_table).select().eq('match_id', matchId);
+    if (sessionId != null) query = query.eq('session_id', sessionId);
+    final rows = await query;
 
     WordSearchGame? myGame;
     WordSearchGame? partnerGame;
@@ -146,12 +146,24 @@ class WordSearchService {
   /// in their partner's puzzle.
   /// Returns the updated game row.
   Future<WordSearchGame?> markSolved(String gameId) async {
-    // Use UTC so that winner comparison (pg.solvedAt.isBefore(mg.solvedAt))
-    // is always correct regardless of the two players' local timezones.
     final response = await _db
         .from(_table)
         .update({
           'status':    'solved',
+          'solved_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', gameId)
+        .select()
+        .single();
+
+    return WordSearchGame.fromJson(response);
+  }
+
+  Future<WordSearchGame?> markSkipped(String gameId) async {
+    final response = await _db
+        .from(_table)
+        .update({
+          'status':    'skipped',
           'solved_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', gameId)

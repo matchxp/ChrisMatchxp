@@ -19,6 +19,7 @@ class RPSIntroScreen extends StatefulWidget {
     required this.opponentName,
     required this.sessionId,
     required this.onChatUnlocked,
+    this.popCount = 1,
   });
 
   final String currentUserId;
@@ -27,6 +28,7 @@ class RPSIntroScreen extends StatefulWidget {
   final String opponentName;
   final String sessionId;
   final VoidCallback onChatUnlocked;
+  final int popCount;
 
   @override
   State<RPSIntroScreen> createState() => _RPSIntroScreenState();
@@ -111,6 +113,7 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
         opponentName:    widget.opponentName,
         sessionId:       widget.sessionId,
         onChatUnlocked:  widget.onChatUnlocked,
+        popCount:        widget.popCount,
       ),
     ));
   }

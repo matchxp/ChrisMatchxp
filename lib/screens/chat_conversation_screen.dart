@@ -15,7 +15,7 @@ import '../games/word_search/word_search_service.dart';
 import '../games/word_search/word_search_models.dart';
 import '../games/word_search/word_search_supabase_wrapper.dart';
 import '../games/emoji_charades/emoji_charades_game_screen.dart';
-import '../games/rock_paper_scissors/screens/rps_pick_screen.dart';
+import '../games/rock_paper_scissors/screens/rps_intro_screen.dart';
 import 'full_profile_screen.dart';
 
 class ChatConversationScreen extends StatefulWidget {
@@ -1189,7 +1189,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => RPSPickScreen(
+              builder: (_) => RPSIntroScreen(
                 currentUserId: _currentUserId,
                 currentUserName: 'You',
                 opponentId: partnerUserId,

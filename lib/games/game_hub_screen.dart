@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'word_search/word_search_supabase_wrapper.dart';
-import 'rock_paper_scissors/screens/rps_pick_screen.dart';
+import 'rock_paper_scissors/screens/rps_intro_screen.dart';
 import 'emoji_charades/emoji_charades_game_screen.dart';
 
 class GameHubScreen extends StatefulWidget {
@@ -226,7 +226,7 @@ class _GameHubScreenState extends State<GameHubScreen> {
                   if (!context.mounted) return;
 
                   Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => RPSPickScreen(
+                    builder: (_) => RPSIntroScreen(
                       currentUserId:   currentUserId,
                       currentUserName: 'You',
                       opponentId:      partnerUserId,

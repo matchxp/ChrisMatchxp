@@ -45,7 +45,10 @@
       "Bash(findstr confetti *)",
       "Bash(findstr -i \"rps_feature\\\\|path:\")",
       "mcp__claude_ai_Supabase__get_logs",
-      "mcp__claude_ai_Supabase__apply_migration"
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(python -c \"import docx\")",
+      "Bash(pip install *)",
+      "Bash(python gen_docx.py)"
     ],
     "additionalDirectories": [
       "\\tmp",

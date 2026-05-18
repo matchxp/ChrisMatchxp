@@ -256,10 +256,8 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   // ═══════════════════════════════════════════════════════════
 
   void _submitPuzzle() {
-    setState(() {
-      _me = _me.copyWith(submitted: true,
-          step: _partner.submitted ? WSStep.solve : WSStep.wait);
-    });
+    final partnerAlreadySubmitted = _partner.submitted;
+    setState(() => _me = _me.copyWith(submitted: true, step: WSStep.wait));
     widget.onGameEvent?.call({
       'event': 'puzzleSubmitted',
       'word': _me.word,
@@ -267,6 +265,14 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
       'wc': _me.wc,
       'catIdx': _me.catIdx,
     });
+    // Partner already submitted — show wait screen briefly then advance to solve.
+    if (partnerAlreadySubmitted) {
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted && _me.step == WSStep.wait) {
+          setState(() => _me = _me.copyWith(step: WSStep.solve));
+        }
+      });
+    }
   }
 
   void _tapCell(int r, int c) {
@@ -310,28 +316,28 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
 
   void _doSolvedContinue() {
     widget.onGameEvent?.call({'event': 'wordSolved'});
-    setState(() {
-      if (_partner.solved || _partner.skipped) {
-        _me = _me.copyWith(step: WSStep.done);
-      } else {
-        _me = _me.copyWith(step: WSStep.waitPartner);
-      }
-    });
-    if (_me.step == WSStep.done) _startDone();
+    _goToWaitPartner();
   }
 
   void _doSkip() {
     _skipTimer?.cancel();
     widget.onGameEvent?.call({'event': 'wordSkipped'});
-    setState(() {
-      _me = _me.copyWith(skipped: true);
-      if (_partner.solved || _partner.skipped) {
-        _me = _me.copyWith(step: WSStep.done);
-      } else {
-        _me = _me.copyWith(step: WSStep.waitPartner);
-      }
-    });
-    if (_me.step == WSStep.done) _startDone();
+    setState(() => _me = _me.copyWith(skipped: true));
+    _goToWaitPartner();
+  }
+
+  // Always shows the waitPartner screen first so the player sees confirmation.
+  // If the partner is already done, auto-advances to done after a brief pause.
+  void _goToWaitPartner() {
+    setState(() => _me = _me.copyWith(step: WSStep.waitPartner));
+    if (_partner.solved || _partner.skipped) {
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted && _me.step == WSStep.waitPartner) {
+          setState(() => _me = _me.copyWith(step: WSStep.done));
+          _startDone();
+        }
+      });
+    }
   }
 
   void _startSkipTimer() {

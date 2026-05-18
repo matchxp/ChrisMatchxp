@@ -79,11 +79,14 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
 
   Future<void> _refresh() async {
     final snap = await _svc.getSnapshot(
-      matchId:  widget.matchId,
-      myUserId: widget.currentUserId,
+      matchId:   widget.matchId,
+      myUserId:  widget.currentUserId,
+      sessionId: widget.sessionId,
     );
     if (!mounted) return;
-    setState(() => _snap = snap);
+    setState(() {
+      _snap = snap;
+    });
     _recordScoreIfNeeded(snap);
     // Push after the current frame so the game screen widget is mounted.
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncToGameScreen(snap));
@@ -106,9 +109,13 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
       _partnerDataPushed = true;
     }
 
-    // Partner solved MY puzzle.
+    // Partner finished MY puzzle (solved or skipped).
     if (!_partnerSolvedPushed && snap.myGame?.isSolved == true) {
-      state.setPartnerSolved();
+      if (snap.myGame!.isSkipped) {
+        state.setPartnerSkipped();
+      } else {
+        state.setPartnerSolved();
+      }
       _partnerSolvedPushed = true;
     }
   }
@@ -120,9 +127,16 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
     if (snap.phase != MatchGamePhase.bothSolved) return;
     final pg = snap.partnerGame;
     final mg = snap.myGame;
-    if (pg?.solvedAt == null || mg?.solvedAt == null) return;
-    final iWon   = pg!.solvedAt!.isBefore(mg!.solvedAt!);
-    final isDraw = pg.solvedAt!.isAtSameMomentAs(mg.solvedAt!);
+    if (pg == null || mg == null) return;
+
+    // Win = I solved (not skipped) and partner skipped.
+    // Draw = both solved or both skipped.
+    // Loss = I skipped and partner solved.
+    final iSkipped       = pg.isSkipped;  // I skipped partner's puzzle
+    final partnerSkipped = mg.isSkipped;  // partner skipped my puzzle
+    final iWon   = !iSkipped && partnerSkipped;
+    final isDraw = iSkipped == partnerSkipped;
+
     _scoreRecorded = true;
     if (!isDraw && iWon) {
       _svc.recordWinner(
@@ -136,17 +150,12 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
 
   void _sendCompletion({required bool iWon, required bool isDraw}) {
     if (_completionSent || widget.sessionId == null) return;
-    // Only the winner calls the RPC so the DB gets exactly one game_result row.
-    // For draws, the player with the lexicographically smaller ID is designated
-    // caller — a deterministic tiebreaker that both sides compute identically.
-    final shouldCall = iWon ||
-        (isDraw &&
-            widget.currentUserId.compareTo(widget.partnerUserId) < 0);
-    if (!shouldCall) return;
     _completionSent = true;
+    // Both players call — the RPC is idempotent, first writer wins.
+    final winnerId = isDraw ? null : (iWon ? widget.currentUserId : widget.partnerUserId);
     Supabase.instance.client.rpc('complete_game_session', params: {
       'p_session_id':   widget.sessionId,
-      'p_winner_id':    isDraw ? null : widget.currentUserId,
+      'p_winner_id':    winnerId,
       'p_result_label': 'completed',
     }).catchError((e) {
       debugPrint('[WordSearch] complete_game_session error: $e');
@@ -168,8 +177,7 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
         break;
 
       case 'wordSkipped':
-        // Treat skip as solved so both parties can reach the done screen.
-        await _handleWordSolved();
+        await _handleWordSkipped();
         break;
 
       case 'chatPressed':
@@ -206,6 +214,7 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
           'grid':       rawGrid,
           'word_path':  wordPath,
           'status':     'waiting',
+          if (widget.sessionId != null) 'session_id': widget.sessionId,
         });
 
     // Also update game_sessions so the chat card reflects the correct status.
@@ -250,6 +259,12 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
     await _refresh();
   }
 
+  Future<void> _handleWordSkipped() async {
+    if (_snap.partnerGame == null) return;
+    await _svc.markSkipped(_snap.partnerGame!.id);
+    await _refresh();
+  }
+
   // ── Build ──────────────────────────────────────────────────
 
   @override
@@ -258,7 +273,7 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
       key:          _gameKey,
       partnerName:  widget.partnerName,
       onGameEvent:  _onGameEvent,
-      skipWelcome:  true,
+      skipWelcome:  false,
     );
   }
 }

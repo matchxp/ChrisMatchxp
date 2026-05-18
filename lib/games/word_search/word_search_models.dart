@@ -1,6 +1,6 @@
 // lib/games/word_search/word_search_models.dart
 
-enum GameStatus { waiting, solved }
+enum GameStatus { waiting, solved, skipped }
 
 /// The current phase of the game FROM THE PERSPECTIVE of the current user.
 /// Both users progress through these phases independently.
@@ -51,6 +51,7 @@ class GridPosition {
 class WordSearchGame {
   final String id;
   final String matchId;
+  final String? sessionId;
   final String creatorId;  // the user who SET this puzzle
   final String solverId;   // the user who must SOLVE this puzzle
   final String topic;
@@ -64,6 +65,7 @@ class WordSearchGame {
   const WordSearchGame({
     required this.id,
     required this.matchId,
+    this.sessionId,
     required this.creatorId,
     required this.solverId,
     required this.topic,
@@ -89,15 +91,18 @@ class WordSearchGame {
     return WordSearchGame(
       id:        json['id'] as String,
       matchId:   json['match_id'] as String,
+      sessionId: json['session_id'] as String?,
       creatorId: json['creator_id'] as String,
       solverId:  json['solver_id'] as String,
       topic:     json['topic'] as String,
       word:      (json['word'] as String).toUpperCase(),
       grid:      grid,
       wordPath:  wordPath,
-      status:    (json['status'] as String) == 'solved'
-                   ? GameStatus.solved
-                   : GameStatus.waiting,
+      status:    switch (json['status'] as String) {
+                   'solved'  => GameStatus.solved,
+                   'skipped' => GameStatus.skipped,
+                   _         => GameStatus.waiting,
+                 },
       createdAt: DateTime.parse(json['created_at'] as String),
       solvedAt:  json['solved_at'] != null
                    ? DateTime.parse(json['solved_at'] as String)
@@ -116,7 +121,9 @@ class WordSearchGame {
     'status':     'waiting',
   };
 
-  bool get isSolved => status == GameStatus.solved;
+  // True when the puzzle is "done" (either solved or skipped) — used by phase logic.
+  bool get isSolved  => status == GameStatus.solved || status == GameStatus.skipped;
+  bool get isSkipped => status == GameStatus.skipped;
 }
 
 /// Snapshot of both game rows for a match, from one user's perspective.
