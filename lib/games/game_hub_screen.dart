@@ -128,14 +128,19 @@ class _GameHubScreenState extends State<GameHubScreen> {
                 setState(() => _loading = true);
                 try {
                   if (await _duplicateGuard('word_search', 'Word Search')) return;
+                  String? sessionId;
                   try {
-                    await Supabase.instance.client
+                    sessionId = await Supabase.instance.client
                         .rpc('create_game_challenge', params: {
                       'p_match_id':      matchId,
                       'p_challenged_id': partnerUserId,
                       'p_game_type':     'word_search',
                       'p_is_initial':    true,
-                    });
+                    }) as String?;
+                    if (sessionId != null) {
+                      await Supabase.instance.client
+                          .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
+                    }
                   } catch (_) {}
                   if (!context.mounted) return;
                   Navigator.push(context, MaterialPageRoute(
@@ -144,6 +149,7 @@ class _GameHubScreenState extends State<GameHubScreen> {
                       currentUserId:  currentUserId,
                       partnerUserId:  partnerUserId,
                       partnerName:    partnerName,
+                      sessionId:      sessionId,
                       onChatUnlocked: () {
                         int pops = 0;
                         Navigator.of(context).popUntil((_) => pops++ >= 2);
@@ -214,6 +220,8 @@ class _GameHubScreenState extends State<GameHubScreen> {
                     'p_game_type':     'rps',
                     'p_is_initial':    true,
                   }) as String;
+                  await Supabase.instance.client
+                      .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
 
                   if (!context.mounted) return;
 
@@ -224,11 +232,8 @@ class _GameHubScreenState extends State<GameHubScreen> {
                       opponentId:      partnerUserId,
                       opponentName:    partnerName,
                       sessionId:       sessionId,
-                      onChatUnlocked: () {
-                        int pops = 0;
-                        Navigator.of(context).popUntil((_) => pops++ >= 2);
-                        onChatUnlocked();
-                      },
+                      popCount:        2,
+                      onChatUnlocked:  onChatUnlocked,
                     ),
                   ));
                 } catch (e) {
@@ -290,14 +295,19 @@ class _GameHubScreenState extends State<GameHubScreen> {
                 setState(() => _loading = true);
                 try {
                   if (await _duplicateGuard('emoji_charades', 'Emoji Charades')) return;
+                  String? sessionId;
                   try {
-                    await Supabase.instance.client
+                    sessionId = await Supabase.instance.client
                         .rpc('create_game_challenge', params: {
                       'p_match_id':      matchId,
                       'p_challenged_id': partnerUserId,
                       'p_game_type':     'emoji_charades',
                       'p_is_initial':    true,
-                    });
+                    }) as String?;
+                    if (sessionId != null) {
+                      await Supabase.instance.client
+                          .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
+                    }
                   } catch (_) {}
                   if (!context.mounted) return;
                   Navigator.push(context, MaterialPageRoute(
@@ -306,18 +316,19 @@ class _GameHubScreenState extends State<GameHubScreen> {
                       currentUserId:  currentUserId,
                       partnerUserId:  partnerUserId,
                       partnerName:    partnerName,
+                      sessionId:      sessionId,
                       skipIntro:      true,
-                      onChatUnlocked: () async {
-                        final nav = Navigator.of(context);
-                        try {
-                          await Supabase.instance.client
-                              .from('matches')
-                              .update({'chat_unlocked': true})
-                              .eq('id', matchId);
-                        } catch (_) {}
+                      onChatUnlocked: () {
+                        // Navigate immediately — don't block on Supabase.
                         int pops = 0;
-                        nav.popUntil((_) => pops++ >= 2);
+                        Navigator.of(context).popUntil((_) => pops++ >= 2);
                         onChatUnlocked();
+                        // Best-effort: persist chat_unlocked in background.
+                        Supabase.instance.client
+                            .from('matches')
+                            .update({'chat_unlocked': true})
+                            .eq('id', matchId)
+                            .catchError((_) {});
                       },
                     ),
                   ));

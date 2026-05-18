@@ -79,7 +79,7 @@ class ProfileService {
       print('❌ Error type: ${e.runtimeType}');
       print('❌ Error message: $e');
       print('====================================================\n');
-      
+
       return {'success': false, 'error': e.toString()};
     }
   }

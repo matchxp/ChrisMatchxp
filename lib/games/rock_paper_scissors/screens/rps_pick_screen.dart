@@ -19,6 +19,7 @@ class RPSPickScreen extends StatefulWidget {
     required this.opponentName,
     required this.sessionId,
     required this.onChatUnlocked,
+    this.popCount = 1,
   });
 
   final String currentUserId;
@@ -27,6 +28,7 @@ class RPSPickScreen extends StatefulWidget {
   final String opponentName;
   final String sessionId;
   final VoidCallback onChatUnlocked;
+  final int popCount;
 
   @override
   State<RPSPickScreen> createState() => _RPSPickScreenState();
@@ -74,6 +76,7 @@ class _RPSPickScreenState extends State<RPSPickScreen>
             sessionId:       widget.sessionId,
             myMove:          _selected!,
             onChatUnlocked:  widget.onChatUnlocked,
+            popCount:        widget.popCount,
           ),
         ));
       } else {
@@ -87,6 +90,7 @@ class _RPSPickScreenState extends State<RPSPickScreen>
             myMove:          result.myMove!,
             opponentMove:    result.opponentMove!,
             onChatUnlocked:  widget.onChatUnlocked,
+            popCount:        widget.popCount,
           ),
         ));
       }

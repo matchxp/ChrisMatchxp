@@ -36,7 +36,16 @@
       "Bash(ADB=\"/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe\" *)",
       "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 shell input tap 270 448)",
       "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 shell input tap 270 450)",
-      "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 exec-out screencap -p)"
+      "Bash(/c/Users/tranp/AppData/Local/Android/Sdk/platform-tools/adb.exe -s emulator-5554 exec-out screencap -p)",
+      "PowerShell(& \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s emulator-5554 shell \"pm clear com.google.android.gms; pm clear com.google.android.gsf; pm clear com.google.android.youtube\" 2>&1)",
+      "PowerShell(& \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s emulator-5554 shell df /data 2>&1)",
+      "Bash(flutter clean *)",
+      "PowerShell(& \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" devices)",
+      "PowerShell(& \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" -s b4aaf08e install -r \"c:\\\\group prj\\\\matchxp\\\\build\\\\app\\\\outputs\\\\flutter-apk\\\\app-arm64-v8a-release.apk\")",
+      "Bash(findstr confetti *)",
+      "Bash(findstr -i \"rps_feature\\\\|path:\")",
+      "mcp__claude_ai_Supabase__get_logs",
+      "mcp__claude_ai_Supabase__apply_migration"
     ],
     "additionalDirectories": [
       "\\tmp",

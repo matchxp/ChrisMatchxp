@@ -20,6 +20,7 @@ class WordSearchSupabaseWrapper extends StatefulWidget {
   final String partnerUserId;
   final String partnerName;
   final VoidCallback onChatUnlocked;
+  final String? sessionId;
 
   const WordSearchSupabaseWrapper({
     super.key,
@@ -28,6 +29,7 @@ class WordSearchSupabaseWrapper extends StatefulWidget {
     required this.partnerUserId,
     required this.partnerName,
     required this.onChatUnlocked,
+    this.sessionId,
   });
 
   @override
@@ -46,6 +48,7 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
   bool _partnerDataPushed   = false;
   bool _partnerSolvedPushed = false;
   bool _scoreRecorded       = false;
+  bool _completionSent      = false;
 
   // ── Lifecycle ──────────────────────────────────────────────
 
@@ -118,17 +121,36 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
     final pg = snap.partnerGame;
     final mg = snap.myGame;
     if (pg?.solvedAt == null || mg?.solvedAt == null) return;
-    final iWon  = pg!.solvedAt!.isBefore(mg!.solvedAt!);
+    final iWon   = pg!.solvedAt!.isBefore(mg!.solvedAt!);
     final isDraw = pg.solvedAt!.isAtSameMomentAs(mg.solvedAt!);
-    if (isDraw) return;
     _scoreRecorded = true;
-    if (iWon) {
+    if (!isDraw && iWon) {
       _svc.recordWinner(
         matchId:  widget.matchId,
         winnerId: widget.currentUserId,
         loserId:  widget.partnerUserId,
       );
     }
+    _sendCompletion(iWon: iWon, isDraw: isDraw);
+  }
+
+  void _sendCompletion({required bool iWon, required bool isDraw}) {
+    if (_completionSent || widget.sessionId == null) return;
+    // Only the winner calls the RPC so the DB gets exactly one game_result row.
+    // For draws, the player with the lexicographically smaller ID is designated
+    // caller — a deterministic tiebreaker that both sides compute identically.
+    final shouldCall = iWon ||
+        (isDraw &&
+            widget.currentUserId.compareTo(widget.partnerUserId) < 0);
+    if (!shouldCall) return;
+    _completionSent = true;
+    Supabase.instance.client.rpc('complete_game_session', params: {
+      'p_session_id':   widget.sessionId,
+      'p_winner_id':    isDraw ? null : widget.currentUserId,
+      'p_result_label': 'completed',
+    }).catchError((e) {
+      debugPrint('[WordSearch] complete_game_session error: $e');
+    });
   }
 
   // ── Game event handler ─────────────────────────────────────
@@ -151,21 +173,14 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
         break;
 
       case 'chatPressed':
-        // Ensure matches.chat_unlocked is set — idempotent (only writes if false).
-        try {
-          final row = await Supabase.instance.client
-              .from('matches')
-              .select('chat_unlocked')
-              .eq('id', widget.matchId)
-              .single();
-          if (row['chat_unlocked'] != true) {
-            await Supabase.instance.client
-                .from('matches')
-                .update({'chat_unlocked': true})
-                .eq('id', widget.matchId);
-          }
-        } catch (_) {}
+        // Navigate immediately — don't block on Supabase.
         widget.onChatUnlocked();
+        // Best-effort: persist chat_unlocked flag in background.
+        Supabase.instance.client
+            .from('matches')
+            .update({'chat_unlocked': true})
+            .eq('id', widget.matchId)
+            .catchError((_) {});
         break;
     }
   }

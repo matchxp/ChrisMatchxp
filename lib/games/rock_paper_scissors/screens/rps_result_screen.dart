@@ -22,6 +22,7 @@ class RPSResultScreen extends StatefulWidget {
     required this.result,
     required this.onChatUnlocked,
     this.sessionId,
+    this.popCount = 1,
   });
 
   final String currentUserId;
@@ -32,7 +33,8 @@ class RPSResultScreen extends StatefulWidget {
   final RPSMove opponentMove;
   final RPSResult result;
   final VoidCallback onChatUnlocked;
-  final String? sessionId;   // kept for Play Again routing (future use)
+  final String? sessionId;
+  final int popCount;
 
   @override
   State<RPSResultScreen> createState() => _RPSResultScreenState();
@@ -40,7 +42,6 @@ class RPSResultScreen extends StatefulWidget {
 
 class _RPSResultScreenState extends State<RPSResultScreen>
     with TickerProviderStateMixin {
-
   late final AnimationController _float1Ctrl;
   late final AnimationController _float2Ctrl;
   late final Animation<double> _float1;
@@ -54,19 +55,19 @@ class _RPSResultScreenState extends State<RPSResultScreen>
     _float1Ctrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 3000))
       ..repeat(reverse: true);
-    _float1 = Tween<double>(begin: 0, end: -10).animate(
-        CurvedAnimation(parent: _float1Ctrl, curve: Curves.easeInOut));
+    _float1 = Tween<double>(begin: 0, end: -10)
+        .animate(CurvedAnimation(parent: _float1Ctrl, curve: Curves.easeInOut));
 
     _float2Ctrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 3400))
       ..repeat(reverse: true);
-    _float2 = Tween<double>(begin: 0, end: -12).animate(
-        CurvedAnimation(parent: _float2Ctrl, curve: Curves.easeInOut));
+    _float2 = Tween<double>(begin: 0, end: -12)
+        .animate(CurvedAnimation(parent: _float2Ctrl, curve: Curves.easeInOut));
 
     // FIX: Only start repeating the confetti controller on a win —
     // previously it repeated for everyone and then redundantly called forward().
-    _confettiCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 4));
+    _confettiCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 4));
     if (widget.result == RPSResult.win) {
       _confettiCtrl.repeat();
     }
@@ -86,25 +87,34 @@ class _RPSResultScreenState extends State<RPSResultScreen>
 
   String get outcomeText {
     switch (result) {
-      case RPSResult.win:  return 'You Win';
-      case RPSResult.lose: return 'You Lose';
-      case RPSResult.draw: return "It's a Draw";
+      case RPSResult.win:
+        return 'You Win';
+      case RPSResult.lose:
+        return 'You Lose';
+      case RPSResult.draw:
+        return "It's a Draw";
     }
   }
 
   Color get outcomeColor {
     switch (result) {
-      case RPSResult.win:  return RPSTheme.gold;
-      case RPSResult.lose: return RPSTheme.purpleLight;
-      case RPSResult.draw: return Colors.white;
+      case RPSResult.win:
+        return RPSTheme.gold;
+      case RPSResult.lose:
+        return RPSTheme.purpleLight;
+      case RPSResult.draw:
+        return Colors.white;
     }
   }
 
   String get reasonText {
     switch (result) {
-      case RPSResult.win:  return myMove.beatsLabel;
-      case RPSResult.lose: return oppMove.beatsLabel;
-      case RPSResult.draw: return 'GREAT MINDS THINK ALIKE!';
+      case RPSResult.win:
+        return myMove.beatsLabel;
+      case RPSResult.lose:
+        return oppMove.beatsLabel;
+      case RPSResult.draw:
+        return 'GREAT MINDS THINK ALIKE!';
     }
   }
 
@@ -116,6 +126,9 @@ class _RPSResultScreenState extends State<RPSResultScreen>
 
   /// Pop back to ChatConversationScreen and fire the unlock callback.
   void _startChat() {
+    debugPrint('[RPS] Start Chatting tapped');
+    int pops = 0;
+    Navigator.of(context).popUntil((_) => pops++ >= widget.popCount);
     widget.onChatUnlocked();
   }
 
@@ -205,7 +218,8 @@ class _RPSResultScreenState extends State<RPSResultScreen>
                     const Spacer(),
 
                     RPSPillButton(
-                        label: 'Start Chatting', onPressed: _startChat),
+                        label: 'Start Chatting',
+                        onPressed: _startChat), //investigate from this var
                     const SizedBox(height: 10),
                     RPSPillButton(
                       label: 'Play Again',
@@ -240,8 +254,7 @@ class _MoveResult extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final moveColor =
-        isWinner ? RPSTheme.purpleLight : const Color(0xFF06B6D4);
+    final moveColor = isWinner ? RPSTheme.purpleLight : const Color(0xFF06B6D4);
     return Expanded(
       child: Column(
         children: [

@@ -39,6 +39,7 @@ class RPSPillButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final disabled = onPressed == null;
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onPressed,
       child: Opacity(
         opacity: disabled ? 0.32 : 1.0,

@@ -2,6 +2,7 @@
 //  Rock Paper Scissors – Waiting Screen
 // ─────────────────────────────────────────────────────────────
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/rps_models.dart';
 import '../data/rps_supabase_service.dart';
@@ -19,6 +20,7 @@ class RPSWaitingScreen extends StatefulWidget {
     required this.sessionId,
     required this.myMove,
     required this.onChatUnlocked,
+    this.popCount = 1,
   });
 
   final String currentUserId;
@@ -28,6 +30,7 @@ class RPSWaitingScreen extends StatefulWidget {
   final String sessionId;
   final RPSMove myMove;
   final VoidCallback onChatUnlocked;
+  final int popCount;
 
   @override
   State<RPSWaitingScreen> createState() => _RPSWaitingScreenState();
@@ -37,6 +40,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
     with TickerProviderStateMixin {
   final _svc = RPSSupabaseService();
   bool _opponentReady = false;
+  Timer? _pollTimer;
 
   late final AnimationController _rippleCtrl;
   late final AnimationController _floatCtrl;
@@ -70,6 +74,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
       widget.currentUserId,
       (myMove, opponentMove, result) {
         if (!mounted) return;
+        _pollTimer?.cancel();
         setState(() => _opponentReady = true);
         _goReveal(myMove, opponentMove);
       },
@@ -79,17 +84,30 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
     // the rps_moves RLS realtime event is blocked for User A.
     _svc.subscribeToSession(widget.sessionId, (status) async {
       if (status == 'completed' || status == 'auto_unlocked') {
-        if (!mounted || _opponentReady) return; // already handled by primary
+        if (!mounted || _opponentReady) return;
         final result = await _svc.fetchResult(widget.sessionId, widget.currentUserId);
         if (result == null || !mounted) return;
+        _pollTimer?.cancel();
         setState(() => _opponentReady = true);
         _goReveal(result.myMove!, result.opponentMove!);
       }
+    });
+
+    // Polling safety net — covers cases where both realtime paths are blocked
+    // (rps_moves RLS filter, game_sessions not published, etc).
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      if (!mounted || _opponentReady) return;
+      final result = await _svc.fetchResult(widget.sessionId, widget.currentUserId);
+      if (result == null || !mounted || _opponentReady) return;
+      _pollTimer?.cancel();
+      setState(() => _opponentReady = true);
+      _goReveal(result.myMove!, result.opponentMove!);
     });
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _svc.dispose();
     _rippleCtrl.dispose();
     _floatCtrl.dispose();
@@ -108,6 +126,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
         myMove:          myMove,
         opponentMove:    opponentMove,
         onChatUnlocked:  widget.onChatUnlocked,
+        popCount:        widget.popCount,
       ),
     ));
   }
