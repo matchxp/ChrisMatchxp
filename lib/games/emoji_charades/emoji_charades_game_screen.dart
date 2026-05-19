@@ -1139,7 +1139,7 @@ class _State extends State<EmojiCharadesGameScreen>
       'solved': false,   // reset stale flags from any previous session on this match
       'skipped': false,
     });
-    _goTo(_partnerSubmitted ? _Phase.solve : _Phase.waiting);
+    _goTo(_Phase.waiting);
   }
 
   // ============================================================

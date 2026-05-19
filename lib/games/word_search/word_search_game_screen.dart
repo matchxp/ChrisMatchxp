@@ -207,7 +207,6 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   void setPartnerData(List<List<String>> grid, String word, int catIdx) {
     setState(() {
       _partner = _partner.copyWith(grid: grid, word: word, catIdx: catIdx, submitted: true);
-      if (_me.submitted) _me = _me.copyWith(step: WSStep.solve);
     });
   }
 
@@ -256,7 +255,6 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   // ═══════════════════════════════════════════════════════════
 
   void _submitPuzzle() {
-    final partnerAlreadySubmitted = _partner.submitted;
     setState(() => _me = _me.copyWith(submitted: true, step: WSStep.wait));
     widget.onGameEvent?.call({
       'event': 'puzzleSubmitted',
@@ -265,14 +263,6 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
       'wc': _me.wc,
       'catIdx': _me.catIdx,
     });
-    // Partner already submitted — show wait screen briefly then advance to solve.
-    if (partnerAlreadySubmitted) {
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted && _me.step == WSStep.wait) {
-          setState(() => _me = _me.copyWith(step: WSStep.solve));
-        }
-      });
-    }
   }
 
   void _tapCell(int r, int c) {
@@ -1006,15 +996,22 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
 
   // ── 5. WAIT ────────────────────────────────────────────────
   Widget _buildWait() {
+    final partnerReady = _partner.submitted;
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         _pulseRings(),
         const SizedBox(height: 18),
-        Text('Waiting for ${widget.partnerName}',
-            style: _fredoka(22, FontWeight.w600, Colors.white)),
+        Text(
+          partnerReady ? "${widget.partnerName}'s puzzle is ready!" : 'Waiting for ${widget.partnerName}',
+          style: _fredoka(22, FontWeight.w600, Colors.white),
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 6),
-        Text('They are setting up their puzzle', style: _fredoka(14, FontWeight.w400, _textMuted)),
+        Text(
+          partnerReady ? 'Tap below when you\'re ready to solve' : 'They are setting up their puzzle',
+          style: _fredoka(14, FontWeight.w400, _textMuted),
+        ),
         const SizedBox(height: 18),
         _shimmerCard(Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1027,6 +1024,13 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
             Text('Sent ✓', style: _fredoka(13, FontWeight.w600, _amber)),
           ],
         )),
+        if (partnerReady) ...[
+          const SizedBox(height: 24),
+          _primaryBtn(
+            'Solve ${widget.partnerName}\'s Puzzle',
+            () => setState(() => _me = _me.copyWith(step: WSStep.solve)),
+          ),
+        ],
       ]),
     );
   }
