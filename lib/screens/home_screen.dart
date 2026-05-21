@@ -37,6 +37,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String? _matchedPartnerUserId;
   late AnimationController _matchAnimController;
 
+  RealtimeChannel? _matchNotifChannel;
+
   final MatchingService _matchingService = MatchingService();
 
   @override
@@ -53,6 +55,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
     _resetAnimations();
     _loadProfiles();
+    _subscribeToMatchNotifications();
+  }
+
+  void _subscribeToMatchNotifications() {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) return;
+    _matchNotifChannel = _matchingService.subscribeToMatchNotifications(
+      currentUserId,
+      (matchId, partnerId) async {
+        final profile = await _matchingService.getProfileById(partnerId);
+        if (!mounted || profile == null) return;
+        _triggerMatchPopup(profile, matchId: matchId, partnerUserId: partnerId);
+      },
+    );
   }
 
   void _resetAnimations() {
@@ -123,6 +139,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    if (_matchNotifChannel != null) {
+      Supabase.instance.client.removeChannel(_matchNotifChannel!);
+    }
     _swipeAnimationController.dispose();
     _matchAnimController.dispose();
     super.dispose();
@@ -550,7 +569,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 borderRadius: BorderRadius.circular(28),
                               ),
                               child: const Text(
-                                'Play Game',
+                                'PLAY GAME TO UNLOCK CHAT',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 16,

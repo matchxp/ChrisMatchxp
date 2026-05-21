@@ -95,11 +95,14 @@ class WordSearchGameScreen extends StatefulWidget {
   /// When true, skip the welcome screen and start at the category picker.
   final bool skipWelcome;
 
+  final bool chatAlreadyUnlocked;
+
   const WordSearchGameScreen({
     super.key,
     required this.partnerName,
     this.onGameEvent,
     this.skipWelcome = false,
+    this.chatAlreadyUnlocked = false,
   });
 
   @override
@@ -1232,7 +1235,8 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                 style: _fredoka(12, FontWeight.w400, _green.withOpacity(0.55))),
           ]),
           const SizedBox(height: 16),
-          _primaryBtn('Chat with ${widget.partnerName}',
+          _primaryBtn(
+              widget.chatAlreadyUnlocked ? 'Continue Chatting' : 'Start Chatting',
               () => widget.onGameEvent?.call({'event': 'chatPressed'})),
           const SizedBox(height: 10),
           _outlineBtn('Play again', () {

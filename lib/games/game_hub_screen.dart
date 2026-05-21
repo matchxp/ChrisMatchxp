@@ -13,6 +13,12 @@ class GameHubScreen extends StatefulWidget {
   final String partnerName;
   final VoidCallback onChatUnlocked;
 
+  /// When provided, PLAY buttons call this with the game type and pop back
+  /// instead of launching the game directly. Used for in-chat challenges.
+  final void Function(String gameType)? onGameSelected;
+
+  final bool chatAlreadyUnlocked;
+
   const GameHubScreen({
     super.key,
     required this.matchId,
@@ -20,6 +26,8 @@ class GameHubScreen extends StatefulWidget {
     required this.partnerUserId,
     required this.partnerName,
     required this.onChatUnlocked,
+    this.onGameSelected,
+    this.chatAlreadyUnlocked = false,
   });
 
   @override
@@ -108,22 +116,32 @@ class _GameHubScreenState extends State<GameHubScreen> {
           const SizedBox(height: 14),
           ShaderMask(
             shaderCallback: (b) => const LinearGradient(
-              colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB), Color(0xFFFF6B8A)],
+              colors: [Color(0xFF7C3AED), Color(0xFFA78BFA)],
             ).createShader(b),
             child: const Text('Pick a game to play',
               textAlign: TextAlign.center,
               style: TextStyle(fontFamily: 'Fredoka One', fontSize: 24, color: Colors.white)),
           ),
           const SizedBox(height: 6),
-          Text('Both of you create AND solve a puzzle.\nChat unlocks when you both finish!',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: _mt, fontFamily: 'Fredoka', fontSize: 13, height: 1.5)),
+          ShaderMask(
+            shaderCallback: (b) => const LinearGradient(
+              colors: [Color(0xFF7C3AED), Color(0xFFA78BFA)],
+            ).createShader(b),
+            child: const Text('Both of you create AND solve a puzzle.\nChat unlocks when you both finish!',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontFamily: 'Fredoka', fontSize: 13, height: 1.5)),
+          ),
           const SizedBox(height: 20),
 
           Expanded(child: ListView(children: [
             // ── Word Search (active) ──
             GestureDetector(
               onTap: () async {
+                if (widget.onGameSelected != null) {
+                  Navigator.pop(context);
+                  widget.onGameSelected!('word_search');
+                  return;
+                }
                 if (_loading) return;
                 setState(() => _loading = true);
                 try {
@@ -145,11 +163,12 @@ class _GameHubScreenState extends State<GameHubScreen> {
                   if (!context.mounted) return;
                   Navigator.push(context, MaterialPageRoute(
                     builder: (_) => WordSearchSupabaseWrapper(
-                      matchId:        matchId,
-                      currentUserId:  currentUserId,
-                      partnerUserId:  partnerUserId,
-                      partnerName:    partnerName,
-                      sessionId:      sessionId,
+                      matchId:              matchId,
+                      currentUserId:        currentUserId,
+                      partnerUserId:        partnerUserId,
+                      partnerName:          partnerName,
+                      sessionId:            sessionId,
+                      chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
                       onChatUnlocked: () {
                         int pops = 0;
                         Navigator.of(context).popUntil((_) => pops++ >= 2);
@@ -209,6 +228,11 @@ class _GameHubScreenState extends State<GameHubScreen> {
             // ── Rock Paper Scissors ──
             GestureDetector(
               onTap: () async {
+                if (widget.onGameSelected != null) {
+                  Navigator.pop(context);
+                  widget.onGameSelected!('rps');
+                  return;
+                }
                 if (_loading) return;
                 setState(() => _loading = true);
                 try {
@@ -227,13 +251,14 @@ class _GameHubScreenState extends State<GameHubScreen> {
 
                   Navigator.push(context, MaterialPageRoute(
                     builder: (_) => RPSIntroScreen(
-                      currentUserId:   currentUserId,
-                      currentUserName: 'You',
-                      opponentId:      partnerUserId,
-                      opponentName:    partnerName,
-                      sessionId:       sessionId,
-                      popCount:        2,
-                      onChatUnlocked:  onChatUnlocked,
+                      currentUserId:        currentUserId,
+                      currentUserName:      'You',
+                      opponentId:           partnerUserId,
+                      opponentName:         partnerName,
+                      sessionId:            sessionId,
+                      popCount:             2,
+                      onChatUnlocked:       onChatUnlocked,
+                      chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
                     ),
                   ));
                 } catch (e) {
@@ -291,6 +316,11 @@ class _GameHubScreenState extends State<GameHubScreen> {
             // ── Emoji Charades ──
             GestureDetector(
               onTap: () async {
+                if (widget.onGameSelected != null) {
+                  Navigator.pop(context);
+                  widget.onGameSelected!('emoji_charades');
+                  return;
+                }
                 if (_loading) return;
                 setState(() => _loading = true);
                 try {
@@ -312,12 +342,13 @@ class _GameHubScreenState extends State<GameHubScreen> {
                   if (!context.mounted) return;
                   Navigator.push(context, MaterialPageRoute(
                     builder: (_) => EmojiCharadesGameScreen(
-                      matchId:        matchId,
-                      currentUserId:  currentUserId,
-                      partnerUserId:  partnerUserId,
-                      partnerName:    partnerName,
-                      sessionId:      sessionId,
-                      skipIntro:      true,
+                      matchId:              matchId,
+                      currentUserId:        currentUserId,
+                      partnerUserId:        partnerUserId,
+                      partnerName:          partnerName,
+                      sessionId:            sessionId,
+                      skipIntro:            true,
+                      chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
                       onChatUnlocked: () {
                         // Navigate immediately — don't block on Supabase.
                         int pops = 0;
@@ -341,10 +372,10 @@ class _GameHubScreenState extends State<GameHubScreen> {
                 decoration: BoxDecoration(
                   color: _surf,
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFFFB800).withOpacity(0.35), width: 1.5),
+                  border: Border.all(color: const Color(0xFF7C3AED).withOpacity(0.35), width: 1.5),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFFFFB800).withOpacity(0.10),
+                      color: const Color(0xFF7C3AED).withOpacity(0.10),
                       blurRadius: 24, offset: const Offset(0, 8)),
                   ],
                 ),
@@ -355,7 +386,7 @@ class _GameHubScreenState extends State<GameHubScreen> {
                       borderRadius: BorderRadius.circular(14),
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft, end: Alignment.bottomRight,
-                        colors: [Color(0xFF7C3A00), Color(0xFFFFB800)])),
+                        colors: [Color(0xFF3B1580), Color(0xFF7C3AED)])),
                     child: const Center(child: Text('😂', style: TextStyle(fontSize: 26)))),
                   const SizedBox(width: 14),
                   const Expanded(child: Column(
@@ -369,9 +400,9 @@ class _GameHubScreenState extends State<GameHubScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFFCC8800), Color(0xFFFFB800)]),
+                      gradient: const LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFFA78BFA)]),
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: const Color(0xFFFFB800).withOpacity(0.4), blurRadius: 12)]),
+                      boxShadow: [BoxShadow(color: const Color(0xFF7C3AED).withOpacity(0.4), blurRadius: 12)]),
                     child: const Text('PLAY', style: TextStyle(color: Colors.white,
                       fontFamily: 'Fredoka', fontSize: 11, fontWeight: FontWeight.w700))),
                 ]),

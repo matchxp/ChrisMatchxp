@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/matching_service.dart';
 import '../games/word_search/word_search_service.dart';
 import '../games/word_search/word_search_models.dart';
+import '../games/word_search/word_search_supabase_wrapper.dart';
+import '../games/emoji_charades/emoji_charades_game_screen.dart';
+import '../games/rock_paper_scissors/screens/rps_intro_screen.dart';
+import '../games/game_hub_screen.dart';
 import 'chat_conversation_screen.dart';
-import 'game_status_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
@@ -17,8 +19,7 @@ class ChatsScreen extends StatefulWidget {
   State<ChatsScreen> createState() => _ChatsScreenState();
 }
 
-class _ChatsScreenState extends State<ChatsScreen>
-    with TickerProviderStateMixin {
+class _ChatsScreenState extends State<ChatsScreen> {
   final MatchingService _matchingService = MatchingService();
   final WordSearchService _wordSearchService = WordSearchService();
   final String _currentUserId =
@@ -28,16 +29,9 @@ class _ChatsScreenState extends State<ChatsScreen>
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  late AnimationController _matchAnimationController;
-  bool _showMatchPopup = false;
-  Map<String, dynamic>? _selectedMatch;
-
   // Each item: { match_id, profile, last_message, unread_count, game_phase }
   List<Map<String, dynamic>> _matchesWithProfiles = [];
   bool _loading = true;
-
-  // ── Current user's own profile photo (for match popup) ────────────────────
-  String _myPhoto = '';
 
   // ── Online presence ────────────────────────────────────────────────────────
   final Set<String> _onlineUserIds = {};
@@ -45,12 +39,7 @@ class _ChatsScreenState extends State<ChatsScreen>
   @override
   void initState() {
     super.initState();
-    _matchAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
     _loadMatches();
-    _loadMyPhoto();
     ChatsScreen.refreshNotifier.addListener(_onExternalRefresh);
     _searchController.addListener(_onSearchChanged);
   }
@@ -58,7 +47,6 @@ class _ChatsScreenState extends State<ChatsScreen>
   @override
   void dispose() {
     ChatsScreen.refreshNotifier.removeListener(_onExternalRefresh);
-    _matchAnimationController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -69,20 +57,6 @@ class _ChatsScreenState extends State<ChatsScreen>
 
   void _onSearchChanged() {
     setState(() => _searchQuery = _searchController.text.toLowerCase().trim());
-  }
-
-  Future<void> _loadMyPhoto() async {
-    try {
-      final row = await Supabase.instance.client
-          .from('profiles')
-          .select('photos')
-          .eq('id', _currentUserId)
-          .maybeSingle();
-      final photos = row?['photos'];
-      if (photos is List && photos.isNotEmpty && mounted) {
-        setState(() => _myPhoto = photos[0] as String);
-      }
-    } catch (_) {}
   }
 
   Future<void> _loadMatches() async {
@@ -131,11 +105,54 @@ class _ChatsScreenState extends State<ChatsScreen>
         } catch (_) {}
       }
 
+      // Determine chat_unlocked, circle_color, and active session data
+      bool chatUnlocked = gamePhase == MatchGamePhase.bothSolved;
+      String circleColor = 'grey';
+      String? activeSessionId;
+      String? activeGameType;
+      String? activeSessionStatus;
+      if (!chatUnlocked) {
+        try {
+          final sessions = await Supabase.instance.client
+              .from('game_sessions')
+              .select('id, challenger_id, status, game_type')
+              .eq('match_id', matchId)
+              .order('created_at', ascending: false);
+          final sessionList =
+              List<Map<String, dynamic>>.from(sessions as List);
+          chatUnlocked = sessionList.any((s) => s['status'] == 'completed');
+          if (!chatUnlocked) {
+            final active = sessionList.firstWhere(
+              (s) => s['status'] != 'completed',
+              orElse: () => <String, dynamic>{},
+            );
+            if (active.isNotEmpty) {
+              final challengerId = active['challenger_id'] as String?;
+              activeSessionId = active['id'] as String?;
+              activeGameType = active['game_type'] as String?;
+              activeSessionStatus = active['status'] as String?;
+              if (gamePhase == MatchGamePhase.solving ||
+                  gamePhase == MatchGamePhase.waitingPartnerSolve) {
+                circleColor = 'purple';
+              } else {
+                circleColor =
+                    challengerId == _currentUserId ? 'green' : 'red';
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
       return {
         ...m,
         'last_message': last,
         'unread_count': unreadCount,
         'game_phase': gamePhase,
+        'chat_unlocked': chatUnlocked,
+        'circle_color': circleColor,
+        'active_session_id': activeSessionId,
+        'active_game_type': activeGameType,
+        'active_session_status': activeSessionStatus,
       };
     }));
 
@@ -183,23 +200,6 @@ class _ChatsScreenState extends State<ChatsScreen>
         ..addAll(online);
       _loading = false;
     });
-  }
-
-  void _showMatchDialog(Map<String, dynamic> match) {
-    setState(() {
-      _selectedMatch = match;
-      _showMatchPopup = true;
-    });
-    _matchAnimationController.forward(from: 0);
-    HapticFeedback.heavyImpact();
-  }
-
-  void _closeMatchPopup() {
-    setState(() {
-      _showMatchPopup = false;
-      _selectedMatch = null;
-    });
-    _matchAnimationController.reverse();
   }
 
   void _openConversation(Map<String, dynamic> match) {
@@ -279,14 +279,8 @@ class _ChatsScreenState extends State<ChatsScreen>
 
   // ── Game phase helpers ─────────────────────────────────────────────────────
 
-  String _matchSection(Map<String, dynamic> match) {
-    final phase = match['game_phase'] as MatchGamePhase?;
-    if (phase == MatchGamePhase.bothSolved) return 'unlocked';
-    if (phase == null || phase == MatchGamePhase.setup) return 'locked';
-    return 'inProgress';
-  }
-
   String? _gameBadgeLabel(Map<String, dynamic> match) {
+    if (match['chat_unlocked'] as bool? ?? false) return null;
     final phase = match['game_phase'] as MatchGamePhase?;
     switch (phase) {
       case MatchGamePhase.setup:
@@ -311,6 +305,22 @@ class _ChatsScreenState extends State<ChatsScreen>
     }
   }
 
+  Color _getCircleBorderColor(String circleColor) {
+    switch (circleColor) {
+      case 'green':  return const Color(0xFF22C55E);
+      case 'red':    return const Color(0xFFEF4444);
+      case 'purple': return const Color(0xFF7C3AED);
+      default:       return const Color(0xFF4B5563);
+    }
+  }
+
+  List<Map<String, dynamic>> get _lockedMatches => _matchesWithProfiles
+      .where((m) => !(m['chat_unlocked'] as bool? ?? false))
+      .toList();
+
+  List<Map<String, dynamic>> get _unlockedFiltered =>
+      _filtered.where((m) => m['chat_unlocked'] as bool? ?? false).toList();
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -334,13 +344,12 @@ class _ChatsScreenState extends State<ChatsScreen>
                 else if (_matchesWithProfiles.isEmpty)
                   _buildEmptyState()
                 else ...[
-                  _buildMatchesSection(),
+                  if (_lockedMatches.isNotEmpty) _buildMatchesSection(),
                   _buildMessagesSection(),
                 ],
               ],
             ),
           ),
-          if (_showMatchPopup && _selectedMatch != null) _buildMatchPopup(),
         ],
       ),
     );
@@ -384,35 +393,17 @@ class _ChatsScreenState extends State<ChatsScreen>
               ),
             ],
           ),
-          Row(
-            children: [
-              // ── Game status notification button ───────────────────────
-              GestureDetector(
-                onTap: _showGameStatusPage,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.sports_esports_rounded,
-                      color: Color(0xFF6C3FE8), size: 20),
-                ),
+          GestureDetector(
+            onTap: _loadMatches,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(10),
               ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: _loadMatches,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.refresh,
-                      color: Color(0xFF6C3FE8), size: 20),
-                ),
-              ),
-            ],
+              child: const Icon(Icons.refresh,
+                  color: Color(0xFF6C3FE8), size: 20),
+            ),
           ),
         ],
       ),
@@ -495,19 +486,33 @@ class _ChatsScreenState extends State<ChatsScreen>
   }
 
   Widget _buildMatchesSection() {
-    final list = _filtered;
+    final list = _lockedMatches;
     if (list.isEmpty) return const SizedBox.shrink();
-    return Container(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: SizedBox(
-        height: 100,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          itemCount: list.length,
-          itemBuilder: (context, index) => _buildMatchAvatar(list[index]),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 6),
+          child: Text(
+            'Pending Games',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.45),
+              letterSpacing: 0.5,
+            ),
+          ),
         ),
-      ),
+        SizedBox(
+          height: 100,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: list.length,
+            itemBuilder: (context, index) => _buildMatchAvatar(list[index]),
+          ),
+        ),
+      ],
     );
   }
 
@@ -515,66 +520,45 @@ class _ChatsScreenState extends State<ChatsScreen>
     final profile = match['profile'] as Map<String, dynamic>;
     final photo = _profilePhoto(profile);
     final name = _profileName(profile);
-    final userId = profile['id'] as String?;
-    final isOnline = userId != null && _onlineUserIds.contains(userId);
+    final circleColor = match['circle_color'] as String? ?? 'grey';
+    final borderColor = _getCircleBorderColor(circleColor);
 
     return GestureDetector(
-      onTap: () => _showMatchDialog(match),
+      onTap: () => _handleCircleTap(match),
       child: Container(
         margin: const EdgeInsets.only(right: 16),
         child: Column(
           children: [
-            Stack(
-              children: [
-                Container(
-                  width: 68,
-                  height: 68,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(3),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: const Color(0xFF0A0A0A), width: 3),
-                    ),
-                    child: ClipOval(
-                      child: photo.isNotEmpty
-                          ? Image.network(photo,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  _avatarInitial(name))
-                          : _avatarInitial(name),
-                    ),
-                  ),
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: borderColor,
+                boxShadow: circleColor != 'grey'
+                    ? [
+                        BoxShadow(
+                          color: borderColor.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
+              ),
+              padding: const EdgeInsets.all(3),
+              child: Container(
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFF0A0A0A),
                 ),
-                if (isOnline)
-                  Positioned(
-                    bottom: 2,
-                    right: 2,
-                    child: Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF22C55E),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                            color: const Color(0xFF0A0A0A), width: 2),
-                      ),
-                    ),
-                  ),
-              ],
+                child: ClipOval(
+                  child: photo.isNotEmpty
+                      ? Image.network(photo,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _avatarInitial(name))
+                      : _avatarInitial(name),
+                ),
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -607,7 +591,8 @@ class _ChatsScreenState extends State<ChatsScreen>
   }
 
   Widget _buildMessagesSection() {
-    final list = _filtered;
+    final list = _unlockedFiltered;
+    final hasLocked = _lockedMatches.isNotEmpty;
 
     return Expanded(
       child: Column(
@@ -627,23 +612,24 @@ class _ChatsScreenState extends State<ChatsScreen>
                       fontWeight: FontWeight.w700,
                       color: Colors.white),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                if (list.isNotEmpty)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    borderRadius: BorderRadius.circular(12),
+                    child: Text(
+                      '${list.length}',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white),
+                    ),
                   ),
-                  child: Text(
-                    '${list.length}',
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white),
-                  ),
-                ),
               ],
             ),
           ),
@@ -654,6 +640,17 @@ class _ChatsScreenState extends State<ChatsScreen>
                   'No results for "$_searchQuery"',
                   style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 14),
+                ),
+              ),
+            )
+          else if (list.isEmpty && hasLocked)
+            Expanded(
+              child: Center(
+                child: Text(
+                  'Play a game to start chatting!',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.35),
                       fontSize: 14),
                 ),
               ),
@@ -874,225 +871,180 @@ class _ChatsScreenState extends State<ChatsScreen>
     );
   }
 
-  // ── Game status page ────────────────────────────────────────────────────────
-  void _showGameStatusPage() {
+  // ── Circle tap routing ─────────────────────────────────────────────────────
+
+  void _handleCircleTap(Map<String, dynamic> match) {
+    final color = match['circle_color'] as String? ?? 'grey';
+    switch (color) {
+      case 'grey':
+        _openGameHubForMatch(match);
+      case 'green':
+        _checkAndNavigate(match);
+      case 'red':
+        _acceptAndNavigate(match);
+      case 'purple':
+        _enterGame(match);
+      default:
+        _openConversation(match);
+    }
+  }
+
+  // Grey: open GameHub so user can pick and send a challenge
+  void _openGameHubForMatch(Map<String, dynamic> match) {
+    final profile = match['profile'] as Map<String, dynamic>;
+    final matchId = match['match_id'] as String;
+    final partnerUserId = profile['id'] as String? ?? '';
+    final partnerName = _profileName(profile);
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => GameStatusScreen(
-          matches: _matchesWithProfiles,
+        builder: (_) => GameHubScreen(
+          matchId: matchId,
           currentUserId: _currentUserId,
-          onOpenMatch: _openConversation,
+          partnerUserId: partnerUserId,
+          partnerName: partnerName,
+          onChatUnlocked: () {},
+          onGameSelected: (gameType) =>
+              _sendChallengeForMatch(matchId, partnerUserId, partnerName, gameType),
         ),
       ),
     );
   }
 
-  // ── Match popup ─────────────────────────────────────────────────────────────
-  Widget _buildMatchPopup() {
-    final profile = _selectedMatch!['profile'] as Map<String, dynamic>;
-    final photo = _profilePhoto(profile);
-    final name = _profileName(profile);
+  Future<void> _sendChallengeForMatch(
+      String matchId, String partnerUserId, String partnerName, String gameType) async {
+    String? sessionId;
+    try {
+      sessionId = await Supabase.instance.client.rpc('create_game_challenge', params: {
+        'p_match_id': matchId,
+        'p_challenged_id': partnerUserId,
+        'p_game_type': gameType,
+        'p_is_initial': true,
+      }) as String?;
+      if (sessionId != null) {
+        await Supabase.instance.client
+            .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    _loadMatches();
+    if (sessionId != null) {
+      _enterGame({
+        'match_id': matchId,
+        'profile': {'id': partnerUserId, 'first_name': partnerName},
+        'active_session_id': sessionId,
+        'active_game_type': gameType,
+      });
+    }
+  }
 
-    return GestureDetector(
-      onTap: _closeMatchPopup,
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.92),
-        child: Center(
-          child: ScaleTransition(
-            scale: CurvedAnimation(
-              parent: _matchAnimationController,
-              curve: Curves.elasticOut,
-            ),
-            child: GestureDetector(
-              onTap: () {},
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 32),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A0A0A),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
-                    width: 2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
-                      blurRadius: 40,
-                      spreadRadius: 10,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 40),
-                    ShaderMask(
-                      shaderCallback: (bounds) => const LinearGradient(
-                        colors: [
-                          Color(0xFF6C3FE8),
-                          Color(0xFF9D50BB),
-                          Color(0xFFFF6B8A)
-                        ],
-                      ).createShader(bounds),
-                      child: const Text(
-                        "IT'S A MATCH!",
-                        style: TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'You and $name liked each other!',
-                      style: TextStyle(
-                          fontSize: 15,
-                          color: Colors.white.withValues(alpha: 0.7)),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _popupAvatar(_myPhoto.isNotEmpty ? _myPhoto : null,
-                                const Color(0xFF6C3FE8)),
-                            const SizedBox(width: 40),
-                            _popupAvatar(photo, const Color(0xFFFF6B8A)),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFF6C3FE8),
-                                Color(0xFFFF6B8A)
-                              ],
-                            ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF6C3FE8)
-                                    .withValues(alpha: 0.6),
-                                blurRadius: 20,
-                                spreadRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: const Icon(Icons.favorite,
-                              color: Colors.white, size: 32),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 40),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Column(
-                        children: [
-                          GestureDetector(
-                            onTap: () {
-                              _closeMatchPopup();
-                              _openConversation(_selectedMatch!);
-                            },
-                            child: Container(
-                              width: double.infinity,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF6C3FE8),
-                                    Color(0xFF9D50BB)
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(28),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(0xFF6C3FE8)
-                                        .withValues(alpha: 0.4),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.chat_bubble_rounded,
-                                      color: Colors.white, size: 24),
-                                  SizedBox(width: 12),
-                                  Text(
-                                    'SEND MESSAGE',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                      letterSpacing: 1,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextButton(
-                            onPressed: _closeMatchPopup,
-                            child: Text(
-                              'Keep Swiping',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.white.withValues(alpha: 0.6),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                  ],
-                ),
-              ),
+  // Green: accept (idempotent) and enter game — challenger re-enters their own session
+  Future<void> _checkAndNavigate(Map<String, dynamic> match) async {
+    final sessionId = match['active_session_id'] as String?;
+    if (sessionId == null) return;
+
+    try {
+      await Supabase.instance.client
+          .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
+    } catch (_) {}
+    if (!mounted) return;
+    _enterGame(match);
+  }
+
+  // Red: accept the challenge then navigate into the game
+  Future<void> _acceptAndNavigate(Map<String, dynamic> match) async {
+    final sessionId = match['active_session_id'] as String?;
+    if (sessionId == null) return;
+
+    try {
+      await Supabase.instance.client
+          .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
+    } catch (_) {}
+    if (!mounted) return;
+    _enterGame(match);
+  }
+
+  // Purple / green-active: navigate straight into the game
+  void _enterGame(Map<String, dynamic> match) {
+    final sessionId = match['active_session_id'] as String?;
+    final gameType = match['active_game_type'] as String? ?? 'word_search';
+    if (sessionId == null) return;
+
+    final profile = match['profile'] as Map<String, dynamic>;
+    final matchId = match['match_id'] as String;
+    final partnerUserId = profile['id'] as String? ?? '';
+    final partnerName = _profileName(profile);
+
+    void onUnlock() {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    }
+
+    void onReturn(_) {
+      if (mounted) _loadMatches();
+    }
+
+    switch (gameType) {
+      case 'word_search':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => WordSearchSupabaseWrapper(
+              matchId: matchId,
+              currentUserId: _currentUserId,
+              partnerUserId: partnerUserId,
+              partnerName: partnerName,
+              onChatUnlocked: onUnlock,
+              sessionId: sessionId,
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _popupAvatar(String? photo, Color borderColor) {
-    return Container(
-      width: 120,
-      height: 120,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: borderColor, width: 4),
-        boxShadow: [
-          BoxShadow(
-              color: borderColor.withValues(alpha: 0.4),
-              blurRadius: 20,
-              spreadRadius: 2)
-        ],
-      ),
-      child: ClipOval(
-        child: photo != null && photo.isNotEmpty
-            ? Image.network(photo,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                    color: Colors.grey[800],
-                    child: const Icon(Icons.person,
-                        size: 60, color: Colors.white54)))
-            : Container(
-                color: Colors.grey[800],
-                child: const Icon(Icons.person,
-                    size: 60, color: Colors.white54)),
-      ),
-    );
+        ).then(onReturn);
+      case 'emoji_charades':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EmojiCharadesGameScreen(
+              matchId: matchId,
+              currentUserId: _currentUserId,
+              partnerUserId: partnerUserId,
+              partnerName: partnerName,
+              onChatUnlocked: onUnlock,
+              sessionId: sessionId,
+            ),
+          ),
+        ).then(onReturn);
+      case 'rps':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RPSIntroScreen(
+              currentUserId: _currentUserId,
+              currentUserName: 'You',
+              opponentId: partnerUserId,
+              opponentName: partnerName,
+              sessionId: sessionId,
+              popCount: 1,
+              onChatUnlocked: () {
+                // RPS uses popCount for navigation; just reload on return
+                if (mounted) _loadMatches();
+              },
+            ),
+          ),
+        );
+      default:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => GameHubScreen(
+              matchId: matchId,
+              currentUserId: _currentUserId,
+              partnerUserId: partnerUserId,
+              partnerName: partnerName,
+              onChatUnlocked: onUnlock,
+            ),
+          ),
+        ).then(onReturn);
+    }
   }
 }

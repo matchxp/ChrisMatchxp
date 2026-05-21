@@ -91,6 +91,8 @@ class EmojiCharadesGameScreen extends StatefulWidget {
   /// When true, skip the intro animation and start at the category picker.
   final bool skipIntro;
 
+  final bool chatAlreadyUnlocked;
+
   const EmojiCharadesGameScreen({
     super.key,
     required this.matchId,
@@ -100,6 +102,7 @@ class EmojiCharadesGameScreen extends StatefulWidget {
     this.onChatUnlocked,
     this.sessionId,
     this.skipIntro = false,
+    this.chatAlreadyUnlocked = false,
   });
 
   @override
@@ -1677,7 +1680,7 @@ class _State extends State<EmojiCharadesGameScreen>
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
           child: Column(children: [
-            _primaryBtn('Start Chatting', () {
+            _primaryBtn(widget.chatAlreadyUnlocked ? 'Continue Chatting' : 'Start Chatting', () {
               widget.onChatUnlocked?.call();
             }),
             const SizedBox(height: 9),

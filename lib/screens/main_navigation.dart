@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -27,6 +28,13 @@ class _MainNavigationState extends State<MainNavigation> {
   // Cached matches so we can look up sender name/photo for notifications
   List<Map<String, dynamic>> _matchesCache = [];
 
+  // Poll for new matches (catches the case where User A liked first and
+  // never got the "It's a Match!" popup because the broadcast was missed)
+  Timer? _matchPollTimer;
+  final Set<String> _knownMatchIds = {};
+  bool _initialMatchLoadDone =
+      false; // set to true after first load; poll only fires popups after this
+
   // Notification banner state
   OverlayEntry? _notifOverlay;
   // Each banner controls its own animation; we use a notifier to signal dismiss
@@ -43,16 +51,46 @@ class _MainNavigationState extends State<MainNavigation> {
   void initState() {
     super.initState();
     _loadMatchesAndSubscribe();
+    _matchPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _pollForNewMatches();
+    });
   }
 
   @override
   void dispose() {
+    _matchPollTimer?.cancel();
     for (final ch in _notifChannels) {
       ch.unsubscribe();
     }
     _notifChannels.clear();
     _notifOverlay?.remove();
     super.dispose();
+  }
+
+  // ── Poll for new matches (so User A gets the popup too) ──────────────────
+
+  Future<void> _pollForNewMatches() async {
+    final matches = await _matchingService.getMatchesWithProfiles();
+    if (!mounted) return;
+
+    for (final match in matches) {
+      final matchId = match['match_id'] as String;
+      if (_initialMatchLoadDone && !_knownMatchIds.contains(matchId)) {
+        // New match detected — show the "It's a Match!" banner
+        final profile = match['profile'] as Map<String, dynamic>?;
+        if (profile != null) {
+          final name = profile['first_name'] as String? ?? 'Someone';
+          _showNotificationBanner(
+            matchId: matchId,
+            senderName: "It's a Match! 🎉",
+            senderPhoto: _firstPhoto(profile),
+            message: 'You and $name liked each other! Tap to play.',
+            matchEntry: match,
+          );
+        }
+      }
+      _knownMatchIds.add(matchId);
+    }
   }
 
   // ── Load matches + subscribe to each for notifications ────────────────────
@@ -65,6 +103,7 @@ class _MainNavigationState extends State<MainNavigation> {
 
     for (final match in matches) {
       final matchId = match['match_id'] as String;
+      if (!_initialMatchLoadDone) _knownMatchIds.add(matchId);
       if (_subscribedMatchIds.contains(matchId)) continue;
       _subscribedMatchIds.add(matchId);
 
@@ -74,6 +113,8 @@ class _MainNavigationState extends State<MainNavigation> {
       );
       _notifChannels.add(channel);
     }
+
+    _initialMatchLoadDone = true;
   }
 
   void _onBroadcastMessage(
@@ -145,36 +186,12 @@ class _MainNavigationState extends State<MainNavigation> {
         senderName: senderName,
         senderPhoto: senderPhoto,
         message: message,
-        // The banner owns its AnimationController — it runs in the Overlay
-        // context which is never paused, even when a route is pushed on top.
         dismissNotifier: dismissNotifier,
         onRemove: () {
           _notifOverlay?.remove();
           _notifOverlay = null;
         },
-        onTap: () {
-          _dismissNotification();
-          if (matchEntry != null) {
-            // Pop any open chat first, then push the tapped one
-            Navigator.of(context, rootNavigator: true)
-                .popUntil((route) => route.isFirst);
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChatConversationScreen(
-                  matchId: matchId,
-                  otherProfile:
-                      matchEntry['profile'] as Map<String, dynamic>,
-                ),
-              ),
-            ).then((_) {
-              _loadMatchesAndSubscribe();
-              setState(() => _currentIndex = 2);
-            });
-          } else {
-            setState(() => _currentIndex = 2);
-          }
-        },
+        onTap: () => _handleNotificationTap(matchId, matchEntry),
         onDismiss: _dismissNotification,
       ),
     );
@@ -183,6 +200,47 @@ class _MainNavigationState extends State<MainNavigation> {
 
     // Auto-dismiss after 4 seconds
     Future.delayed(const Duration(seconds: 4), _dismissNotification);
+  }
+
+  Future<void> _handleNotificationTap(
+      String matchId, Map<String, dynamic>? matchEntry) async {
+    _dismissNotification();
+    if (matchEntry == null) {
+      if (mounted) setState(() => _currentIndex = 2);
+      return;
+    }
+    Navigator.of(context, rootNavigator: true)
+        .popUntil((route) => route.isFirst);
+
+    // Check if chat is unlocked before deciding where to navigate
+    bool chatUnlocked = false;
+    try {
+      final row = await Supabase.instance.client
+          .from('matches')
+          .select('chat_unlocked')
+          .eq('id', matchId)
+          .maybeSingle();
+      chatUnlocked = row?['chat_unlocked'] as bool? ?? false;
+    } catch (_) {}
+
+    if (!mounted) return;
+    if (chatUnlocked) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatConversationScreen(
+            matchId: matchId,
+            otherProfile: matchEntry['profile'] as Map<String, dynamic>,
+          ),
+        ),
+      ).then((_) {
+        _loadMatchesAndSubscribe();
+        setState(() => _currentIndex = 2);
+      });
+    } else {
+      // Chat still locked — go to Chats tab so user sees the pending game circle
+      setState(() => _currentIndex = 2);
+    }
   }
 
   void _dismissNotification() {
@@ -276,9 +334,7 @@ class _MainNavigationState extends State<MainNavigation> {
         ),
         child: Icon(
           isSelected ? activeIcon : icon,
-          color: isSelected
-              ? const Color(0xFF8B5CF6)
-              : const Color(0xFF888888),
+          color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF888888),
           size: 24,
         ),
       ),
@@ -379,7 +435,8 @@ class _NotificationBannerState extends State<_NotificationBanner>
               onTap: widget.onTap,
               child: Container(
                 margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E1E1E),
                   borderRadius: BorderRadius.circular(20),
@@ -534,10 +591,10 @@ class _NotificationBannerState extends State<_NotificationBanner>
                 ),
               ),
             ),
-          ),       // Material
-        ),         // AnimatedBuilder
-      ),           // SafeArea
-    );             // Positioned
+          ), // Material
+        ), // AnimatedBuilder
+      ), // SafeArea
+    ); // Positioned
   }
 
   Widget _initials(String name) {

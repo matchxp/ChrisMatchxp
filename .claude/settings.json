@@ -48,7 +48,9 @@
       "mcp__claude_ai_Supabase__apply_migration",
       "Bash(python -c \"import docx\")",
       "Bash(pip install *)",
-      "Bash(python gen_docx.py)"
+      "Bash(python gen_docx.py)",
+      "Bash(pip show *)",
+      "Bash(python generate_report.py)"
     ],
     "additionalDirectories": [
       "\\tmp",

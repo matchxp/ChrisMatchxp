@@ -51,8 +51,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   // Game gate — chat is locked until EITHER game is completed by both players
   bool _chatUnlocked = false;
   bool _gameStatusLoading = true;
-  MatchGamesSnapshot?
-      _gameSnapshot; // word-search snapshot (context-aware locked bar)
   RealtimeChannel? _gameChannel; // word_search_games realtime
   RealtimeChannel? _ecChannel; // emoji_charades_games realtime
   RealtimeChannel?
@@ -118,7 +116,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     _subscribeMessages(); // replaces _loadMessages + _subscribeToMessages
     _loadScores();
     _subscribeSessionStream(); // replaces _loadSessionStates + _subscribeToSessions
-    _resumePendingChallengePoller(); // restart poller if app was closed mid-challenge
+    // _resumePendingChallengePoller(); // disabled — use "Rejoin Game" button instead
     _fetchOnlineStatus();
     _onlineTimer = Timer.periodic(
         const Duration(seconds: 60), (_) => _fetchOnlineStatus());
@@ -207,7 +205,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     if (mounted)
       setState(() {
-        _gameSnapshot = wsSnap;
         if (unlocked) _chatUnlocked = true;
         _gameStatusLoading = false;
       });
@@ -222,7 +219,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         );
         if (mounted)
           setState(() {
-            _gameSnapshot = updated;
             if (updated.phase == MatchGamePhase.bothSolved)
               _chatUnlocked = true;
           });
@@ -801,6 +797,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       } else {
         _scrollToBottom();
       }
+      // Refresh scoreboard when a game result arrives (partner's screen update).
+      if (newMsgs.any((m) => m['message_type'] == 'game_result')) {
+        _loadScores();
+      }
     }
   }
 
@@ -901,70 +901,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     );
   }
 
-  // ── In-chat game invitation ────────────────────────────────────────────────
-
-  void _showInChatGamePicker() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text('Challenge to a Game',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 16),
-              _gamePickerTile(ctx, '🔤', 'Word Search', 'word_search'),
-              _gamePickerTile(ctx, '🎭', 'Emoji Charades', 'emoji_charades'),
-              _gamePickerTile(ctx, '✂️', 'Rock Paper Scissors', 'rps'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _gamePickerTile(
-      BuildContext ctx, String emoji, String name, String gameType) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Text(emoji, style: const TextStyle(fontSize: 28)),
-      title: Text(name,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-      onTap: () {
-        Navigator.pop(ctx);
-        _sendGameChallenge(gameType);
-      },
-    );
-  }
-
   Future<void> _sendGameChallenge(String gameType) async {
     final db = Supabase.instance.client;
     final partnerUserId = widget.otherProfile['id'] as String? ?? '';
     final now = DateTime.now().toUtc().toIso8601String();
 
-    // Optimistic card — content matches what create_game_challenge RPC inserts
     final optimistic = <String, dynamic>{
       'id': null,
       'match_id': widget.matchId,
@@ -979,7 +920,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     _scrollToBottom();
 
     try {
-      // 1. RPC creates game_sessions + messages rows — bypasses RLS on both tables
       await db.rpc('create_game_challenge', params: {
         'p_match_id': widget.matchId,
         'p_challenged_id': partnerUserId,
@@ -987,7 +927,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         'p_is_initial': false,
       });
 
-      // 2. Fetch the real message row the RPC just inserted
       final rows = await db
           .from('messages')
           .select()
@@ -996,11 +935,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           .eq('sender_id', _currentUserId)
           .order('created_at', ascending: false)
           .limit(1);
-      if (rows.isEmpty)
-        throw Exception('challenge message not found after insert');
+      if (rows.isEmpty) throw Exception('challenge message not found');
       final realMsg = Map<String, dynamic>.from(rows.first as Map);
 
-      // 3. Replace optimistic with real DB row
       if (!mounted) return;
       setState(() {
         _messages.removeWhere((m) =>
@@ -1008,18 +945,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             m['message_type'] == 'game_challenge' &&
             (m['meta'] as Map?)?['game_type'] == gameType);
         _messages.add(realMsg);
-        _messages.sort((a, b) {
-          final ta = a['created_at'] as String? ?? '';
-          final tb = b['created_at'] as String? ?? '';
-          return ta.compareTo(tb);
-        });
+        _messages.sort((a, b) => (a['created_at'] as String? ?? '')
+            .compareTo(b['created_at'] as String? ?? ''));
       });
 
-      // 4. Broadcast to partner — triggers onMessage → _restartMessageStream() → card appears
       _matchingService.broadcastMessage(widget.matchId, realMsg);
 
-      // 5. Poll game_sessions every 2 s so we navigate when partner accepts,
-      //    even if the game_accepted broadcast is delayed or dropped.
       final meta = realMsg['meta'];
       final sessionId = (meta is Map ? meta['session_id'] : null) as String?;
       if (sessionId != null) _pollForGameAcceptance(sessionId, gameType);
@@ -1156,6 +1087,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       if (!mounted) return;
       _restartMessageStream();
       _refreshSessionStream();
+      _loadScores();
     }
 
     switch (gameType) {
@@ -1170,6 +1102,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 partnerName: _otherName,
                 onChatUnlocked: onUnlock,
                 sessionId: sessionId,
+                chatAlreadyUnlocked: _chatUnlocked,
               ),
             )).then(refresh);
       case 'emoji_charades':
@@ -1183,6 +1116,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 partnerName: _otherName,
                 onChatUnlocked: onUnlock,
                 sessionId: sessionId,
+                chatAlreadyUnlocked: _chatUnlocked,
               ),
             )).then(refresh);
       case 'rps':
@@ -1196,11 +1130,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 opponentName: _otherName,
                 sessionId: sessionId,
                 popCount: 1,
+                chatAlreadyUnlocked: _chatUnlocked,
                 onChatUnlocked: () {
                   if (!mounted) return;
                   setState(() => _chatUnlocked = true);
                   _restartMessageStream();
                   _refreshSessionStream();
+                  _loadScores();
                 },
               ),
             )).then(refresh);
@@ -1214,6 +1150,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 partnerUserId: partnerUserId,
                 partnerName: _otherName,
                 onChatUnlocked: onUnlock,
+                chatAlreadyUnlocked: _chatUnlocked,
               ),
             )).then(refresh);
     }
@@ -1821,15 +1758,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                       currentUserId: _currentUserId,
                       partnerUserId: partnerUserId,
                       partnerName: _otherName,
+                      chatAlreadyUnlocked: _chatUnlocked,
                       onChatUnlocked: () {
                         if (mounted) setState(() => _chatUnlocked = true);
                       },
+                      onGameSelected: _sendGameChallenge,
                     ),
                   )).then((_) {
                 if (mounted) {
                   _restartMessageStream();
                   _refreshSessionStream();
                   _checkGameStatus();
+                  _loadScores();
                 }
               });
             },
@@ -2061,6 +2001,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                       currentUserId: _currentUserId,
                       partnerUserId: partnerUserId,
                       partnerName: _otherName,
+                      chatAlreadyUnlocked: _chatUnlocked,
                       onChatUnlocked: () {
                         if (mounted) setState(() => _chatUnlocked = true);
                       },
@@ -2662,9 +2603,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     final canAccept =
         !isMe && liveStatus == 'pending' && sessionId != null && !isExpired;
-
+    final canRejoin = liveStatus == 'active' && sessionId != null && !isExpired;
     final statusText = isExpired
-        ? (liveStatus == 'active' ? 'Game session expired' : 'Invitation expired')
+        ? (liveStatus == 'active'
+            ? 'Game session expired'
+            : 'Invitation expired')
         : switch (liveStatus) {
             'active' => 'Game is in progress!',
             'completed' => 'Game completed ✓',
@@ -2673,102 +2616,172 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 : 'Tap to accept and play!',
           };
 
-    // Gray palette when expired, purple when live.
-    final cardColors = isExpired
-        ? [const Color(0xFF2A2A2A), const Color(0xFF333333)]
-        : isMe
-            ? [const Color(0xFF6C3FE8), const Color(0xFF9D50BB)]
-            : [const Color(0xFF1A1A2E), const Color(0xFF2A2A3E)];
-    final borderColor = isExpired
+    final challengeText = isMe
+        ? 'You challenged $_otherName!'
+        : '$_otherName challenged you!';
+
+    // Glow color: purple for live, grey for expired
+    final glowColor = isExpired
         ? const Color(0xFF555555)
-        : const Color(0xFF6C3FE8).withValues(alpha: 0.5);
+        : const Color(0xFF6C3FE8);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Align(
-        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          width: 240,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: cardColors),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: borderColor, width: 1.5),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(children: [
-                Text(gameEmoji,
-                    style: TextStyle(
-                      fontSize: 22,
-                      color: isExpired ? Colors.white38 : null,
-                    )),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(gameName,
-                      style: TextStyle(
-                        color: isExpired ? Colors.white38 : Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                      )),
-                ),
-              ]),
-              const SizedBox(height: 6),
-              Text(
-                isMe
-                    ? 'You challenged $_otherName!'
-                    : '$_otherName challenged you!',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: isExpired ? 0.3 : 0.7),
-                  fontSize: 12,
-                ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isExpired
+                  ? const Color(0xFF1E1E1E)
+                  : isMe
+                      ? const Color(0xFF1A0D3A)
+                      : const Color(0xFF0D1A2E),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: glowColor.withValues(alpha: isExpired ? 0.3 : 0.6),
+                width: 1.5,
               ),
-              const SizedBox(height: 3),
-              Text(statusText,
-                  style: TextStyle(
-                    color: canAccept
-                        ? const Color(0xFFFBBF24)
-                        : Colors.white
-                            .withValues(alpha: isExpired ? 0.3 : 0.45),
-                    fontSize: 11,
-                  )),
-              if (canAccept) ...[
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () => _acceptChallenge(msg),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6C3FE8),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text('Accept & Play',
-                        textAlign: TextAlign.center,
+              boxShadow: isExpired
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: glowColor.withValues(alpha: 0.25),
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                      ),
+                    ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Rounded-square icon
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: glowColor.withValues(
+                        alpha: isExpired ? 0.08 : 0.22),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(gameEmoji,
                         style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
+                          fontSize: 20,
+                          color: isExpired ? Colors.white38 : null,
                         )),
                   ),
                 ),
-              ],
-              if (showTime) ...[
-                const SizedBox(height: 5),
-                Text(
-                  _formatTime(msg['created_at'] as String?),
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.35),
-                      fontSize: 10),
+                const SizedBox(width: 12),
+                // Title + subtitles
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(gameName,
+                          style: TextStyle(
+                            color: isExpired ? Colors.white38 : Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          )),
+                      const SizedBox(height: 2),
+                      Text(
+                        challengeText,
+                        style: TextStyle(
+                          color: Colors.white.withValues(
+                              alpha: isExpired ? 0.3 : 0.65),
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 1),
+                      Text(statusText,
+                          style: TextStyle(
+                            color: canAccept
+                                ? const Color(0xFFFBBF24)
+                                : Colors.white.withValues(
+                                    alpha: isExpired ? 0.25 : 0.4),
+                            fontSize: 11,
+                          )),
+                    ],
+                  ),
                 ),
               ],
-            ],
+            ),
           ),
+          if (canAccept) ...[
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () => _acceptChallenge(msg),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C3FE8),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Text('Accept & Play',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    )),
+              ),
+            ),
+          ],
+          if (canRejoin) ...[
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () => _navigateToGame(gameType, sessionId),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C3FE8),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Text('Rejoin Game',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    )),
+                ),
+              ),
+            ],
+            if (showTime) ...[
+              const SizedBox(height: 3),
+              Text(
+                _formatTime(msg['created_at'] as String?),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 10),
+              ),
+            ],
+          ],
         ),
-      ),
-    );
+      );
   }
 
   // ── Game result bubble (message_type = 'game_result') ─────────────────────
@@ -2788,6 +2801,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     final isUnlockResult = gameResults.isNotEmpty &&
         gameResults.first['id'] != null &&
         gameResults.first['id'] == msg['id'];
+
+    if (!isUnlockResult) return const SizedBox.shrink();
 
     final gameEmoji = switch (gameType) {
       'word_search' => '🔡',
@@ -3101,16 +3116,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                       onTap: () {
                         Navigator.pop(ctx);
                         _startVoiceRecording();
-                      },
-                    ),
-                    // Game invite
-                    _buildMediaOption(
-                      icon: Icons.sports_esports_rounded,
-                      label: 'Game',
-                      color: const Color(0xFF6C3FE8),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _showInChatGamePicker();
                       },
                     ),
                   ],
@@ -3431,104 +3436,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       );
     }
 
-    // ── Option B: context-aware locked bar ────────────────────────────────────
-    final phase = _gameSnapshot?.phase ?? MatchGamePhase.setup;
     final partnerUserId = widget.otherProfile['id'] as String? ?? '';
-
-    // Helper to push to the game hub
-    void goToGame() {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => GameHubScreen(
-            matchId: widget.matchId,
-            currentUserId: _currentUserId,
-            partnerUserId: partnerUserId,
-            partnerName: _otherName,
-            onChatUnlocked: () {
-              if (mounted) setState(() => _chatUnlocked = true);
-            },
-          ),
-        ),
-      ).then((_) => _checkGameStatus());
-    }
-
-    // Phase-specific content
-    late final String statusText;
-    late final IconData statusIcon;
-    late final Color statusColor;
-    String? buttonLabel;
-    IconData? buttonIcon;
-    List<Color>? buttonColors;
-    VoidCallback? buttonAction;
-
-    switch (phase) {
-      case MatchGamePhase.setup:
-        // No Word Search game started — show a generic prompt covering RPS / any game
-        statusText = _gameSnapshot == null
-            ? 'Play a game to unlock chat 🎮'
-            : 'Create a puzzle to start unlocking chat';
-        statusIcon = _gameSnapshot == null
-            ? Icons.sports_esports_rounded
-            : Icons.extension_rounded;
-        statusColor = const Color(0xFF6C3FE8);
-        buttonLabel =
-            _gameSnapshot == null ? 'Play a Game' : 'Create My Puzzle';
-        buttonIcon = _gameSnapshot == null
-            ? Icons.sports_esports_rounded
-            : Icons.add_rounded;
-        buttonColors = const [Color(0xFF6C3FE8), Color(0xFF9D50BB)];
-        buttonAction = goToGame;
-        break;
-
-      case MatchGamePhase.waitingPartnerSetup:
-        statusText = '${_otherName} hasn\'t created their puzzle yet 🧩';
-        statusIcon = Icons.hourglass_top_rounded;
-        statusColor = Colors.white.withValues(alpha: 0.4);
-        // No action button — just waiting
-        break;
-
-      case MatchGamePhase.solving:
-        statusText =
-            '$_otherName made a puzzle for you — solve it to unlock chat! 🔐';
-        statusIcon = Icons.search_rounded;
-        statusColor = const Color(0xFFF59E0B);
-        buttonLabel = 'Solve Now!';
-        buttonIcon = Icons.play_arrow_rounded;
-        buttonColors = const [Color(0xFFD97706), Color(0xFFF59E0B)];
-        buttonAction = () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => WordSearchSupabaseWrapper(
-                matchId: widget.matchId,
-                currentUserId: _currentUserId,
-                partnerUserId: partnerUserId,
-                partnerName: _otherName,
-                onChatUnlocked: () {
-                  if (mounted) setState(() => _chatUnlocked = true);
-                },
-              ),
-            ),
-          ).then((_) => _checkGameStatus());
-        };
-        break;
-
-      case MatchGamePhase.waitingPartnerSolve:
-        statusText =
-            'You solved it! ✅  Waiting for ${_otherName} to solve yours…';
-        statusIcon = Icons.hourglass_empty_rounded;
-        statusColor = const Color(0xFF22C55E);
-        // No action button — just waiting
-        break;
-
-      case MatchGamePhase.bothSolved:
-        // Should never reach here; chat unlocks instantly when bothSolved
-        statusText = 'Chat unlocked!';
-        statusIcon = Icons.lock_open_rounded;
-        statusColor = const Color(0xFF22C55E);
-        break;
-    }
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -3541,63 +3449,73 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Status row
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(statusIcon, size: 14, color: statusColor),
-              const SizedBox(width: 6),
+              Icon(Icons.sports_esports_rounded,
+                  size: 14, color: Color(0xFF6C3FE8)),
+              SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  statusText,
-                  style: TextStyle(color: statusColor, fontSize: 13),
+                  'Play a game to unlock chat 🎮',
+                  style: TextStyle(color: Color(0xFF6C3FE8), fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
               ),
             ],
           ),
-          // Action button (only when there's something to do)
-          if (buttonLabel != null && buttonAction != null) ...[
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: buttonAction,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: buttonColors ??
-                        const [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GameHubScreen(
+                    matchId: widget.matchId,
+                    currentUserId: _currentUserId,
+                    partnerUserId: partnerUserId,
+                    partnerName: _otherName,
+                    onChatUnlocked: () {
+                      if (mounted) setState(() => _chatUnlocked = true);
+                    },
                   ),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (buttonColors?.first ?? const Color(0xFF6C3FE8))
-                          .withValues(alpha: 0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
                 ),
-                alignment: Alignment.center,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(buttonIcon ?? Icons.sports_esports_rounded,
-                        color: Colors.white, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      buttonLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ],
+              ).then((_) => _checkGameStatus());
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
                 ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.35),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.sports_esports_rounded,
+                      color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Play a Game',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -3638,9 +3556,9 @@ class _TypingBubbleState extends State<_TypingBubble>
       builder: (_, __) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: const BorderRadius.only(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.only(
               topLeft: Radius.circular(20),
               topRight: Radius.circular(20),
               bottomLeft: Radius.circular(4),

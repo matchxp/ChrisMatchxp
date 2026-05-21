@@ -21,6 +21,7 @@ class WordSearchSupabaseWrapper extends StatefulWidget {
   final String partnerName;
   final VoidCallback onChatUnlocked;
   final String? sessionId;
+  final bool chatAlreadyUnlocked;
 
   const WordSearchSupabaseWrapper({
     super.key,
@@ -30,6 +31,7 @@ class WordSearchSupabaseWrapper extends StatefulWidget {
     required this.partnerName,
     required this.onChatUnlocked,
     this.sessionId,
+    this.chatAlreadyUnlocked = false,
   });
 
   @override
@@ -270,10 +272,11 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
   @override
   Widget build(BuildContext context) {
     return WordSearchGameScreen(
-      key:          _gameKey,
-      partnerName:  widget.partnerName,
-      onGameEvent:  _onGameEvent,
-      skipWelcome:  false,
+      key:                  _gameKey,
+      partnerName:          widget.partnerName,
+      onGameEvent:          _onGameEvent,
+      skipWelcome:          false,
+      chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
     );
   }
 }

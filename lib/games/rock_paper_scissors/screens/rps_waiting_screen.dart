@@ -21,6 +21,7 @@ class RPSWaitingScreen extends StatefulWidget {
     required this.myMove,
     required this.onChatUnlocked,
     this.popCount = 1,
+    this.chatAlreadyUnlocked = false,
   });
 
   final String currentUserId;
@@ -31,6 +32,7 @@ class RPSWaitingScreen extends StatefulWidget {
   final RPSMove myMove;
   final VoidCallback onChatUnlocked;
   final int popCount;
+  final bool chatAlreadyUnlocked;
 
   @override
   State<RPSWaitingScreen> createState() => _RPSWaitingScreenState();
@@ -125,8 +127,9 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
         opponentName:    widget.opponentName,
         myMove:          myMove,
         opponentMove:    opponentMove,
-        onChatUnlocked:  widget.onChatUnlocked,
-        popCount:        widget.popCount,
+        onChatUnlocked:       widget.onChatUnlocked,
+        popCount:             widget.popCount,
+        chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
       ),
     ));
   }

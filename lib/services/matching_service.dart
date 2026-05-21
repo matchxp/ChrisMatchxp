@@ -138,11 +138,12 @@ class MatchingService {
 
       debugPrint('❤️ Liking profile: $likedUserId');
 
-      // Insert like
-      await _supabase.from('likes').insert({
-        'liker_id': currentUserId,
-        'liked_id': likedUserId,
-      });
+      // Insert like — ignore if already exists (re-swipe after data reset)
+      await _supabase.from('likes').upsert(
+        {'liker_id': currentUserId, 'liked_id': likedUserId},
+        onConflict: 'liker_id,liked_id',
+        ignoreDuplicates: true,
+      );
 
       // Check if it's a match (they also liked us)
       final mutualLike = await _supabase
@@ -156,6 +157,10 @@ class MatchingService {
         // It's a match! Create match record and return the matchId
         final matchId = await _createMatch(currentUserId, likedUserId);
         debugPrint('🎉 IT\'S A MATCH! matchId=$matchId');
+        // Notify User A (the first liker) — they missed the popup when they swiped
+        if (matchId != null) {
+          _notifyUserOfNewMatch(likedUserId, matchId: matchId, partnerId: currentUserId);
+        }
         return matchId;
       }
 
@@ -176,10 +181,11 @@ class MatchingService {
 
       debugPrint('👎 Passing profile: $passedUserId');
 
-      await _supabase.from('passes').insert({
-        'passer_id': currentUserId,
-        'passed_id': passedUserId,
-      });
+      await _supabase.from('passes').upsert(
+        {'passer_id': currentUserId, 'passed_id': passedUserId},
+        onConflict: 'passer_id,passed_id',
+        ignoreDuplicates: true,
+      );
 
       debugPrint('✅ Pass recorded');
     } catch (e) {
@@ -212,6 +218,48 @@ class MatchingService {
       debugPrint('❌ Error creating match: $e');
       return null;
     }
+  }
+
+  /// Broadcast a new_match event to User A (first liker) so they see the popup.
+  /// Subscribes to the channel first — sendBroadcastMessage requires an active subscription.
+  void _notifyUserOfNewMatch(String userId, {required String matchId, required String partnerId}) {
+    final channel = _supabase.channel('user_notif_$userId');
+    channel.subscribe((status, error) {
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        channel.sendBroadcastMessage(event: 'new_match', payload: {
+          'match_id': matchId,
+          'partner_id': partnerId,
+        });
+        Future.delayed(const Duration(seconds: 2), () {
+          _supabase.removeChannel(channel);
+        });
+      }
+    });
+  }
+
+  /// Subscribe to personal match notifications for [userId].
+  /// Fires when another user likes back and creates a match.
+  RealtimeChannel subscribeToMatchNotifications(
+    String userId,
+    void Function(String matchId, String partnerId) onNewMatch,
+  ) {
+    return _supabase
+        .channel('user_notif_$userId')
+        .onBroadcast(
+          event: 'new_match',
+          callback: (payload) {
+            final matchId = payload['match_id'] as String?;
+            final partnerId = payload['partner_id'] as String?;
+            if (matchId != null && partnerId != null) {
+              onNewMatch(matchId, partnerId);
+            }
+          },
+        )
+        .subscribe((status, error) {
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            debugPrint('✅ Match notif channel ready for: $userId');
+          }
+        });
   }
 
   /// Get all matches for current user

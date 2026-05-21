@@ -23,6 +23,7 @@ class RPSResultScreen extends StatefulWidget {
     required this.onChatUnlocked,
     this.sessionId,
     this.popCount = 1,
+    this.chatAlreadyUnlocked = false,
   });
 
   final String currentUserId;
@@ -35,6 +36,7 @@ class RPSResultScreen extends StatefulWidget {
   final VoidCallback onChatUnlocked;
   final String? sessionId;
   final int popCount;
+  final bool chatAlreadyUnlocked;
 
   @override
   State<RPSResultScreen> createState() => _RPSResultScreenState();
@@ -218,7 +220,7 @@ class _RPSResultScreenState extends State<RPSResultScreen>
                     const Spacer(),
 
                     RPSPillButton(
-                        label: 'Start Chatting',
+                        label: widget.chatAlreadyUnlocked ? 'Continue Chatting' : 'Start Chatting',
                         onPressed: _startChat), //investigate from this var
                     const SizedBox(height: 10),
                     RPSPillButton(

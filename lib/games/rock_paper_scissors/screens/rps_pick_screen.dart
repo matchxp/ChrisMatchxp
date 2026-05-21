@@ -20,6 +20,7 @@ class RPSPickScreen extends StatefulWidget {
     required this.sessionId,
     required this.onChatUnlocked,
     this.popCount = 1,
+    this.chatAlreadyUnlocked = false,
   });
 
   final String currentUserId;
@@ -29,6 +30,7 @@ class RPSPickScreen extends StatefulWidget {
   final String sessionId;
   final VoidCallback onChatUnlocked;
   final int popCount;
+  final bool chatAlreadyUnlocked;
 
   @override
   State<RPSPickScreen> createState() => _RPSPickScreenState();
@@ -74,23 +76,25 @@ class _RPSPickScreenState extends State<RPSPickScreen>
             opponentId:      widget.opponentId,
             opponentName:    widget.opponentName,
             sessionId:       widget.sessionId,
-            myMove:          _selected!,
-            onChatUnlocked:  widget.onChatUnlocked,
-            popCount:        widget.popCount,
+            myMove:               _selected!,
+            onChatUnlocked:       widget.onChatUnlocked,
+            popCount:             widget.popCount,
+            chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
           ),
         ));
       } else {
         // Both submitted at the same moment — skip waiting, go to reveal
         Navigator.of(context).pushReplacement(MaterialPageRoute(
           builder: (_) => RPSRevealScreen(
-            currentUserId:   widget.currentUserId,
-            currentUserName: widget.currentUserName,
-            opponentId:      widget.opponentId,
-            opponentName:    widget.opponentName,
-            myMove:          result.myMove!,
-            opponentMove:    result.opponentMove!,
-            onChatUnlocked:  widget.onChatUnlocked,
-            popCount:        widget.popCount,
+            currentUserId:        widget.currentUserId,
+            currentUserName:      widget.currentUserName,
+            opponentId:           widget.opponentId,
+            opponentName:         widget.opponentName,
+            myMove:               result.myMove!,
+            opponentMove:         result.opponentMove!,
+            onChatUnlocked:       widget.onChatUnlocked,
+            popCount:             widget.popCount,
+            chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
           ),
         ));
       }
