@@ -538,9 +538,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 boxShadow: circleColor != 'grey'
                     ? [
                         BoxShadow(
-                          color: borderColor.withValues(alpha: 0.35),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+                          color: borderColor.withValues(alpha: 0.55),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                        BoxShadow(
+                          color: borderColor.withValues(alpha: 0.25),
+                          blurRadius: 20,
+                          spreadRadius: 0,
                         ),
                       ]
                     : null,

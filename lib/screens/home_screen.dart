@@ -1,9 +1,12 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'full_profile_screen.dart';
 import 'preferences_screen.dart';
 import '../services/matching_service.dart';
+import '../services/auth_service.dart';
 import '../games/game_hub_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -35,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Map<String, dynamic>? _matchedCardProfile;
   String? _matchedMatchId;
   String? _matchedPartnerUserId;
+  String? _myPhoto;
   late AnimationController _matchAnimController;
 
   RealtimeChannel? _matchNotifChannel;
@@ -55,7 +59,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
     _resetAnimations();
     _loadProfiles();
+    _loadMyPhoto();
     _subscribeToMatchNotifications();
+  }
+
+  Future<void> _loadMyPhoto() async {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id
+        ?? AuthService().getCurrentUserId();
+    if (currentUserId == null) return;
+    final profile = await _matchingService.getProfileById(currentUserId);
+    if (!mounted || profile == null) return;
+    final images = _getAllImages(profile);
+    setState(() => _myPhoto = images.isNotEmpty ? images.first : null);
   }
 
   void _subscribeToMatchNotifications() {
@@ -294,7 +309,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   double _getRotation() {
     const maxRotation = 0.08;
-    final rotation = (_dragPosition.dx / MediaQuery.of(context).size.width) * maxRotation;
+    final rotation =
+        (_dragPosition.dx / MediaQuery.of(context).size.width) * maxRotation;
     return rotation.clamp(-maxRotation, maxRotation);
   }
 
@@ -341,8 +357,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       curve: Curves.easeOut,
     ));
 
-    _rotationAnimation = Tween<double>(begin: 0, end: 0)
-        .animate(_swipeAnimationController);
+    _rotationAnimation =
+        Tween<double>(begin: 0, end: 0).animate(_swipeAnimationController);
 
     setState(() => _isDragging = false);
 
@@ -365,7 +381,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullProfileScreen(profile: _toCardProfile(profile)),
+        builder: (context) =>
+            FullProfileScreen(profile: _toCardProfile(profile)),
       ),
     );
   }
@@ -427,7 +444,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               children: [
                 _buildHeader(),
                 Expanded(child: _buildBody()),
-                if (!_isLoading && !_hasError && _profiles.isNotEmpty && _currentProfileIndex < _profiles.length)
+                if (!_isLoading &&
+                    !_hasError &&
+                    _profiles.isNotEmpty &&
+                    _currentProfileIndex < _profiles.length)
                   _buildActionButtons(),
                 const SizedBox(height: 4),
               ],
@@ -448,165 +468,154 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     return GestureDetector(
       onTap: _closeMatchPopup,
-      child: Container(
-        color: Colors.black.withOpacity(0.92),
-        child: Center(
-          child: ScaleTransition(
-            scale: CurvedAnimation(
-              parent: _matchAnimController,
-              curve: Curves.elasticOut,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                const Color(0xFF2E0858).withValues(alpha: 0.88),
+                const Color(0xFF180430).withValues(alpha: 0.92),
+              ],
             ),
-            child: GestureDetector(
-              onTap: () {},
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 32),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A0A0A),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: const Color(0xFF6C3FE8).withOpacity(0.3),
-                    width: 2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF6C3FE8).withOpacity(0.4),
-                      blurRadius: 40,
-                      spreadRadius: 10,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 40),
-                    ShaderMask(
-                      shaderCallback: (bounds) => const LinearGradient(
-                        colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB), Color(0xFFFF6B8A)],
-                      ).createShader(bounds),
-                      child: const Text(
-                        "IT'S A MATCH!",
-                        style: TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.w900,
+          ),
+          child: Align(
+            alignment: const Alignment(0, 0.25),
+            child: ScaleTransition(
+              scale: CurvedAnimation(
+                parent: _matchAnimController,
+                curve: Curves.elasticOut,
+              ),
+              child: GestureDetector(
+                onTap: () {},
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Title
+                      const SizedBox(height: 60),
+                      Text(
+                        ' IT\'S A MATCH!',
+                        style: GoogleFonts.bebasNeue(
+                          fontSize: 72,
                           color: Colors.white,
-                          letterSpacing: 2,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'You and $name liked each other!',
-                      style: TextStyle(fontSize: 15, color: Colors.white.withOpacity(0.7)),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                      const SizedBox(height: 4),
+                      // Subtitle
+                      Text(
+                        'Play a game with $name to unlock your chat',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      const SizedBox(height: 110),
+                      // Two cards — poker overlap, right card lifted
+                      Center(
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.centerLeft,
                           children: [
-                            _matchAvatar(null, const Color(0xFF6C3FE8)),
-                            const SizedBox(width: 40),
-                            _matchAvatar(photo, const Color(0xFFFF6B8A)),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 150),
+                              child: Transform.translate(
+                                offset: const Offset(0, -24),
+                                child: Transform.rotate(
+                                  angle: 0.18,
+                                  child: _matchAvatar(
+                                      photo, const Color(0xFF6C3FE8)),
+                                ),
+                              ),
+                            ),
+                            Transform.rotate(
+                              angle: -0.08,
+                              child: _matchAvatar(
+                                  _myPhoto, const Color(0xFF6C3FE8)),
+                            ),
                           ],
                         ),
-                        Container(
-                          padding: const EdgeInsets.all(16),
+                      ),
+                      const SizedBox(height: 80),
+                      // Buttons — same size pill style
+                      GestureDetector(
+                        onTap: () {
+                          final matchId = _matchedMatchId;
+                          final partnerUserId = _matchedPartnerUserId;
+                          final partnerName =
+                              _matchedCardProfile?['name'] as String? ??
+                                  'Match';
+                          final currentUserId =
+                              Supabase.instance.client.auth.currentUser?.id ??
+                                  '';
+                          _closeMatchPopup();
+                          if (matchId != null && partnerUserId != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => GameHubScreen(
+                                  matchId: matchId,
+                                  currentUserId: currentUserId,
+                                  partnerUserId: partnerUserId,
+                                  partnerName: partnerName,
+                                  onChatUnlocked: () {},
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF6C3FE8), Color(0xFFFF6B8A)],
-                            ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF6C3FE8).withOpacity(0.6),
-                                blurRadius: 20,
-                                spreadRadius: 4,
-                              ),
-                            ],
+                            color: const Color(0xFF6C3FE8),
+                            borderRadius: BorderRadius.circular(50),
                           ),
-                          child: const Icon(Icons.favorite, color: Colors.white, size: 32),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 40),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Column(
-                        children: [
-                          // Primary: Play Game
-                          GestureDetector(
-                            onTap: () {
-                              final matchId       = _matchedMatchId;
-                              final partnerUserId = _matchedPartnerUserId;
-                              final partnerName   = _matchedCardProfile?['name'] as String? ?? 'Match';
-                              final currentUserId =
-                                  Supabase.instance.client.auth.currentUser?.id ?? '';
-                              _closeMatchPopup();
-                              if (matchId != null && partnerUserId != null) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => GameHubScreen(
-                                      matchId:        matchId,
-                                      currentUserId:  currentUserId,
-                                      partnerUserId:  partnerUserId,
-                                      partnerName:    partnerName,
-                                      onChatUnlocked: () {},
-                                    ),
-                                  ),
-                                );
-                              }
-                            },
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
-                                ),
-                                borderRadius: BorderRadius.circular(28),
-                              ),
-                              child: const Text(
-                                'PLAY GAME TO UNLOCK CHAT',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Play a mini icebreaker game to unlock chat — it\'s interactive & fun!',
+                          child: const Text(
+                            'PLAY GAME TO UNLOCK CHAT',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          // Secondary: Keep Swiping
-                          TextButton(
-                            onPressed: _closeMatchPopup,
-                            child: Text(
-                              'Keep Swiping',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.white.withOpacity(0.6),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 32),
-                  ],
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: _closeMatchPopup,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.35),
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          child: Text(
+                            'KEEP SWIPING',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white.withValues(alpha: 0.75),
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -618,24 +627,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _matchAvatar(String? photo, Color borderColor) {
     return Container(
-      width: 110,
-      height: 110,
+      width: 150,
+      height: 250,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: borderColor, width: 4),
-        boxShadow: [
-          BoxShadow(color: borderColor.withOpacity(0.4), blurRadius: 20, spreadRadius: 2),
-        ],
+        borderRadius: BorderRadius.circular(24),
       ),
-      child: ClipOval(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(21),
         child: photo != null && photo.isNotEmpty
-            ? Image.network(photo, fit: BoxFit.cover,
+            ? Image.network(photo,
+                fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(
                     color: Colors.grey[800],
-                    child: const Icon(Icons.person, size: 50, color: Colors.white54)))
+                    child: const Icon(Icons.person,
+                        size: 52, color: Colors.white54)))
             : Container(
                 color: Colors.grey[800],
-                child: const Icon(Icons.person, size: 50, color: Colors.white54)),
+                child:
+                    const Icon(Icons.person, size: 52, color: Colors.white54)),
       ),
     );
   }
@@ -674,7 +683,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const SizedBox(height: 16),
           const Text(
             'Something went wrong',
-            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
+            style: TextStyle(
+                color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -694,7 +704,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               child: const Text(
                 'Try Again',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16),
               ),
             ),
           ),
@@ -712,7 +725,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const SizedBox(height: 16),
           const Text(
             "You've seen everyone!",
-            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+            style: TextStyle(
+                color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -732,7 +746,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               child: const Text(
                 'Refresh',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16),
               ),
             ),
           ),
@@ -751,12 +768,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               const Text('MATCH',
                   style: TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.w800,
-                      color: Colors.white, letterSpacing: 1.5)),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 1.5)),
               const Text('XP',
                   style: TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.w800,
-                      color: Color(0xFF6C3FE8), letterSpacing: 1.5)),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF6C3FE8),
+                      letterSpacing: 1.5)),
             ],
           ),
           GestureDetector(
@@ -769,7 +790,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               decoration: BoxDecoration(
                 color: const Color(0xFF1A1A1A),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF6C3FE8).withOpacity(0.3)),
+                border:
+                    Border.all(color: const Color(0xFF6C3FE8).withOpacity(0.3)),
               ),
               child: const Icon(Icons.tune, color: Color(0xFF6C3FE8), size: 18),
             ),
@@ -785,7 +807,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final nextProfile = hasNext ? _profiles[_currentProfileIndex + 1] : null;
 
     final dragProgress =
-        (_dragPosition.dx.abs() / MediaQuery.of(context).size.width).clamp(0.0, 1.0);
+        (_dragPosition.dx.abs() / MediaQuery.of(context).size.width)
+            .clamp(0.0, 1.0);
 
     return Stack(
       children: [
@@ -796,7 +819,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: KeyedSubtree(
               key: ValueKey('back_${_currentProfileIndex + 1}'),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: _buildProfileCard(nextProfile),
               ),
             ),
@@ -806,7 +830,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   : _nextCardScaleAnimation.value;
               final opacity = _isDragging
                   ? (0.5 + dragProgress * 0.5).clamp(0.5, 1.0)
-                  : (0.5 + _swipeAnimationController.value * 0.5).clamp(0.5, 1.0);
+                  : (0.5 + _swipeAnimationController.value * 0.5)
+                      .clamp(0.5, 1.0);
               return Transform.scale(
                 scale: scale,
                 child: Opacity(opacity: opacity, child: child),
@@ -824,14 +849,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               onPanUpdate: _onPanUpdate,
               onPanEnd: _onPanEnd,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: _buildProfileCard(profile),
               ),
             ),
           ),
           builder: (context, child) {
             final offset = _isDragging ? _dragPosition : _swipeAnimation.value;
-            final rotation = _isDragging ? _getRotation() : _rotationAnimation.value;
+            final rotation =
+                _isDragging ? _getRotation() : _rotationAnimation.value;
             return Transform.translate(
               offset: offset,
               child: Transform.rotate(angle: rotation, child: child),
@@ -878,12 +905,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
+                              colors: [
+                                Color(0xFF1A1A2E),
+                                Color(0xFF16213E),
+                                Color(0xFF0F3460)
+                              ],
                             ),
                           ),
                           child: const Center(
                             child: CircularProgressIndicator(
-                              color: Color(0xFF6C3FE8), strokeWidth: 2),
+                                color: Color(0xFF6C3FE8), strokeWidth: 2),
                           ),
                         );
                       },
@@ -919,7 +950,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     child: Transform.rotate(
                       angle: _dragPosition.dx > 0 ? -0.3 : 0.3,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           border: Border.all(
                             color: _dragPosition.dx > 0
@@ -964,7 +996,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               color: Colors.white,
                               letterSpacing: 0.5,
                               shadows: [
-                                Shadow(color: Colors.black54, blurRadius: 8, offset: Offset(0, 2)),
+                                Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 8,
+                                    offset: Offset(0, 2)),
                               ],
                             ),
                           ),
@@ -989,16 +1024,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     if (location.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.5),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withOpacity(0.3)),
+                          border:
+                              Border.all(color: Colors.white.withOpacity(0.3)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.location_on, color: Colors.white, size: 14),
+                            const Icon(Icons.location_on,
+                                color: Colors.white, size: 14),
                             const SizedBox(width: 3),
                             Text(
                               location,
@@ -1017,21 +1055,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       Wrap(
                         spacing: 6,
                         runSpacing: 4,
-                        children: interests.take(3).map((interest) => Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6C3FE8).withOpacity(0.7),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            interest,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        )).toList(),
+                        children: interests
+                            .take(3)
+                            .map((interest) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF6C3FE8)
+                                        .withOpacity(0.7),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    interest,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ))
+                            .toList(),
                       ),
                     ],
                   ],
@@ -1067,19 +1110,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         children: [
           _buildActionButton(
             icon: Icons.close_rounded,
-            gradient: const LinearGradient(colors: [Color(0xFFFF3B60), Color(0xFFFF6B8A)]),
+            gradient: const LinearGradient(
+                colors: [Color(0xFFFF3B60), Color(0xFFFF6B8A)]),
             size: 58,
             onTap: _handlePass,
           ),
           _buildActionButton(
             icon: Icons.star_rounded,
-            gradient: const LinearGradient(colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)]),
+            gradient: const LinearGradient(
+                colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)]),
             size: 52,
             onTap: _handleSuperLike,
           ),
           _buildActionButton(
             icon: Icons.favorite_rounded,
-            gradient: const LinearGradient(colors: [Color(0xFF00D4AA), Color(0xFF00E5BD)]),
+            gradient: const LinearGradient(
+                colors: [Color(0xFF00D4AA), Color(0xFF00E5BD)]),
             size: 66,
             onTap: _handleLike,
           ),

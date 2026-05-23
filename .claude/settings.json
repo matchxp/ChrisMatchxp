@@ -50,7 +50,8 @@
       "Bash(pip install *)",
       "Bash(python gen_docx.py)",
       "Bash(pip show *)",
-      "Bash(python generate_report.py)"
+      "Bash(python generate_report.py)",
+      "Bash(flutter test *)"
     ],
     "additionalDirectories": [
       "\\tmp",
