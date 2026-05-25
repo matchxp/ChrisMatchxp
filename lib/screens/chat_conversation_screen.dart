@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
@@ -17,6 +18,7 @@ import '../games/word_search/word_search_supabase_wrapper.dart';
 import '../games/emoji_charades/emoji_charades_game_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_intro_screen.dart';
 import 'full_profile_screen.dart';
+import '../widgets/matchxp_background.dart';
 
 class ChatConversationScreen extends StatefulWidget {
   final String matchId;
@@ -344,7 +346,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color.fromARGB(255, 89, 40, 185),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(title,
             style: const TextStyle(
@@ -639,20 +641,26 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(children: [
-        const Expanded(child: Divider(color: Colors.white12, thickness: 1)),
+        Expanded(
+            child: Divider(
+                color: const Color(0xFF6C3FE8).withValues(alpha: 0.2),
+                thickness: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
             label,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.35),
+              color: const Color(0xFFA78BFA).withValues(alpha: 0.6),
               fontSize: 11,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.4,
             ),
           ),
         ),
-        const Expanded(child: Divider(color: Colors.white12, thickness: 1)),
+        Expanded(
+            child: Divider(
+                color: const Color(0xFF6C3FE8).withValues(alpha: 0.2),
+                thickness: 1)),
       ]),
     );
   }
@@ -961,7 +969,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           m['message_type'] == 'game_challenge' &&
           (m['meta'] as Map?)?['game_type'] == gameType));
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF160C2A),
         content: Text('Could not send challenge: $e',
             style: const TextStyle(color: Colors.white)),
       ));
@@ -1182,7 +1190,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   void _showMoreMenu() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: const Color(0xFF160C2A),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1272,7 +1280,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: const Color(0xFF160C2A),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           title: Row(children: [
@@ -1333,7 +1341,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: const Color(0xFF160C2A),
           content: Text(
               'Report submitted. We\'ll review $_otherName\'s profile.',
               style: const TextStyle(color: Colors.white)),
@@ -1346,7 +1354,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF160C2A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Row(children: [
           const Icon(Icons.block, color: Color(0xFFF87171), size: 20),
@@ -1390,7 +1398,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       Navigator.pop(context); // go back to chats list
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFF1A1A1A),
+          backgroundColor: const Color(0xFF160C2A),
           content: Text('$_otherName has been blocked.',
               style: const TextStyle(color: Colors.white)),
         ),
@@ -1404,7 +1412,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     final msgId = msg['id'] as String?;
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: const Color(0xFF160C2A),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1544,29 +1552,33 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              if (_scoresLoaded && (_myWins > 0 || _partnerWins > 0))
-                _buildScoreboard(),
-              Expanded(child: _loading ? _buildLoader() : _buildMessageList()),
-              // Typing indicator sits just above reply banner / input
-              if (_isPartnerTyping) _buildTypingIndicator(),
-              if (_replyingTo != null) _buildReplyBanner(),
-              _buildInputBar(),
-            ],
-          ),
-          // Scroll-to-bottom FAB
-          if (_showScrollToBottom)
-            Positioned(
-              bottom: 90,
-              right: 16,
-              child: _buildScrollToBottomButton(),
+      body: MatchXPBackground(
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
+                if (_scoresLoaded && (_myWins > 0 || _partnerWins > 0))
+                  _buildScoreboard(),
+                Expanded(child: _loading ? _buildLoader() : _buildMessageList()),
+                // Typing indicator sits just above reply banner / input
+                if (_isPartnerTyping) _buildTypingIndicator(),
+                if (_replyingTo != null) _buildReplyBanner(),
+                _buildInputBar(),
+              ],
             ),
-        ],
+            // Scroll-to-bottom FAB
+            if (_showScrollToBottom)
+              Positioned(
+                bottom: 90,
+                right: 16,
+                child: _buildScrollToBottomButton(),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1624,7 +1636,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
+              color: const Color(0xFF1A1129),
               shape: BoxShape.circle,
               border: Border.all(
                   color: const Color(0xFF6C3FE8).withValues(alpha: 0.4)),
@@ -1645,7 +1657,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6C3FE8),
+                  color: Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -1664,7 +1676,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
       elevation: 0,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
@@ -1777,7 +1791,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: _chatUnlocked
-                    ? const Color(0xFF1A1A1A)
+                    ? const Color(0xFF160C2A)
                     : const Color(0xFF6C3FE8).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
                 border: _chatUnlocked
@@ -1802,7 +1816,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
+                color: const Color(0xFF160C2A),
                 borderRadius: BorderRadius.circular(10),
               ),
               child:
@@ -1836,11 +1850,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
+                color: const Color(0xFF1A0D3A),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
+                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.5),
                     width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.15),
+                    blurRadius: 10,
+                    spreadRadius: 0,
+                  ),
+                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1874,7 +1895,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
+          color: const Color(0xFF160C2A),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
               color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
@@ -1952,13 +1973,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                             duration: const Duration(milliseconds: 600),
                             curve: Curves.easeOut,
                             width: barWidth * myPct,
-                            color: const Color(0xFF6C3FE8),
+                            color: Colors.transparent,
                           ),
                           AnimatedContainer(
                             duration: const Duration(milliseconds: 600),
                             curve: Curves.easeOut,
                             width: barWidth * (1 - myPct),
-                            color: const Color(0xFF9D50BB),
+                            color: Colors.transparent,
                           ),
                         ]),
                       ),
@@ -2248,7 +2269,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               Container(
                 width: 220,
                 height: 160,
-                color: const Color(0xFF1A1A1A),
+                color: const Color(0xFF160C2A),
                 child: const Icon(Icons.videocam_rounded,
                     color: Colors.white24, size: 48),
               ),
@@ -2488,7 +2509,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                       : content.startsWith('[image]') ||
                               content.startsWith('[video]')
                           ? Colors.transparent
-                          : const Color(0xFF1E1E1E),
+                          : const Color(0xFF3A3A3A),
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(20),
                     topRight: const Radius.circular(20),
@@ -2595,7 +2616,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       _ => gameType,
     };
     final gameEmoji = switch (gameType) {
-      'word_search' => '🔤',
+      'word_search' => '🔍',
       'emoji_charades' => '🎭',
       'rps' => '✂️',
       _ => '🎮',
@@ -2604,270 +2625,92 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     final canAccept =
         !isMe && liveStatus == 'pending' && sessionId != null && !isExpired;
     final canRejoin = liveStatus == 'active' && sessionId != null && !isExpired;
-    final statusText = isExpired
-        ? (liveStatus == 'active'
-            ? 'Game session expired'
-            : 'Invitation expired')
-        : switch (liveStatus) {
-            'active' => 'Game is in progress!',
-            'completed' => 'Game completed ✓',
-            _ => isMe
-                ? 'Waiting for $_otherName to accept…'
-                : 'Tap to accept and play!',
-          };
+    final isDone = liveStatus == 'completed' || isExpired;
 
-    final challengeText = isMe
-        ? 'You challenged $_otherName!'
-        : '$_otherName challenged you!';
-
-    // Glow color: purple for live, grey for expired
-    final glowColor = isExpired
-        ? const Color(0xFF555555)
-        : const Color(0xFF6C3FE8);
+    // Once a game is finished or expired, hide it entirely — no clutter in chat.
+    if (isDone) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment:
+            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: isExpired
-                  ? const Color(0xFF1E1E1E)
-                  : isMe
-                      ? const Color(0xFF1A0D3A)
-                      : const Color(0xFF0D1A2E),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: glowColor.withValues(alpha: isExpired ? 0.3 : 0.6),
-                width: 1.5,
+          GestureDetector(
+            onTap: canAccept
+                ? () => _acceptChallenge(msg)
+                : canRejoin
+                    ? () => _navigateToGame(gameType, sessionId)
+                    : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2D0F60), Color(0xFF1A0D3A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(50),
+                border: Border.all(
+                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.75),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  // tight inner glow
+                  BoxShadow(
+                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.65),
+                    blurRadius: 8,
+                    spreadRadius: 0,
+                  ),
+                  // mid halo
+                  BoxShadow(
+                    color: const Color(0xFF9D50BB).withValues(alpha: 0.35),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                  ),
+                  // outer bloom
+                  BoxShadow(
+                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.18),
+                    blurRadius: 36,
+                    spreadRadius: 4,
+                  ),
+                ],
               ),
-              boxShadow: isExpired
-                  ? null
-                  : [
-                      BoxShadow(
-                        color: glowColor.withValues(alpha: 0.25),
-                        blurRadius: 12,
-                        spreadRadius: 1,
-                      ),
-                    ],
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Rounded-square icon
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: glowColor.withValues(
-                        alpha: isExpired ? 0.08 : 0.22),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(gameEmoji,
-                        style: TextStyle(
-                          fontSize: 20,
-                          color: isExpired ? Colors.white38 : null,
-                        )),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Title + subtitles
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(gameName,
-                          style: TextStyle(
-                            color: isExpired ? Colors.white38 : Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          )),
-                      const SizedBox(height: 2),
-                      Text(
-                        challengeText,
-                        style: TextStyle(
-                          color: Colors.white.withValues(
-                              alpha: isExpired ? 0.3 : 0.65),
-                          fontSize: 12,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 1),
-                      Text(statusText,
-                          style: TextStyle(
-                            color: canAccept
-                                ? const Color(0xFFFBBF24)
-                                : Colors.white.withValues(
-                                    alpha: isExpired ? 0.25 : 0.4),
-                            fontSize: 11,
-                          )),
-                    ],
-                  ),
-                ),
-              ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(gameEmoji, style: const TextStyle(fontSize: 16)),
+                  const SizedBox(width: 8),
+                  Text(gameName,
+                      style: GoogleFonts.roboto(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        letterSpacing: 0.4,
+                      )),
+                ],
+              ),
             ),
           ),
-          if (canAccept) ...[
-            const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () => _acceptChallenge(msg),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6C3FE8),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: const Text('Accept & Play',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    )),
-              ),
+          if (showTime) ...[
+            const SizedBox(height: 3),
+            Text(
+              _formatTime(msg['created_at'] as String?),
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35), fontSize: 10),
             ),
           ],
-          if (canRejoin) ...[
-            const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () => _navigateToGame(gameType, sessionId),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6C3FE8),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: const Text('Rejoin Game',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    )),
-                ),
-              ),
-            ],
-            if (showTime) ...[
-              const SizedBox(height: 3),
-              Text(
-                _formatTime(msg['created_at'] as String?),
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    fontSize: 10),
-              ),
-            ],
-          ],
-        ),
-      );
+        ],
+      ),
+    );
   }
 
   // ── Game result bubble (message_type = 'game_result') ─────────────────────
   Widget _buildGameResultBubble(Map<String, dynamic> msg, bool showTime) {
-    final meta = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
-    final gameType = meta['game_type'] as String? ?? 'rps';
-    final resultLabel = meta['result_label'] as String? ?? '';
-    final winnerId = meta['winner_id'] as String?;
-    final isAutoUnlock = resultLabel == 'auto_unlocked';
-
-    // Only the very first game_result in the conversation is the unlock moment.
-    final gameResults = _messages
-        .where((m) => m['message_type'] == 'game_result')
-        .toList()
-      ..sort((a, b) => (a['created_at'] as String? ?? '')
-          .compareTo(b['created_at'] as String? ?? ''));
-    final isUnlockResult = gameResults.isNotEmpty &&
-        gameResults.first['id'] != null &&
-        gameResults.first['id'] == msg['id'];
-
-    if (!isUnlockResult) return const SizedBox.shrink();
-
-    final gameEmoji = switch (gameType) {
-      'word_search' => '🔡',
-      'emoji_charades' => '😂',
-      _ => '✊',
-    };
-
-    String headline;
-    if (isAutoUnlock) {
-      headline = '⏰  Chat unlocked automatically';
-    } else if (winnerId == null) {
-      headline = '$gameEmoji  It\'s a draw!';
-    } else if (winnerId == _currentUserId) {
-      headline = '$gameEmoji  You won! 🏆';
-    } else {
-      headline = '$gameEmoji  $_otherName won!';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-                color: const Color(0xFF22C55E).withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            children: [
-              Text(
-                headline,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontFamily: 'Fredoka One',
-                  fontSize: 15,
-                ),
-              ),
-              if (!isAutoUnlock && isUnlockResult) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '🔓 Chat unlocked!',
-                  style: TextStyle(
-                    color: const Color(0xFF22C55E).withValues(alpha: 0.85),
-                    fontFamily: 'Fredoka',
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-              if (showTime) ...[
-                const SizedBox(height: 6),
-                Text(
-                  _formatTime(msg['created_at'] as String?),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white.withValues(alpha: 0.3),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
+    // Game result messages (including the "Chat unlocked" unlock moment) are
+    // intentionally hidden — the chat just opens cleanly after the game ends.
+    return const SizedBox.shrink();
   }
 
   // ── Reply banner (above input bar) ────────────────────────────────────────
@@ -2878,7 +2721,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: const Color(0xFF160C2A),
         border: Border(
           top: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
         ),
@@ -2889,7 +2732,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             width: 3,
             height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF6C3FE8),
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -3065,7 +2908,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     _buildMediaOption(
                       icon: Icons.photo_library_rounded,
                       label: 'Photo',
-                      color: const Color(0xFF6C3FE8),
+                      color: Colors.transparent,
                       onTap: () async {
                         Navigator.pop(ctx);
                         final XFile? file = await picker.pickImage(
@@ -3220,9 +3063,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       return Container(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         decoration: BoxDecoration(
-          color: const Color(0xFF0A0A0A),
+          color: Colors.transparent,
           border: Border(
-              top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+              top: BorderSide(
+                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.15))),
         ),
         child: Row(
           children: [
@@ -3300,9 +3144,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0A0A),
+        color: const Color(0xFF0C0B11),
         border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          top: BorderSide(
+              color: const Color(0xFF6C3FE8).withValues(alpha: 0.15)),
         ),
       ),
       child: Row(
@@ -3331,10 +3176,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
+                color: const Color(0xFF160C2A),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.25),
                 ),
               ),
               child: TextField(
@@ -3412,9 +3257,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       return Container(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
         decoration: BoxDecoration(
-          color: const Color(0xFF0A0A0A),
+          color: Colors.transparent,
           border: Border(
-              top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+              top: BorderSide(
+                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.15))),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3441,9 +3287,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0A0A),
+        color: const Color(0xFF0C0B11),
         border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          top: BorderSide(
+              color: const Color(0xFF6C3FE8).withValues(alpha: 0.15)),
         ),
       ),
       child: Column(
@@ -3623,7 +3470,7 @@ class _ChatShimmerState extends State<_ChatShimmer>
       animation: _anim,
       builder: (_, __) {
         final shimmerColor = Color.lerp(
-          const Color(0xFF1E1E1E),
+          const Color(0xFF1A1129),
           const Color(0xFF333333),
           _anim.value,
         )!;

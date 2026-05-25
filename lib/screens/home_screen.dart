@@ -436,7 +436,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: const Color(0xFF1A0D38),
       body: Stack(
         children: [
           SafeArea(
@@ -476,8 +476,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                const Color(0xFF2E0858).withValues(alpha: 0.88),
-                const Color(0xFF180430).withValues(alpha: 0.92),
+                const Color(0xFF2E0858).withValues(alpha: 0.96),
+                const Color(0xFF180430).withValues(alpha: 0.98),
               ],
             ),
           ),

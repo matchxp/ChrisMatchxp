@@ -255,8 +255,8 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: false,
-      backgroundColor: Colors.black,
+      extendBody: true,
+      backgroundColor: Colors.transparent,
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,
@@ -267,7 +267,7 @@ class _MainNavigationState extends State<MainNavigation> {
 
   Widget _buildNavBar() {
     return Container(
-      color: Colors.black,
+      color: Colors.transparent,
       child: SafeArea(
         top: false,
         child: Padding(
