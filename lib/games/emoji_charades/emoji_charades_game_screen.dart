@@ -386,13 +386,39 @@ class _State extends State<EmojiCharadesGameScreen>
     if (widget.sessionId != null) q = q.eq('session_id', widget.sessionId!);
     final res = await q.maybeSingle();
     if (res != null && mounted) {
+      final emojis     = (res['emojis'] as String?) ?? '';
+      final submitted  = res['submitted'] == true;
+      final solved     = res['solved'] == true;
+      final skipped    = res['skipped'] == true;
+
       setState(() {
-        _myEmojis = res['emojis'] ?? '';
-        if (res['submitted'] == true) {
-          if (res['solved'] == true) _iSolved = true;
-          if (res['skipped'] == true) _skipped = true;
+        _myEmojis = emojis;
+        if (submitted) {
+          if (solved)   _iSolved = true;
+          if (skipped)  _skipped = true;
         }
       });
+
+      // When rejoining (skipIntro=true), restore the phase from DB state so
+      // the user lands where they left off instead of the category picker.
+      if (widget.skipIntro && _phase != _Phase.done) {
+        if (submitted) {
+          if (solved || skipped) {
+            // Finished solving — waiting for partner to finish.
+            _goTo(_Phase.waitSolve);
+          } else {
+            // Submitted my charade but haven't solved partner's yet.
+            // Land on waiting screen; "Solve Puzzle" button activates
+            // automatically once _partnerSubmitted is set by realtime.
+            _goTo(_Phase.waiting);
+          }
+        } else if (emojis.isNotEmpty) {
+          // Was creating the charade but hadn't submitted yet.
+          _goTo(_Phase.create);
+        }
+        // emojis empty + not submitted → stay at category (already set by skipIntro)
+      }
+
       _checkCompletionOnLoad();
     }
   }

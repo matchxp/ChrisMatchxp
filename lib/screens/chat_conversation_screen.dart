@@ -17,6 +17,10 @@ import '../games/word_search/word_search_models.dart';
 import '../games/word_search/word_search_supabase_wrapper.dart';
 import '../games/emoji_charades/emoji_charades_game_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_intro_screen.dart';
+import '../games/rock_paper_scissors/screens/rps_pick_screen.dart';
+import '../games/rock_paper_scissors/screens/rps_waiting_screen.dart';
+import '../games/rock_paper_scissors/screens/rps_reveal_screen.dart';
+import '../games/rock_paper_scissors/data/rps_models.dart';
 import 'full_profile_screen.dart';
 import '../widgets/matchxp_background.dart';
 
@@ -43,6 +47,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   final WordSearchService _gameService = WordSearchService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _inputFocusNode = FocusNode();
+  double _prevKeyboardHeight = 0.0; // track keyboard growth for auto-scroll
+
   final String _currentUserId =
       Supabase.instance.client.auth.currentUser?.id ?? '';
 
@@ -118,12 +125,25 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     _subscribeMessages(); // replaces _loadMessages + _subscribeToMessages
     _loadScores();
     _subscribeSessionStream(); // replaces _loadSessionStates + _subscribeToSessions
-    // _resumePendingChallengePoller(); // disabled — use "Rejoin Game" button instead
+    // _resumePendingChallengePoller(); // disabled — manual rejoin via chat card
     _fetchOnlineStatus();
     _onlineTimer = Timer.periodic(
         const Duration(seconds: 60), (_) => _fetchOnlineStatus());
     _scrollController.addListener(_onScrollChanged);
+    _inputFocusNode.addListener(() {
+      if (_inputFocusNode.hasFocus) _scrollToBottom();
+    });
     _initAudioPlayer();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Scroll to the latest message whenever the keyboard grows (each animation
+    // frame as it slides up), so messages are never covered by the keyboard.
+    final kh = MediaQuery.of(context).viewInsets.bottom;
+    if (kh > _prevKeyboardHeight) _scrollToBottom();
+    _prevKeyboardHeight = kh;
   }
 
   @override
@@ -145,6 +165,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       Supabase.instance.client.removeChannel(_sessionChannel!);
     _messageController.dispose();
     _scrollController.dispose();
+    _inputFocusNode.dispose();
     _recordTimer?.cancel();
     _audioRecorder.dispose();
     _onlineTimer?.cancel();
@@ -1011,23 +1032,35 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   // On app restart, resume the challenger navigation for any in-progress session.
   // Case 1 — still pending: restart poller so we catch acceptance.
   // Case 2 — already active: navigate immediately (accepted while we were offline).
+  // On chat open, auto-rejoin any in-progress game session for this match.
+  // Covers both roles: challenger (pending/active) and challenged (active only).
   Future<void> _resumePendingChallengePoller() async {
     if (_currentUserId.isEmpty) return;
     try {
+      // Fetch recent non-completed sessions for this match — filter by
+      // participant role in code so we catch both challenger and challenged.
       final rows = await Supabase.instance.client
           .from('game_sessions')
-          .select('id, game_type, status, created_at')
+          .select('id, game_type, status, created_at, challenger_id, challenged_id')
           .eq('match_id', widget.matchId)
-          .eq('challenger_id', _currentUserId)
           .inFilter('status', ['pending', 'active'])
           .order('created_at', ascending: false)
-          .limit(1);
-      if (rows.isEmpty || !mounted) return;
-      final sessionId = rows.first['id'] as String;
-      final gameType = rows.first['game_type'] as String;
-      final status = rows.first['status'] as String;
+          .limit(5);
+
+      // Find the most recent session where I am a participant.
+      final row = rows.where((r) {
+        return r['challenger_id'] == _currentUserId ||
+            r['challenged_id'] == _currentUserId;
+      }).firstOrNull;
+
+      if (row == null || !mounted) return;
+
+      final sessionId = row['id'] as String;
+      final gameType = row['game_type'] as String;
+      final status = row['status'] as String;
+      final isChallenger = row['challenger_id'] == _currentUserId;
       final createdAt =
-          DateTime.tryParse(rows.first['created_at'] as String? ?? '');
+          DateTime.tryParse(row['created_at'] as String? ?? '');
 
       // Skip sessions older than 5 minutes — treat as expired, no auto-nav.
       if (createdAt != null &&
@@ -1038,12 +1071,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       }
 
       if (status == 'active') {
-        debugPrint(
-            '[Resume] session already active, navigating session=$sessionId');
+        // Both challenger and challenged rejoin an active session.
+        debugPrint('[Resume] active session found, navigating session=$sessionId');
         _navigateToGame(gameType, sessionId);
-      } else {
-        debugPrint(
-            '[Resume] pending challenge found, restarting poller session=$sessionId');
+      } else if (isChallenger) {
+        // Only challenger waits for a pending session to be accepted.
+        debugPrint('[Resume] pending challenge found, restarting poller session=$sessionId');
         _pollForGameAcceptance(sessionId, gameType);
       }
     } catch (e) {
@@ -1080,7 +1113,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     });
   }
 
-  void _navigateToGame(String gameType, String sessionId) {
+  Future<void> _navigateToGame(String gameType, String sessionId,
+      {bool isRejoin = false}) async {
     _gameAcceptancePoller?.cancel();
     _gameAcceptancePoller = null;
     final partnerUserId = widget.otherProfile['id'] as String? ?? '';
@@ -1091,11 +1125,121 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       Navigator.of(context).pop();
     }
 
+    void onRpsUnlock() {
+      if (!mounted) return;
+      setState(() => _chatUnlocked = true);
+      _restartMessageStream();
+      _refreshSessionStream();
+      _loadScores();
+    }
+
     void refresh(_) {
       if (!mounted) return;
       _restartMessageStream();
       _refreshSessionStream();
       _loadScores();
+    }
+
+    // ── RPS rejoin: check DB to resume at the right screen ────────────
+    if (gameType == 'rps' && isRejoin) {
+      final db = Supabase.instance.client;
+      try {
+        final myRows = await db
+            .from('rps_moves')
+            .select('move')
+            .eq('session_id', sessionId)
+            .eq('player_id', _currentUserId);
+        if (!mounted) return;
+
+        if (myRows.isEmpty) {
+          // Haven't picked yet — skip intro, go straight to pick screen.
+          Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => RPSPickScreen(
+                  currentUserId: _currentUserId,
+                  currentUserName: 'You',
+                  opponentId: partnerUserId,
+                  opponentName: _otherName,
+                  sessionId: sessionId,
+                  popCount: 1,
+                  chatAlreadyUnlocked: _chatUnlocked,
+                  onChatUnlocked: onRpsUnlock,
+                ),
+              )).then(refresh);
+        } else {
+          final myMoveStr = myRows.first['move'] as String;
+          final myMove = RPSMove.values.firstWhere(
+              (m) => m.name == myMoveStr,
+              orElse: () => RPSMove.rock);
+
+          final allRows = await db
+              .from('rps_moves')
+              .select('player_id, move')
+              .eq('session_id', sessionId);
+          if (!mounted) return;
+
+          if (allRows.length >= 2) {
+            // Both picked — go to reveal.
+            final oppRow = allRows.firstWhere(
+                (r) => r['player_id'] != _currentUserId,
+                orElse: () => allRows.first);
+            final oppMove = RPSMove.values.firstWhere(
+                (m) => m.name == (oppRow['move'] as String),
+                orElse: () => RPSMove.rock);
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RPSRevealScreen(
+                    currentUserId: _currentUserId,
+                    currentUserName: 'You',
+                    opponentId: partnerUserId,
+                    opponentName: _otherName,
+                    myMove: myMove,
+                    opponentMove: oppMove,
+                    popCount: 1,
+                    chatAlreadyUnlocked: _chatUnlocked,
+                    onChatUnlocked: onRpsUnlock,
+                  ),
+                )).then(refresh);
+          } else {
+            // Only I picked — resume on waiting screen.
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RPSWaitingScreen(
+                    currentUserId: _currentUserId,
+                    currentUserName: 'You',
+                    opponentId: partnerUserId,
+                    opponentName: _otherName,
+                    sessionId: sessionId,
+                    myMove: myMove,
+                    popCount: 1,
+                    chatAlreadyUnlocked: _chatUnlocked,
+                    onChatUnlocked: onRpsUnlock,
+                  ),
+                )).then(refresh);
+          }
+        }
+      } catch (e) {
+        debugPrint('[RejoinRPS] error: $e — falling back to intro');
+        if (!mounted) return;
+        Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RPSIntroScreen(
+                currentUserId: _currentUserId,
+                currentUserName: 'You',
+                opponentId: partnerUserId,
+                opponentName: _otherName,
+                sessionId: sessionId,
+                popCount: 1,
+                chatAlreadyUnlocked: _chatUnlocked,
+                onChatUnlocked: onRpsUnlock,
+              ),
+            )).then(refresh);
+      }
+      return;
     }
 
     switch (gameType) {
@@ -1110,6 +1254,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 partnerName: _otherName,
                 onChatUnlocked: onUnlock,
                 sessionId: sessionId,
+                skipWelcome: isRejoin,
                 chatAlreadyUnlocked: _chatUnlocked,
               ),
             )).then(refresh);
@@ -1124,6 +1269,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 partnerName: _otherName,
                 onChatUnlocked: onUnlock,
                 sessionId: sessionId,
+                skipIntro: isRejoin,
                 chatAlreadyUnlocked: _chatUnlocked,
               ),
             )).then(refresh);
@@ -1139,13 +1285,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 sessionId: sessionId,
                 popCount: 1,
                 chatAlreadyUnlocked: _chatUnlocked,
-                onChatUnlocked: () {
-                  if (!mounted) return;
-                  setState(() => _chatUnlocked = true);
-                  _restartMessageStream();
-                  _refreshSessionStream();
-                  _loadScores();
-                },
+                onChatUnlocked: onRpsUnlock,
               ),
             )).then(refresh);
       default:
@@ -1551,33 +1691,42 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     return Scaffold(
+      // Disable the Scaffold's built-in resize so the gradient background
+      // always covers the full screen (including behind the keyboard).
+      // We push the content up manually via the Padding below.
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
       body: MatchXPBackground(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
-                if (_scoresLoaded && (_myWins > 0 || _partnerWins > 0))
-                  _buildScoreboard(),
-                Expanded(child: _loading ? _buildLoader() : _buildMessageList()),
-                // Typing indicator sits just above reply banner / input
-                if (_isPartnerTyping) _buildTypingIndicator(),
-                if (_replyingTo != null) _buildReplyBanner(),
-                _buildInputBar(),
-              ],
-            ),
-            // Scroll-to-bottom FAB
-            if (_showScrollToBottom)
-              Positioned(
-                bottom: 90,
-                right: 16,
-                child: _buildScrollToBottomButton(),
+        child: Padding(
+          // Shift the entire content area above the keyboard.
+          padding: EdgeInsets.only(bottom: keyboardHeight),
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
+                  if (_scoresLoaded && (_myWins > 0 || _partnerWins > 0))
+                    _buildScoreboard(),
+                  Expanded(child: _loading ? _buildLoader() : _buildMessageList()),
+                  // Typing indicator sits just above reply banner / input
+                  if (_isPartnerTyping) _buildTypingIndicator(),
+                  if (_replyingTo != null) _buildReplyBanner(),
+                  _buildInputBar(),
+                ],
               ),
-          ],
+              // Scroll-to-bottom FAB
+              if (_showScrollToBottom)
+                Positioned(
+                  bottom: 90,
+                  right: 16,
+                  child: _buildScrollToBottomButton(),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2641,7 +2790,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             onTap: canAccept
                 ? () => _acceptChallenge(msg)
                 : canRejoin
-                    ? () => _navigateToGame(gameType, sessionId)
+                    ? () => _navigateToGame(gameType, sessionId, isRejoin: true)
                     : null,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -2904,19 +3053,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    // Photo
+                    // Photo (multi-select)
                     _buildMediaOption(
                       icon: Icons.photo_library_rounded,
                       label: 'Photo',
-                      color: Colors.transparent,
+                      color: const Color(0xFF7B6CF6),
                       onTap: () async {
                         Navigator.pop(ctx);
-                        final XFile? file = await picker.pickImage(
-                          source: ImageSource.gallery,
-                          imageQuality: 85,
-                        );
-                        if (file != null && mounted) {
-                          _sendMediaMessage(File(file.path), 'image');
+                        final List<XFile> files =
+                            await picker.pickMultiImage(imageQuality: 85);
+                        for (final xf in files) {
+                          if (!mounted) break;
+                          await _sendMediaMessage(File(xf.path), 'image');
                         }
                       },
                     ),
@@ -3184,6 +3332,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               ),
               child: TextField(
                 controller: _messageController,
+                focusNode: _inputFocusNode,
                 style: const TextStyle(color: Colors.white, fontSize: 15),
                 decoration: InputDecoration(
                   hintText: 'Type a message...',

@@ -207,6 +207,24 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   // PUBLIC API — call these from Supabase realtime listeners
   // ═══════════════════════════════════════════════════════════
 
+  /// Restores the game to [step] when rejoining a session already in progress.
+  /// Pass [myWord] and [myCatIdx] so the wait/waitPartner/done screens can
+  /// display the player's own submitted word correctly.
+  /// Call this AFTER setPartnerData so the solve screen has the grid ready.
+  void resumeFrom(WSStep step, {String myWord = '', int myCatIdx = 0}) {
+    final submitted = step == WSStep.wait ||
+        step == WSStep.solve ||
+        step == WSStep.waitPartner ||
+        step == WSStep.done;
+    setState(() {
+      var s = _me.copyWith(step: step, submitted: submitted);
+      if (myWord.isNotEmpty) {
+        s = s.copyWith(word: myWord, catIdx: myCatIdx);
+      }
+      _me = s;
+    });
+  }
+
   void setPartnerData(List<List<String>> grid, String word, int catIdx) {
     setState(() {
       _partner = _partner.copyWith(grid: grid, word: word, catIdx: catIdx, submitted: true);

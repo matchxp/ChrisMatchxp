@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation.dart';
 import 'screens/onboarding/profile_details_screen.dart';
+import 'screens/splash_screen.dart';
 
 // ── Global theme notifier — read / written from SettingsScreen ───────────────
 final appThemeMode = ValueNotifier<ThemeMode>(ThemeMode.dark);
@@ -77,7 +78,7 @@ class MatchXApp extends StatelessWidget {
           ),
         ),
 
-        home: const SplashRouter(),
+        home: const SplashScreen(),
       ),
     );
   }

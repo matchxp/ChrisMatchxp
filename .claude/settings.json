@@ -54,7 +54,8 @@
       "Bash(flutter test *)",
       "Bash(Select-String -Pattern \"^class \" lib\\\\screens\\\\main_navigation.dart)",
       "Bash(Select-Object -First 5)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(dart --version)"
     ],
     "additionalDirectories": [
       "\\tmp",

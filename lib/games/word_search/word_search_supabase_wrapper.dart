@@ -22,6 +22,7 @@ class WordSearchSupabaseWrapper extends StatefulWidget {
   final VoidCallback onChatUnlocked;
   final String? sessionId;
   final bool chatAlreadyUnlocked;
+  final bool skipWelcome;
 
   const WordSearchSupabaseWrapper({
     super.key,
@@ -32,6 +33,7 @@ class WordSearchSupabaseWrapper extends StatefulWidget {
     required this.onChatUnlocked,
     this.sessionId,
     this.chatAlreadyUnlocked = false,
+    this.skipWelcome = false,
   });
 
   @override
@@ -51,6 +53,7 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
   bool _partnerSolvedPushed = false;
   bool _scoreRecorded       = false;
   bool _completionSent      = false;
+  bool _stepRestored        = false; // true once resumeFrom() has been called
 
   // ── Lifecycle ──────────────────────────────────────────────
 
@@ -119,6 +122,31 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
         state.setPartnerSolved();
       }
       _partnerSolvedPushed = true;
+    }
+
+    // On rejoin (skipWelcome=true), restore the step from the DB phase.
+    // Called after partner data so the solve screen has the grid ready.
+    if (widget.skipWelcome && !_stepRestored) {
+      _stepRestored = true;
+      final step = switch (snap.phase) {
+        MatchGamePhase.setup               => WSStep.category,
+        MatchGamePhase.waitingPartnerSetup => WSStep.wait,
+        MatchGamePhase.solving             => WSStep.solve,
+        MatchGamePhase.waitingPartnerSolve => WSStep.waitPartner,
+        MatchGamePhase.bothSolved          => WSStep.done,
+      };
+      if (step != WSStep.category) {
+        // Also restore MY word + category so the wait/waitPartner/done screens
+        // can display them correctly (they read from _me.word / _me.catIdx).
+        final mg = snap.myGame;
+        if (mg != null) {
+          final catIdx = WordSearchData.categories.indexWhere((c) => c.key == mg.topic);
+          state.resumeFrom(step,
+              myWord: mg.word, myCatIdx: catIdx >= 0 ? catIdx : 0);
+        } else {
+          state.resumeFrom(step);
+        }
+      }
     }
   }
 
@@ -275,7 +303,7 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
       key:                  _gameKey,
       partnerName:          widget.partnerName,
       onGameEvent:          _onGameEvent,
-      skipWelcome:          false,
+      skipWelcome:          widget.skipWelcome,
       chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
     );
   }
