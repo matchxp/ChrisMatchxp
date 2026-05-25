@@ -18,7 +18,7 @@ dependencies:
   url_launcher: ^6.2.0
   record: ^5.1.2
   path_provider: ^2.1.0
-
+  flutter_svg: ^2.0.1
   geolocator: ^10.1.0        # For GPS location
   geocoding: ^2.1.1          # For address conversion
   http: ^1.1.0               # For API calls
@@ -27,7 +27,6 @@ dependencies:
   google_fonts: ^6.1.0       # For Emoji Charades UI
   confetti: ^0.7.0           # For Emoji Charades win animation
   audioplayers: ^5.2.1       # For voice message playback
-  flutter_svg: ^2.0.10+1    # For SVG logo rendering
 
 dependency_overrides:
   record_linux:

@@ -26,7 +26,6 @@ class _MainNavigationState extends State<MainNavigation> {
   final Set<String> _subscribedMatchIds = {};
 
   // Cached matches so we can look up sender name/photo for notifications
-  List<Map<String, dynamic>> _matchesCache = [];
 
   // Poll for new matches (catches the case where User A liked first and
   // never got the "It's a Match!" popup because the broadcast was missed)
@@ -98,8 +97,6 @@ class _MainNavigationState extends State<MainNavigation> {
   Future<void> _loadMatchesAndSubscribe() async {
     final matches = await _matchingService.getMatchesWithProfiles();
     if (!mounted) return;
-
-    setState(() => _matchesCache = matches);
 
     for (final match in matches) {
       final matchId = match['match_id'] as String;
@@ -278,7 +275,7 @@ class _MainNavigationState extends State<MainNavigation> {
               color: const Color(0xFF1E1A2E),
               borderRadius: BorderRadius.circular(28),
               border: Border.all(
-                color: const Color(0xFF6C3FE8).withOpacity(0.25),
+                color: const Color(0xFF6C3FE8).withValues(alpha: 0.25),
                 width: 1,
               ),
             ),
@@ -328,7 +325,7 @@ class _MainNavigationState extends State<MainNavigation> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFF6C3FE8).withOpacity(0.15)
+              ? const Color(0xFF6C3FE8).withValues(alpha: 0.15)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),

@@ -1,53 +1,87 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../widgets/matchxp_background.dart';
-import '../../../widgets/custom_button.dart';
-import '../../../services/profile_service.dart';
 import '../../../models/onboarding_data.dart';
-import 'birthday_screen.dart';
+import 'interests_screen.dart';
 import 'onboarding_progress_dots.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class GenderScreen extends StatefulWidget {
-  const GenderScreen({Key? key}) : super(key: key);
+class ConnectWithScreen extends StatefulWidget {
+  const ConnectWithScreen({Key? key}) : super(key: key);
 
   @override
-  State<GenderScreen> createState() => _GenderScreenState();
+  State<ConnectWithScreen> createState() => _ConnectWithScreenState();
 }
 
-class _GenderScreenState extends State<GenderScreen> {
-  String? _selectedGender;
-  final ProfileService _profileService = ProfileService();
+class _ConnectWithScreenState extends State<ConnectWithScreen> {
   final OnboardingData _onboardingData = OnboardingData();
   bool _isSaving = false;
+  bool _openToEveryone = false;
 
   static const _purple = Color(0xFF6C3FE8);
   static const _purple2 = Color(0xFF9D50BB);
 
+  static const _allOptions = ['Men', 'Women', 'Everyone'];
+  final List<String> _selected = [];
+
   @override
   void initState() {
     super.initState();
-    if (_onboardingData.gender != null) {
-      _selectedGender = _onboardingData.gender;
+    // Load existing selection if any
+    if (_onboardingData.connectWith.isNotEmpty) {
+      _selected.addAll(_onboardingData.connectWith);
+      if (_selected.length == _allOptions.length) {
+        _openToEveryone = true;
+      }
     }
   }
 
+  void _toggleOpenToEveryone(bool val) {
+    setState(() {
+      _openToEveryone = val;
+      if (val) {
+        _selected
+          ..clear()
+          ..addAll(_allOptions);
+      } else {
+        _selected.clear();
+      }
+    });
+  }
+
+  void _toggleOption(String option) {
+    setState(() {
+      if (_selected.contains(option)) {
+        _selected.remove(option);
+      } else {
+        _selected.add(option);
+      }
+      _openToEveryone = _selected.length == _allOptions.length;
+    });
+  }
+
   Future<void> _saveAndContinue() async {
-    if (_selectedGender == null) return;
+    if (_selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select at least one option'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     setState(() => _isSaving = true);
     try {
-      _onboardingData.gender = _selectedGender;
+      _onboardingData.connectWith = List.from(_selected);
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId != null) {
-        final result = await _profileService.saveGender(
-          userId: userId,
-          gender: _selectedGender!,
-        );
-        if (!result['success']) throw Exception(result['error']);
+        await Supabase.instance.client
+            .from('profiles')
+            .update({'connect_with': _selected}).eq('id', userId);
       }
       if (mounted) {
-        Navigator.push(
-            context, MaterialPageRoute(builder: (_) => const BirthdayScreen()));
+        Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const InterestsScreen()));
       }
     } catch (e) {
       if (mounted) {
@@ -73,7 +107,7 @@ class _GenderScreenState extends State<GenderScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // ── Back + dots on same row ───────────────────────
+                // ── Back + dots ───────────────────────────────────
                 Row(
                   children: [
                     IconButton(
@@ -83,7 +117,7 @@ class _GenderScreenState extends State<GenderScreen> {
                       padding: EdgeInsets.zero,
                     ),
                     Expanded(
-                      child: OnboardingProgressDots(currentStep: 2),
+                      child: OnboardingProgressDots(currentStep: 7),
                     ),
                     const SizedBox(width: 48),
                   ],
@@ -93,38 +127,64 @@ class _GenderScreenState extends State<GenderScreen> {
 
                 // ── Title ─────────────────────────────────────────
                 Text(
-                  'Tell us who you are',
+                  'Who would you\nlike to connect with?',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
                     fontSize: 30,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                     letterSpacing: -0.5,
+                    height: 1.2,
                   ),
                 ),
+                const SizedBox(height: 8),
                 Text(
-                  'Select your gender',
+                  'You can choose more than one answer\nand change it any time.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
                     fontSize: 14,
                     fontWeight: FontWeight.w300,
-                    color: Colors.white.withOpacity(0.50),
+                    color: Colors.white.withOpacity(0.80),
+                    height: 1.5,
                   ),
+                ),
+
+                const SizedBox(height: 86),
+
+                // ── Options ───────────────────────────────────────
+                ..._allOptions.map((option) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: _buildOption(option),
+                    )),
+
+                const SizedBox(height: 8),
+
+                // ── Hint text ─────────────────────────────────────
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.visibility_outlined,
+                        color: Colors.white.withOpacity(0.35), size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "You'll only be shown to people looking to connect with your gender.",
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w300,
+                          color: Colors.white.withOpacity(0.80),
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
 
                 const Spacer(),
 
-                // ── Gender options ────────────────────────────────
-                _buildGenderOption('Man', 'Man'),
-                const SizedBox(height: 14),
-                _buildGenderOption('Woman', 'Woman'),
-                const SizedBox(height: 14),
-                _buildGenderOption('Non-binary', 'Non-Binary'),
-                const Spacer(),
-
                 // ── Continue button ───────────────────────────────
                 GestureDetector(
-                  onTap: (_selectedGender != null && !_isSaving)
+                  onTap: (_selected.isNotEmpty && !_isSaving)
                       ? _saveAndContinue
                       : null,
                   child: AnimatedContainer(
@@ -132,10 +192,10 @@ class _GenderScreenState extends State<GenderScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
-                      gradient: (_selectedGender != null && !_isSaving)
+                      gradient: (_selected.isNotEmpty && !_isSaving)
                           ? const LinearGradient(colors: [_purple, _purple2])
                           : null,
-                      color: (_selectedGender == null || _isSaving)
+                      color: (_selected.isEmpty || _isSaving)
                           ? Colors.white.withOpacity(0.08)
                           : null,
                       borderRadius: BorderRadius.circular(50),
@@ -147,14 +207,12 @@ class _GenderScreenState extends State<GenderScreen> {
                               height: 22,
                               child: CircularProgressIndicator(
                                   color: Colors.white, strokeWidth: 2.5))
-                          : Text(
-                              'Continue',
+                          : Text('Continue',
                               style: GoogleFonts.outfit(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                                 color: Colors.white,
-                              ),
-                            ),
+                              )),
                     ),
                   ),
                 ),
@@ -166,7 +224,7 @@ class _GenderScreenState extends State<GenderScreen> {
     );
   }
 
-  // ── Step indicator ──────────────────────────────────────────────────────
+  // ── Step indicator ────────────────────────────────────────────────────────
   Widget _buildStepIndicator({required int current, required int total}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -191,11 +249,11 @@ class _GenderScreenState extends State<GenderScreen> {
     );
   }
 
-  // ── Gender pill option ──────────────────────────────────────────────────
-  Widget _buildGenderOption(String label, String value) {
-    final isSelected = _selectedGender == value;
+  // ── Selectable option pill with checkbox ──────────────────────────────────
+  Widget _buildOption(String option) {
+    final isSelected = _selected.contains(option);
     return GestureDetector(
-      onTap: () => setState(() => _selectedGender = value),
+      onTap: () => _toggleOption(option),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         width: double.infinity,
@@ -203,7 +261,7 @@ class _GenderScreenState extends State<GenderScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(50),
           color: isSelected
-              ? _purple.withOpacity(0.12)
+              ? _purple.withOpacity(0.15)
               : Colors.white.withOpacity(0.05),
           border: Border.all(
             color: isSelected ? _purple : _purple.withOpacity(0.42),
@@ -214,21 +272,29 @@ class _GenderScreenState extends State<GenderScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              label,
+              option,
               style: GoogleFonts.outfit(
                 color: Colors.white,
                 fontSize: 16,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
               ),
             ),
-            if (isSelected)
-              Container(
-                width: 22,
-                height: 22,
-                decoration:
-                    const BoxDecoration(color: _purple, shape: BoxShape.circle),
-                child: const Icon(Icons.check, color: Colors.white, size: 13),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? _purple : Colors.transparent,
+                border: Border.all(
+                  color: isSelected ? _purple : Colors.white.withOpacity(0.35),
+                  width: 2,
+                ),
               ),
+              child: isSelected
+                  ? const Icon(Icons.check, color: Colors.white, size: 14)
+                  : null,
+            ),
           ],
         ),
       ),

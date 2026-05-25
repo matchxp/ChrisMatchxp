@@ -26,19 +26,29 @@ class OnboardingData {
   String? workoutHabit;
   List<String> pets = [];
 
+  //Lookign for//
+  String? lookingFor;
+
+  //connectwith//
+  List<String> connectWith = [];
+
   // Interests
   List<String> interests = [];
+
+  //values//
+  String? zodiac;
+  List<String> religion = [];
 
   // Photos
   List<File> photos = [];
 
   // Singleton pattern
   static final OnboardingData _instance = OnboardingData._internal();
-  
+
   factory OnboardingData() {
     return _instance;
   }
-  
+
   OnboardingData._internal();
 
   // Clear all data
@@ -56,7 +66,11 @@ class OnboardingData {
     smokingHabit = null;
     workoutHabit = null;
     pets.clear();
+    lookingFor = null;
+    connectWith.clear();
     interests.clear();
+    zodiac = null;
+    religion.clear();
     photos.clear();
   }
 
@@ -81,7 +95,8 @@ class OnboardingData {
     if (birthday != null) completed++;
     if (heightCm != null) completed++;
     if (location != null) completed++;
-    if (drinkingHabit != null || smokingHabit != null || workoutHabit != null) completed++;
+    if (drinkingHabit != null || smokingHabit != null || workoutHabit != null)
+      completed++;
     if (interests.isNotEmpty) completed++;
     if (photos.length >= 2) completed++;
 

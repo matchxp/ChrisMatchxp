@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import '../../../widgets/custom_button.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../widgets/matchxp_background.dart';
 import '../../../services/profile_service.dart';
 import '../../../models/onboarding_data.dart';
 import 'about_yourself_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'onboarding_progress_dots.dart';
+import '../main_navigation.dart';
+import 'add_photos_screen.dart';
 
 class LocationScreen extends StatefulWidget {
   const LocationScreen({Key? key}) : super(key: key);
@@ -18,6 +22,9 @@ class _LocationScreenState extends State<LocationScreen> {
   final ProfileService _profileService = ProfileService();
   final OnboardingData _onboardingData = OnboardingData();
   bool _isSaving = false;
+
+  static const _purple = Color(0xFF6C3FE8);
+  static const _purple2 = Color(0xFF9D50BB);
 
   @override
   void initState() {
@@ -35,11 +42,9 @@ class _LocationScreenState extends State<LocationScreen> {
 
   Future<void> _saveAndContinue() async {
     setState(() => _isSaving = true);
-
     try {
       _onboardingData.location = _currentLocation;
       final userId = Supabase.instance.client.auth.currentUser?.id;
-
       if (userId != null) {
         final result = await _profileService.saveLocation(
           userId: userId,
@@ -47,22 +52,28 @@ class _LocationScreenState extends State<LocationScreen> {
           latitude: _onboardingData.latitude,
           longitude: _onboardingData.longitude,
         );
-
-        if (!result['success']) {
-          throw Exception(result['error']);
-        }
+        if (!result['success']) throw Exception(result['error']);
+        await Supabase.instance.client.from('profiles').update({
+          'profile_completed': true,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', userId);
       }
-
       if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const AboutYourselfScreen()),
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile Complete! 🎉'),
+            backgroundColor: _purple,
+          ),
         );
+        Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const MainNavigation()));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Error: ${e.toString()}'),
+              backgroundColor: Color.fromARGB(236, 187, 86, 214)),
         );
       }
     } finally {
@@ -73,135 +84,244 @@ class _LocationScreenState extends State<LocationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0C1E),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0D0C1E), Color(0xFF07070F)],
-          ),
-        ),
+      backgroundColor: const Color(0xFF0C0B11),
+      resizeToAvoidBottomInset: true,
+      body: MatchXPBackground(
         child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-              const Spacer(),
-              const Center(
-                child: Text(
-                  'Location',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Center(
-                child: Text(
-                  'Let the app locate you to provide best\nsearched results around you',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 60),
-              const Text(
-                'Current Location',
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white24, width: 1.5),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _currentLocation,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 12, 28, 32),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // ── Back + dots ─────────────────────────
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_ios_new,
+                                    color: Colors.white, size: 18),
+                                onPressed: () => Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const AddPhotosScreen()),
+                                ),
+                                padding: EdgeInsets.zero,
+                              ),
+                              Expanded(
+                                child: OnboardingProgressDots(currentStep: 11),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                          ),
+
+                          const SizedBox(height: 28),
+
+                          // ── Title ───────────────────────────────
+                          Text(
+                            'Where are you\nbased?',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.outfit(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Help us find the best matches\naround you',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.outfit(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w300,
+                              color: Colors.white.withOpacity(0.80),
+                              height: 1.5,
+                            ),
+                          ),
+
+                          const SizedBox(height: 64),
+
+                          // ── Current Location pill ────────────────
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('Current Location',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white.withOpacity(0.50),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w400,
+                                )),
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 16),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(50),
+                              color: Colors.white.withOpacity(0.05),
+                              border: Border.all(
+                                  color: _purple.withOpacity(0.42), width: 1.0),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.location_on_rounded,
+                                    color: _purple, size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(_currentLocation,
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                      )),
+                                ),
+                                Icon(Icons.my_location_rounded,
+                                    color: _purple, size: 18),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // ── Search field ─────────────────────────
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 4),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(50),
+                              color: Colors.white.withOpacity(0.05),
+                              border: Border.all(
+                                  color: _purple.withOpacity(0.42), width: 1.0),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.search_rounded,
+                                    color: Colors.white.withOpacity(0.40),
+                                    size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _searchController,
+                                    style: GoogleFonts.outfit(
+                                        color: Colors.white, fontSize: 15),
+                                    cursorColor: _purple,
+                                    decoration: InputDecoration(
+                                      hintText: 'Search your location',
+                                      hintStyle: GoogleFonts.outfit(
+                                        color: Colors.white.withOpacity(0.36),
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w300,
+                                      ),
+                                      border: InputBorder.none,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              vertical: 14),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 40),
+
+                          // ── Powered by Google ────────────────────
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text('powered by ',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white.withOpacity(0.35),
+                                    fontSize: 12,
+                                  )),
+                              Text('Google',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white.withOpacity(0.70),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  )),
+                            ],
+                          ),
+
+                          // ── Spacer pushes button to bottom ───────
+                          const Spacer(),
+
+                          // ── Continue button ──────────────────────
+                          GestureDetector(
+                            onTap: _isSaving ? null : _saveAndContinue,
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              decoration: BoxDecoration(
+                                gradient: _isSaving
+                                    ? null
+                                    : const LinearGradient(
+                                        colors: [_purple, _purple2]),
+                                color: _isSaving
+                                    ? Colors.white.withOpacity(0.08)
+                                    : null,
+                                borderRadius: BorderRadius.circular(50),
+                              ),
+                              child: Center(
+                                child: _isSaving
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2.5))
+                                    : Text('Continue',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        )),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const Icon(
-                      Icons.my_location,
-                      color: Color(0xFF6C3FE8),
-                      size: 20,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white24, width: 1.5),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                  decoration: const InputDecoration(
-                    hintText: 'Search New Location',
-                    hintStyle: TextStyle(color: Colors.white38),
-                    border: InputBorder.none,
-                    icon: Icon(Icons.search, color: Colors.white38),
-                    contentPadding: EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
-              ),
-              const Spacer(),
-              const Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'powered by ',
-                      style: TextStyle(
-                        color: Colors.white38,
-                        fontSize: 12,
-                      ),
-                    ),
-                    Text(
-                      'Google',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              CustomButton(
-                text: _isSaving ? 'Saving...' : 'Continue',
-                onPressed: _isSaving ? null : _saveAndContinue,
-              ),
-              const SizedBox(height: 20),
-            ],
+              );
+            },
           ),
         ),
       ),
-      ),
+    );
+  }
+
+  // ── Step indicator ──────────────────────────────────────────────────────
+  Widget _buildStepIndicator({required int current, required int total}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(total, (i) {
+        final isActive = i == current;
+        final isPast = i < current;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: isActive ? 24 : 8,
+          height: 8,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            color: isActive
+                ? _purple
+                : isPast
+                    ? _purple.withOpacity(0.5)
+                    : Colors.white.withOpacity(0.15),
+          ),
+        );
+      }),
     );
   }
 }

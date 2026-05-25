@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import '../../../widgets/custom_button.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../widgets/matchxp_background.dart';
 import '../../../services/profile_service.dart';
 import '../../../models/onboarding_data.dart';
 import 'interests_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'onboarding_progress_dots.dart';
+import 'looking_for_screen.dart';
 
 class AboutYourselfScreen extends StatefulWidget {
   const AboutYourselfScreen({Key? key}) : super(key: key);
@@ -16,312 +19,347 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
   String? _drinkingHabit;
   String? _smokingHabit;
   String? _workoutHabit;
-  final List<String> _selectedPets = [];
+  final TextEditingController _petsController = TextEditingController();
   final ProfileService _profileService = ProfileService();
   final OnboardingData _onboardingData = OnboardingData();
   bool _isSaving = false;
 
+  static const _purple = Color(0xFF6C3FE8);
+  static const _purple2 = Color(0xFF9D50BB);
 
   @override
   void initState() {
     super.initState();
-    // Load existing data if available
     _drinkingHabit = _onboardingData.drinkingHabit;
     _smokingHabit = _onboardingData.smokingHabit;
     _workoutHabit = _onboardingData.workoutHabit;
-    _selectedPets.addAll(_onboardingData.pets);
+    // Load existing pets as text
+    if (_onboardingData.pets.isNotEmpty) {
+      _petsController.text = _onboardingData.pets.join(', ');
+    }
+  }
+
+  @override
+  void dispose() {
+    _petsController.dispose();
+    super.dispose();
   }
 
   Future<void> _saveAndContinue() async {
+    if (_drinkingHabit == null &&
+        _smokingHabit == null &&
+        _workoutHabit == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please answer at least one question to continue'),
+          backgroundColor: Color.fromARGB(236, 187, 86, 214),
+        ),
+      );
+      return;
+    }
     setState(() => _isSaving = true);
-
     try {
-      // Save to onboarding data model
       _onboardingData.drinkingHabit = _drinkingHabit;
       _onboardingData.smokingHabit = _smokingHabit;
       _onboardingData.workoutHabit = _workoutHabit;
-      _onboardingData.pets = _selectedPets;
+      // Convert text answer to list
+      final petsText = _petsController.text.trim();
+      _onboardingData.pets = petsText.isNotEmpty ? [petsText] : [];
 
-      // Get current user ID
       final userId = Supabase.instance.client.auth.currentUser?.id;
-
       if (userId != null) {
-        // Save to Supabase
         final result = await _profileService.saveLifestyle(
           userId: userId,
           drinkingHabit: _drinkingHabit,
           smokingHabit: _smokingHabit,
           workoutHabit: _workoutHabit,
-          pets: _selectedPets,
+          pets: _onboardingData.pets,
         );
-
-        if (!result['success']) {
-          throw Exception(result['error']);
-        }
+        if (!result['success']) throw Exception(result['error']);
       }
 
-      // Navigate to next screen
       if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const InterestsScreen(),
-          ),
-        );
+        Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const LookingForScreen()));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+              content: Text('Error: ${e.toString()}'),
+              backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0C1E),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0D0C1E), Color(0xFF07070F)],
-          ),
-        ),
+      backgroundColor: const Color(0xFF0C0B11),
+      resizeToAvoidBottomInset: true,
+      body: MatchXPBackground(
         child: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Back Button
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                const SizedBox(height: 20),
-                // Title
-                const Text(
-                  'About Yourself',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Do their habits match yours? You go first.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
-                  ),
-                ),
-                const SizedBox(height: 40),
-                // How often do you drink?
-                const Text(
-                  'How often do you drink?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
+          child: Column(
+            children: [
+              // ── Back + dots ─────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Row(
                   children: [
-                    _buildChip('Never', _drinkingHabit, (val) {
-                      setState(() => _drinkingHabit = val);
-                    }),
-                    _buildChip('On special Occasionally', _drinkingHabit, (val) {
-                      setState(() => _drinkingHabit = val);
-                    }),
-                    _buildChip('Socially on weekends', _drinkingHabit, (val) {
-                      setState(() => _drinkingHabit = val);
-                    }),
-                    _buildChip('Most Nights', _drinkingHabit, (val) {
-                      setState(() => _drinkingHabit = val);
-                    }),
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new,
+                          color: Colors.white, size: 18),
+                      onPressed: () => Navigator.pop(context),
+                      padding: EdgeInsets.zero,
+                    ),
+                    Expanded(
+                      child: OnboardingProgressDots(currentStep: 5),
+                    ),
+                    const SizedBox(width: 48),
                   ],
                 ),
-                const SizedBox(height: 32),
-                // How often do you smoke?
-                const Text(
-                  'How often do you smoke?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+              ),
+
+              // ── Scrollable content ──────────────────────────────
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: Text('About Yourself',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.outfit(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                            )),
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          'Do their habits match yours? You go first.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w300,
+                            color: Colors.white.withOpacity(0.80),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 36),
+
+                      // ── Drinking ──────────────────────────────────
+                      _sectionLabel('How often do you drink?'),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          'Never',
+                          'On special Occasionally',
+                          'Socially on weekends',
+                          'Most Nights',
+                        ]
+                            .map((v) => _buildChip(v, _drinkingHabit,
+                                (val) => setState(() => _drinkingHabit = val)))
+                            .toList(),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // ── Smoking — "Smoker when drinking" removed ──
+                      _sectionLabel('How often do you smoke?'),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          'Non-smoker',
+                          'Social smoker',
+                          'Trying to quit',
+                          'Smoker',
+                        ]
+                            .map((v) => _buildChip(v, _smokingHabit,
+                                (val) => setState(() => _smokingHabit = val)))
+                            .toList(),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // ── Workout ───────────────────────────────────
+                      _sectionLabel('Do you workout?'),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          'Everyday',
+                          'Often',
+                          'Sometimes',
+                          'No, not really',
+                          'No, but I plan to start',
+                        ]
+                            .map((v) => _buildChip(v, _workoutHabit,
+                                (val) => setState(() => _workoutHabit = val)))
+                            .toList(),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // ── Pets — text answer box ────────────────────
+                      _sectionLabel('Do you have any pets?'),
+                      const SizedBox(height: 14),
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(50),
+                          color: Colors.white.withOpacity(0.05),
+                          border: Border.all(
+                              color: _purple.withOpacity(0.42), width: 1.0),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(width: 16),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 14),
+                              child: Icon(Icons.pets_rounded,
+                                  color: Colors.white.withOpacity(0.4),
+                                  size: 18),
+                            ),
+                            Expanded(
+                              child: TextField(
+                                controller: _petsController,
+                                maxLines: 1,
+                                style: GoogleFonts.outfit(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w400),
+                                cursorColor: _purple,
+                                decoration: InputDecoration(
+                                  hintText:
+                                      'e.g. I have a golden retriever and a cat...',
+                                  hintStyle: GoogleFonts.outfit(
+                                      color: Colors.white.withOpacity(0.36),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w300),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 14),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 40),
+
+                      // ── Continue button ───────────────────────────
+                      GestureDetector(
+                        onTap: _isSaving ? null : _saveAndContinue,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            gradient: _isSaving
+                                ? null
+                                : const LinearGradient(
+                                    colors: [_purple, _purple2]),
+                            color: _isSaving
+                                ? Colors.white.withOpacity(0.08)
+                                : null,
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          child: Center(
+                            child: _isSaving
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                        color: Colors.white, strokeWidth: 2.5))
+                                : Text('Continue',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    )),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _buildChip('Non-smoker', _smokingHabit, (val) {
-                      setState(() => _smokingHabit = val);
-                    }),
-                    _buildChip('Smoker when drinking', _smokingHabit, (val) {
-                      setState(() => _smokingHabit = val);
-                    }),
-                    _buildChip('Social smoker', _smokingHabit, (val) {
-                      setState(() => _smokingHabit = val);
-                    }),
-                    _buildChip('Trying to quit', _smokingHabit, (val) {
-                      setState(() => _smokingHabit = val);
-                    }),
-                    _buildChip('Smoker', _smokingHabit, (val) {
-                      setState(() => _smokingHabit = val);
-                    }),
-                  ],
-                ),
-                const SizedBox(height: 32),
-                // Do you workout?
-                const Text(
-                  'Do you workout?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _buildChip('Everyday', _workoutHabit, (val) {
-                      setState(() => _workoutHabit = val);
-                    }),
-                    _buildChip('Often', _workoutHabit, (val) {
-                      setState(() => _workoutHabit = val);
-                    }),
-                    _buildChip('Sometimes', _workoutHabit, (val) {
-                      setState(() => _workoutHabit = val);
-                    }),
-                    _buildChip('No, not really', _workoutHabit, (val) {
-                      setState(() => _workoutHabit = val);
-                    }),
-                    _buildChip('No, but I plan to start', _workoutHabit, (val) {
-                      setState(() => _workoutHabit = val);
-                    }),
-                  ],
-                ),
-                const SizedBox(height: 32),
-                // Do you have any pets?
-                const Text(
-                  'Do you have any pets?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _buildMultiSelectChip('Dog'),
-                    _buildMultiSelectChip('Cat'),
-                    _buildMultiSelectChip('Bird'),
-                    _buildMultiSelectChip('Fish'),
-                    _buildMultiSelectChip('Turtle'),
-                    _buildMultiSelectChip('Hamster'),
-                    _buildMultiSelectChip('Reptile'),
-                    _buildMultiSelectChip('Rabbit'),
-                    _buildMultiSelectChip("No, I don't have any pets"),
-                  ],
-                ),
-                const SizedBox(height: 40),
-                // Continue Button
-                CustomButton(
-                  text: _isSaving ? 'Saving...' : 'Continue',
-                  onPressed: _isSaving ? null : _saveAndContinue,
-                ),
-                const SizedBox(height: 20),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      ),
       ),
     );
   }
 
-  Widget _buildChip(String label, String? currentValue, Function(String) onSelect) {
+  // ── Step indicator ────────────────────────────────────────────────────────
+  Widget _buildStepIndicator({required int current, required int total}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(total, (i) {
+        final isActive = i == current;
+        final isPast = i < current;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: isActive ? 24 : 8,
+          height: 8,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            color: isActive
+                ? _purple
+                : isPast
+                    ? _purple.withOpacity(0.5)
+                    : Colors.white.withOpacity(0.15),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _sectionLabel(String text) => Text(text,
+      style: GoogleFonts.outfit(
+          color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600));
+
+  Widget _buildChip(
+      String label, String? currentValue, Function(String) onSelect) {
     final isSelected = currentValue == label;
     return GestureDetector(
       onTap: () => onSelect(label),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF6C3FE8) : Colors.transparent,
+          color: isSelected ? _purple.withOpacity(0.18) : Colors.transparent,
           border: Border.all(
-            color: isSelected ? const Color(0xFF6C3FE8) : Colors.white24,
-            width: 1.5,
+            color: isSelected ? _purple : _purple.withOpacity(0.42),
+            width: isSelected ? 1.5 : 1.0,
           ),
-          borderRadius: BorderRadius.circular(25),
+          borderRadius: BorderRadius.circular(50),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontSize: 14,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMultiSelectChip(String label) {
-    final isSelected = _selectedPets.contains(label);
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          if (isSelected) {
-            _selectedPets.remove(label);
-          } else {
-            _selectedPets.add(label);
-          }
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF6C3FE8) : Colors.transparent,
-          border: Border.all(
-            color: isSelected ? const Color(0xFF6C3FE8) : Colors.white24,
-            width: 1.5,
-          ),
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontSize: 14,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
+        child: Text(label,
+            style: GoogleFonts.outfit(
+              color: isSelected ? Colors.white : Colors.white.withOpacity(0.95),
+              fontSize: 14,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+            )),
       ),
     );
   }
 }
-

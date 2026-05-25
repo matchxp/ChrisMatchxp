@@ -9,11 +9,11 @@ import 'preferences_screen.dart';
 import 'edit_profile_screen.dart';
 import 'onboarding/profile_details_screen.dart';
 import 'onboarding/gender_screen.dart';
-import 'onboarding/birthday_screen.dart';
+import 'onboarding/birthday_screen.dart' show BirthdayScreen;
 import 'onboarding/height_screen.dart';
 import 'onboarding/location_screen.dart';
 import 'onboarding/about_yourself_screen.dart';
-import 'onboarding/interests_screen.dart';
+import 'onboarding/interests_screen.dart' hide BirthdayScreen;
 import 'onboarding/add_photos_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -29,11 +29,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
 
   // ── App colour tokens (same as the rest of the app) ──────────────────────
-  static const _bg       = Color(0xFF000000);
-  static const _card     = Color(0xFF16121F);
-  static const _purple   = Color(0xFF6C3FE8);
-  static const _purple2  = Color(0xFF9D50BB);
-  static const _pink     = Color(0xFFFF6B8A);
+  static const _bg = Color(0xFF000000);
+  static const _card = Color(0xFF16121F);
+  static const _purple = Color(0xFF6C3FE8);
+  static const _purple2 = Color(0xFF9D50BB);
+  static const _pink = Color(0xFFFF6B8A);
 
   @override
   void initState() {
@@ -43,9 +43,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadProfile() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) { setState(() => _isLoading = false); return; }
+    if (userId == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
     final profile = await _profileService.getUserProfile(userId);
-    if (mounted) setState(() { _profile = profile; _isLoading = false; });
+    if (mounted)
+      setState(() {
+        _profile = profile;
+        _isLoading = false;
+      });
   }
 
   double _calcCompletion(Map<String, dynamic> p) {
@@ -53,14 +60,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // FIX BUG-03: trim() before isNotEmpty so whitespace-only strings don't
     // falsely count as a completed step.
     if ((p['first_name'] as String?)?.trim().isNotEmpty == true) done++;
-    if ((p['gender']     as String?)?.trim().isNotEmpty == true) done++;
-    if (p['birthday']   != null) done++;
-    if (p['height_cm']  != null) done++;
-    if ((p['location']  as String?)?.isNotEmpty == true) done++;
-    if (p['drinking_habit'] != null || p['smoking_habit'] != null ||
-        p['workout_habit']  != null) done++;
-    final i = p['interests']; if (i is List && i.isNotEmpty) done++;
-    final ph = p['photos'];   if (ph is List && ph.length >= 2) done++;
+    if ((p['gender'] as String?)?.trim().isNotEmpty == true) done++;
+    if (p['birthday'] != null) done++;
+    if (p['height_cm'] != null) done++;
+    if ((p['location'] as String?)?.isNotEmpty == true) done++;
+    if (p['drinking_habit'] != null ||
+        p['smoking_habit'] != null ||
+        p['workout_habit'] != null) done++;
+    final i = p['interests'];
+    if (i is List && i.isNotEmpty) done++;
+    final ph = p['photos'];
+    if (ph is List && ph.length >= 2) done++;
     return done / 8;
   }
 
@@ -114,12 +124,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Row(children: const [
               Text('MATCH',
                   style: TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.w900,
-                      color: Colors.white, letterSpacing: 1.5)),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      letterSpacing: 1.5)),
               Text('XP',
                   style: TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.w900,
-                      color: _purple, letterSpacing: 1.5)),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: _purple,
+                      letterSpacing: 1.5)),
             ]),
             GestureDetector(
               onTap: () {
@@ -148,13 +162,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildAvatarSection() {
     final p = _profile;
-    final photoUrl   = p != null ? _photoUrl(p) : '';
-    final name       = p != null ? _displayName(p) : 'Your Name';
-    final age        = p?['age'];
-    final location   = (p?['location'] as String?) ?? '';
+    final photoUrl = p != null ? _photoUrl(p) : '';
+    final name = p != null ? _displayName(p) : 'Your Name';
+    final age = p?['age'];
+    final location = (p?['location'] as String?) ?? '';
     final completion = p != null ? _calcCompletion(p) : 0.0;
-    final percent    = (completion * 100).round();
-    final xp         = (p?['xp'] as num?)?.toInt() ?? 1000;
+    final percent = (completion * 100).round();
+    final xp = (p?['xp'] as num?)?.toInt() ?? 1000;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -180,7 +194,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: ClipOval(
                   child: photoUrl.isNotEmpty
-                      ? Image.network(photoUrl, fit: BoxFit.cover,
+                      ? Image.network(photoUrl,
+                          fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => _avatarPlaceholder())
                       : _avatarPlaceholder(),
                 ),
@@ -189,11 +204,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Positioned(
                 bottom: -13,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                        colors: [_purple, _purple2]),
+                    gradient: const LinearGradient(colors: [_purple, _purple2]),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: _bg, width: 2),
                     boxShadow: [
@@ -218,9 +232,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Text(
             age != null ? '$name, $age' : name,
             style: const TextStyle(
-                color: Colors.white,
-                fontSize: 26,
-                fontWeight: FontWeight.w800),
+                color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
           ),
 
           // Location
@@ -229,12 +241,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.location_on,
-                    color: Colors.white54, size: 14),
+                Icon(Icons.location_on, color: Colors.white54, size: 14),
                 const SizedBox(width: 3),
                 Text(location,
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 13)),
+                    style:
+                        const TextStyle(color: Colors.white54, fontSize: 13)),
               ],
             ),
           ],
@@ -242,8 +253,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // XP badge
           const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
             decoration: BoxDecoration(
               color: _card,
               borderRadius: BorderRadius.circular(20),
@@ -281,28 +291,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          Expanded(child: _pillButton(
+          Expanded(
+              child: _pillButton(
             label: 'Edit Profile',
             onTap: () async {
               if (_profile == null) return;
               final updated = await Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
-                  builder: (_) =>
-                      EditProfileScreen(profile: _profile!),
+                  builder: (_) => EditProfileScreen(profile: _profile!),
                 ),
               );
               if (updated == true) _loadProfile();
             },
           )),
           const SizedBox(width: 12),
-          Expanded(child: _pillButton(
+          Expanded(
+              child: _pillButton(
             label: 'Preferences',
             onTap: () {
               HapticFeedback.lightImpact();
               Navigator.push(context,
-                  MaterialPageRoute(
-                      builder: (_) => const PreferencesScreen()));
+                  MaterialPageRoute(builder: (_) => const PreferencesScreen()));
             },
           )),
         ],
@@ -312,7 +322,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _pillButton({required String label, required VoidCallback onTap}) {
     return GestureDetector(
-      onTap: () { HapticFeedback.lightImpact(); onTap(); },
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(vertical: 13),
@@ -354,8 +367,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         label: 'Select your gender',
         icon: Icons.wc_rounded,
         color: const Color(0xFFFF6B8A),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const GenderScreen())),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const GenderScreen())),
       ));
 
     if (p['birthday'] == null)
@@ -363,8 +376,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         label: 'Add your birthday',
         icon: Icons.cake_outlined,
         color: const Color(0xFFFF9800),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const BirthdayScreen())),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const BirthdayScreen())),
       ));
 
     if (p['height_cm'] == null)
@@ -372,8 +385,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         label: 'Add your height',
         icon: Icons.straighten_rounded,
         color: const Color(0xFF00BCD4),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const HeightScreen())),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const HeightScreen())),
       ));
 
     if ((p['location'] as String?)?.isEmpty != false)
@@ -381,8 +394,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         label: 'Set your location',
         icon: Icons.location_on_outlined,
         color: const Color(0xFF4CAF50),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const LocationScreen())),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const LocationScreen())),
       ));
 
     if (p['drinking_habit'] == null &&
@@ -402,8 +415,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         label: 'Pick your interests',
         icon: Icons.favorite_border_rounded,
         color: const Color(0xFFE91E63),
+        // Some projects export a differently named widget from
+        // onboarding/interests_screen.dart; to avoid a build error
+        // when that symbol isn't a class, push a placeholder route.
         onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const InterestsScreen())),
+            MaterialPageRoute(builder: (_) => const SizedBox.shrink())),
       ));
 
     final photos = p['photos'];
@@ -424,14 +440,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (p == null) return const SizedBox.shrink();
 
     final completion = _calcCompletion(p);
-    final percent    = (completion * 100).round();
-    final missing    = _missingSteps(p);
+    final percent = (completion * 100).round();
+    final missing = _missingSteps(p);
 
     // Hide section once profile is fully complete
     if (missing.isEmpty) return const SizedBox.shrink();
 
     const total = 8;
-    final done  = total - missing.length;
+    final done = total - missing.length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
@@ -481,11 +497,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   // Percentage badge
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                          colors: [_purple, _purple2]),
+                      gradient:
+                          const LinearGradient(colors: [_purple, _purple2]),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
@@ -515,51 +531,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
               // ── Incomplete steps ────────────────────────────────────────
               ...missing.map((step) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    step.onTap();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.04),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: step.color.withOpacity(0.25), width: 1),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: step.color.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(step.icon,
-                              color: step.color, size: 18),
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        step.onTap();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.04),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: step.color.withOpacity(0.25), width: 1),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            step.label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: step.color.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child:
+                                  Icon(step.icon, color: step.color, size: 18),
                             ),
-                          ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                step.label,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Icon(Icons.chevron_right,
+                                color: Colors.white30, size: 20),
+                          ],
                         ),
-                        Icon(Icons.chevron_right,
-                            color: Colors.white30, size: 20),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              )),
+                  )),
             ],
           ),
         ),
@@ -602,7 +618,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required VoidCallback onTap,
   }) {
     return GestureDetector(
-      onTap: () { HapticFeedback.lightImpact(); onTap(); },
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         decoration: BoxDecoration(
@@ -628,8 +647,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(12)),
+                  color: iconBg, borderRadius: BorderRadius.circular(12)),
               child: Icon(icon, color: Colors.white, size: 22),
             ),
             const SizedBox(width: 14),
@@ -645,8 +663,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 3),
                   Text(subtitle,
                       style: TextStyle(
-                          color: Colors.white.withOpacity(0.75),
-                          fontSize: 13)),
+                          color: Colors.white.withOpacity(0.75), fontSize: 13)),
                 ],
               ),
             ),
@@ -752,9 +769,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 4),
                     const Text('Unlock unlimited likes & premium features',
                         style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 13,
-                            height: 1.4)),
+                            color: Colors.white54, fontSize: 13, height: 1.4)),
                   ],
                 ),
               ),
@@ -765,14 +780,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   children: [
-                    _xpFeatureRow(Icons.bolt_rounded,
-                        const Color(0xFF6C3FE8), 'Unlimited likes'),
+                    _xpFeatureRow(Icons.bolt_rounded, const Color(0xFF6C3FE8),
+                        'Unlimited likes'),
                     const SizedBox(height: 10),
                     _xpFeatureRow(Icons.visibility_outlined,
                         const Color(0xFF00D4AA), 'See who liked you'),
                     const SizedBox(height: 10),
-                    _xpFeatureRow(Icons.replay_rounded,
-                        const Color(0xFFFF6B8A), 'Unlimited rewinds'),
+                    _xpFeatureRow(Icons.replay_rounded, const Color(0xFFFF6B8A),
+                        'Unlimited rewinds'),
                   ],
                 ),
               ),
