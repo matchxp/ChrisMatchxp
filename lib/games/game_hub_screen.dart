@@ -263,13 +263,16 @@ class _GameHubScreenState extends State<GameHubScreen> {
               if (await _duplicateGuard(gameType, gameName)) return;
 
               if (gameType == 'rps') {
-                final sessionId = await Supabase.instance.client
+                final rpcRps = await Supabase.instance.client
                     .rpc('create_game_challenge', params: {
                   'p_match_id': matchId,
                   'p_challenged_id': partnerUserId,
                   'p_game_type': 'rps',
                   'p_is_initial': true,
-                }) as String;
+                });
+                final sessionId =
+                    (rpcRps is String ? rpcRps : rpcRps?.toString()) ?? '';
+                if (sessionId.isEmpty) throw Exception('Failed to create RPS session');
                 await Supabase.instance.client.rpc('accept_game_challenge',
                     params: {'p_session_id': sessionId});
                 if (!context.mounted) return;
@@ -290,13 +293,19 @@ class _GameHubScreenState extends State<GameHubScreen> {
               } else if (gameType == 'word_search') {
                 String? sessionId;
                 try {
-                  sessionId = await Supabase.instance.client
+                  final rpcResult = await Supabase.instance.client
                       .rpc('create_game_challenge', params: {
                     'p_match_id': matchId,
                     'p_challenged_id': partnerUserId,
                     'p_game_type': 'word_search',
                     'p_is_initial': true,
-                  }) as String?;
+                  });
+                  // RPC returns a UUID; use is-check instead of as-cast so a
+                  // non-String return (e.g. wrapped in a map) doesn't silently
+                  // null the id and cause puzzle rows to be written without it.
+                  sessionId = rpcResult is String
+                      ? rpcResult
+                      : rpcResult?.toString();
                   if (sessionId != null) {
                     await Supabase.instance.client.rpc('accept_game_challenge',
                         params: {'p_session_id': sessionId});
@@ -323,13 +332,16 @@ class _GameHubScreenState extends State<GameHubScreen> {
               } else if (gameType == 'emoji_charades') {
                 String? sessionId;
                 try {
-                  sessionId = await Supabase.instance.client
+                  final rpcResult = await Supabase.instance.client
                       .rpc('create_game_challenge', params: {
                     'p_match_id': matchId,
                     'p_challenged_id': partnerUserId,
                     'p_game_type': 'emoji_charades',
                     'p_is_initial': true,
-                  }) as String?;
+                  });
+                  sessionId = rpcResult is String
+                      ? rpcResult
+                      : rpcResult?.toString();
                   if (sessionId != null) {
                     await Supabase.instance.client.rpc('accept_game_challenge',
                         params: {'p_session_id': sessionId});

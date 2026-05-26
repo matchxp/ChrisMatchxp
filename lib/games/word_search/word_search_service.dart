@@ -83,9 +83,31 @@ class WordSearchService {
     required String myUserId,
     String? sessionId,
   }) async {
-    var query = _db.from(_table).select().eq('match_id', matchId);
-    if (sessionId != null) query = query.eq('session_id', sessionId);
-    final rows = await query;
+    List<Map<String, dynamic>> rows;
+
+    if (sessionId != null) {
+      // Try session-scoped query first.
+      rows = await _db
+          .from(_table)
+          .select()
+          .eq('match_id', matchId)
+          .eq('session_id', sessionId);
+
+      // Fallback: puzzle rows may have been written without a session_id
+      // (e.g. the session RPC failed silently in GameHub). Widen to match-level
+      // and accept rows whose session_id is null or matches ours.
+      if (rows.isEmpty) {
+        final all = await _db.from(_table).select().eq('match_id', matchId);
+        rows = all
+            .where((r) =>
+                r['session_id'] == null || r['session_id'] == sessionId)
+            .toList();
+        // Last resort: any row for this match (handles legacy data).
+        if (rows.isEmpty) rows = all;
+      }
+    } else {
+      rows = await _db.from(_table).select().eq('match_id', matchId);
+    }
 
     WordSearchGame? myGame;
     WordSearchGame? partnerGame;

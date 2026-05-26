@@ -326,75 +326,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         .subscribe();
   }
 
-  Future<void> _resetGame() async {
-    try {
-      await _gameService.resetGame(widget.matchId);
-      if (!mounted) return;
-      await _checkGameStatus();
-      await _loadMessages();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content:
-                Text('Could not reset game — check Supabase DELETE policy.')));
-      }
-    }
-  }
-
-  Future<void> _resetAll() async {
-    try {
-      await _gameService.resetAll(widget.matchId);
-      if (!mounted) return;
-      setState(() {
-        _myWins = 0;
-        _partnerWins = 0;
-      });
-      await _checkGameStatus();
-      await _loadMessages();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Could not reset — check Supabase DELETE policy.')));
-      }
-    }
-  }
-
-  Future<void> _confirmReset({
-    required String title,
-    required String body,
-    required Future<void> Function() action,
-  }) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color.fromARGB(255, 89, 40, 185),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text(title,
-            style: const TextStyle(
-                color: Colors.white, fontFamily: 'Fredoka One', fontSize: 17)),
-        content: Text(body,
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
-                fontFamily: 'Fredoka',
-                fontSize: 13)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancel',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontFamily: 'Fredoka One'))),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Reset',
-                  style: TextStyle(
-                      color: Color(0xFFF87171), fontFamily: 'Fredoka One'))),
-        ],
-      ),
-    );
-    if (ok == true) await action();
-  }
-
   // ── Session stream: initial load + live INSERT/UPDATE via .stream() ──────────
 
   void _subscribeSessionStream() {
@@ -1364,40 +1295,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _showBlockDialog();
-              },
-            ),
-            const Divider(color: Colors.white12, height: 1),
-            ListTile(
-              leading: const Icon(Icons.refresh_rounded, color: Colors.white54),
-              title: const Text('Reset game',
-                  style: TextStyle(color: Colors.white70)),
-              subtitle: const Text('Clears active puzzle, keeps scores',
-                  style: TextStyle(color: Colors.white38, fontSize: 12)),
-              onTap: () {
-                Navigator.pop(context);
-                _confirmReset(
-                  title: 'Reset game?',
-                  body:
-                      'Deletes the current active puzzle so both players can start a new game. Scores are kept.',
-                  action: _resetGame,
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_sweep_outlined,
-                  color: Color(0xFFF87171)),
-              title: const Text('Reset everything',
-                  style: TextStyle(color: Color(0xFFF87171))),
-              subtitle: const Text('Clears game AND all score history',
-                  style: TextStyle(color: Colors.white38, fontSize: 12)),
-              onTap: () {
-                Navigator.pop(context);
-                _confirmReset(
-                  title: 'Reset everything?',
-                  body:
-                      'Deletes the active game AND all score history for this match. This cannot be undone.',
-                  action: _resetAll,
-                );
               },
             ),
             const SizedBox(height: 8),
@@ -2773,7 +2670,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     final canAccept =
         !isMe && liveStatus == 'pending' && sessionId != null && !isExpired;
-    final canRejoin = liveStatus == 'active' && sessionId != null && !isExpired;
+    // 'active'    = both players accepted / both submitted their puzzles — normal rejoin
+    // 'submitted' = one player already submitted their puzzle (Word Search / EC),
+    //               the other hasn't yet.  Both players should still be able to
+    //               tap the card to re-enter the game at the correct step.
+    final canRejoin = (liveStatus == 'active' || liveStatus == 'submitted') &&
+        sessionId != null &&
+        !isExpired;
     final isDone = liveStatus == 'completed' || isExpired;
 
     // Once a game is finished or expired, hide it entirely — no clutter in chat.
@@ -3399,6 +3302,40 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   }
 
   // ── Locked bar (shown before game is completed) ────────────────────────────
+
+  /// Scans _messages for a game_challenge card whose session is still
+  /// active or submitted (i.e. in-progress, not expired, not completed).
+  /// Returns {gameType, sessionId} if found, or null.
+  ({String gameType, String sessionId})? _findRejoinableChallenge() {
+    for (final msg in _messages.reversed) {
+      if (msg['message_type'] != 'game_challenge') continue;
+      final meta = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+      final sessionId = meta['session_id'] as String?;
+      if (sessionId == null) continue;
+      final metaStatus = meta['status'] as String? ?? 'pending';
+      final sessionStateStatus =
+          (_sessionStates[sessionId]?['status'] as String?);
+      final liveStatus = metaStatus == 'completed'
+          ? 'completed'
+          : (sessionStateStatus ?? metaStatus);
+      if (liveStatus == 'completed') continue;
+      // Check expiry
+      final createdAt =
+          DateTime.tryParse(msg['created_at'] as String? ?? '')?.toUtc();
+      final isExpired = (liveStatus == 'pending' ||
+              liveStatus == 'active' ||
+              liveStatus == 'submitted') &&
+          createdAt != null &&
+          DateTime.now().toUtc().difference(createdAt) > _kInviteExpiry;
+      if (isExpired) continue;
+      if (liveStatus == 'active' || liveStatus == 'submitted') {
+        final gameType = meta['game_type'] as String? ?? 'word_search';
+        return (gameType: gameType, sessionId: sessionId);
+      }
+    }
+    return null;
+  }
+
   Widget _buildLockedBar() {
     // While game status is still loading, show a soft loading state so
     // users who already completed the game don't see a locked flash.
@@ -3433,6 +3370,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     final partnerUserId = widget.otherProfile['id'] as String? ?? '';
 
+    // If there's already an in-progress game, offer a Resume button instead
+    // of sending the user to GameHub to start a new one.
+    final rejoinable = _findRejoinableChallenge();
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       decoration: BoxDecoration(
@@ -3445,16 +3386,19 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.sports_esports_rounded,
+              const Icon(Icons.sports_esports_rounded,
                   size: 14, color: Color(0xFF6C3FE8)),
-              SizedBox(width: 6),
+              const SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  'Play a game to unlock chat 🎮',
-                  style: TextStyle(color: Color(0xFF6C3FE8), fontSize: 13),
+                  rejoinable != null
+                      ? 'A game is in progress — pick up where you left off 🎮'
+                      : 'Play a game to unlock chat 🎮',
+                  style:
+                      const TextStyle(color: Color(0xFF6C3FE8), fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -3463,20 +3407,26 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           const SizedBox(height: 12),
           GestureDetector(
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => GameHubScreen(
-                    matchId: widget.matchId,
-                    currentUserId: _currentUserId,
-                    partnerUserId: partnerUserId,
-                    partnerName: _otherName,
-                    onChatUnlocked: () {
-                      if (mounted) setState(() => _chatUnlocked = true);
-                    },
+              if (rejoinable != null) {
+                // Jump back into the existing game at the correct step.
+                _navigateToGame(rejoinable.gameType, rejoinable.sessionId,
+                    isRejoin: true);
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GameHubScreen(
+                      matchId: widget.matchId,
+                      currentUserId: _currentUserId,
+                      partnerUserId: partnerUserId,
+                      partnerName: _otherName,
+                      onChatUnlocked: () {
+                        if (mounted) setState(() => _chatUnlocked = true);
+                      },
+                    ),
                   ),
-                ),
-              ).then((_) => _checkGameStatus());
+                ).then((_) => _checkGameStatus());
+              }
             },
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 13),
@@ -3494,15 +3444,20 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 ],
               ),
               alignment: Alignment.center,
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.sports_esports_rounded,
-                      color: Colors.white, size: 18),
-                  SizedBox(width: 8),
+                  Icon(
+                    rejoinable != null
+                        ? Icons.play_arrow_rounded
+                        : Icons.sports_esports_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
                   Text(
-                    'Play a Game',
-                    style: TextStyle(
+                    rejoinable != null ? 'Resume Game' : 'Play a Game',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
                       fontSize: 15,

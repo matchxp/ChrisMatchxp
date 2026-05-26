@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -54,6 +56,29 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // ── Online presence ────────────────────────────────────────────────────────
   final Set<String> _onlineUserIds = {};
 
+  // ── Auto-refresh ───────────────────────────────────────────────────────────
+  // Polls at 10-second intervals, but ONLY while there are locked matches
+  // (i.e. pending games in progress). Once every match is unlocked there is
+  // nothing time-sensitive to watch, so the timer is cancelled to save
+  // battery, data, and backend quota.
+  Timer? _autoRefreshTimer;
+  bool _isFetching = false; // prevents stacking concurrent fetches
+
+  void _scheduleRefreshIfNeeded() {
+    final hasPending = _matchesWithProfiles
+        .any((m) => !(m['chat_unlocked'] as bool? ?? false));
+    if (hasPending && _autoRefreshTimer == null) {
+      // There are active games to watch — start polling every 10 s.
+      _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        if (mounted && !_isFetching) _loadMatches();
+      });
+    } else if (!hasPending) {
+      // Nothing pending — cancel the timer to save resources.
+      _autoRefreshTimer?.cancel();
+      _autoRefreshTimer = null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +89,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     ChatsScreen.refreshNotifier.removeListener(_onExternalRefresh);
     _searchController.dispose();
     super.dispose();
@@ -78,6 +104,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   Future<void> _loadMatches() async {
+    if (_isFetching) return;
+    _isFetching = true;
+    try {
     final matches = await _matchingService.getMatchesWithProfiles();
 
     // For each match fetch last message + unread count + game phase in parallel
@@ -218,6 +247,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
         ..addAll(online);
       _loading = false;
     });
+    _scheduleRefreshIfNeeded();
+    } finally {
+      _isFetching = false;
+    }
   }
 
   void _openConversation(Map<String, dynamic> match) {
@@ -878,7 +911,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       case 'red':
         _acceptAndNavigate(match);
       case 'purple':
-        _enterGame(match);
+        _enterGame(match, skipIntro: true);
       default:
         _openConversation(match);
     }
@@ -944,7 +977,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
           .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
     } catch (_) {}
     if (!mounted) return;
-    _enterGame(match);
+    // skipIntro=true: User A has already seen the intro and submitted their
+    // puzzle — jump straight to the correct step (wait / solve / done).
+    _enterGame(match, skipIntro: true);
   }
 
   // Red: accept the challenge then navigate into the game
@@ -961,7 +996,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // Purple / green-active: navigate straight into the game
-  void _enterGame(Map<String, dynamic> match) {
+  // [skipIntro] — when true, bypasses the intro/welcome screen and jumps
+  // the player directly to whichever step the DB says they're at.
+  // Pass true for re-entry (green / purple circles); false for a first-time
+  // accept (red circle) so the player sees the game instructions.
+  void _enterGame(Map<String, dynamic> match, {bool skipIntro = false}) {
     final sessionId = match['active_session_id'] as String?;
     final gameType = match['active_game_type'] as String? ?? 'word_search';
     if (sessionId == null) return;
@@ -992,6 +1031,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
               partnerName: partnerName,
               onChatUnlocked: onUnlock,
               sessionId: sessionId,
+              // Re-entry: skip the welcome screen and restore DB state.
+              // First-time accept (red): show the intro so user knows the rules.
+              skipWelcome: skipIntro,
             ),
           ),
         ).then(onReturn);
@@ -1006,6 +1048,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
               partnerName: partnerName,
               onChatUnlocked: onUnlock,
               sessionId: sessionId,
+              skipIntro: skipIntro,
             ),
           ),
         ).then(onReturn);
