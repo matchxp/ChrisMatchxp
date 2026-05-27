@@ -12,23 +12,32 @@ class WordSearchService {
   // ────────────────────────────────────────────────────────────
   // GRID GENERATION  (DFS — same algorithm as before)
   // ────────────────────────────────────────────────────────────
-  static ({List<List<String>> grid, List<GridPosition> path})?
-      generateGrid(String word) {
-    final w    = word.toUpperCase();
+  static ({List<List<String>> grid, List<GridPosition> path})? generateGrid(
+      String word) {
+    final w = word.toUpperCase();
     if (w.isEmpty || w.length > 16) return null;
 
     const size = 4;
-    final rng  = Random();
+    final rng = Random();
     const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
     final dirs = [
-      [-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1],
+      [-1, -1],
+      [-1, 0],
+      [-1, 1],
+      [0, -1],
+      [0, 1],
+      [1, -1],
+      [1, 0],
+      [1, 1],
     ];
 
     List<T> shuffle<T>(List<T> list) {
       for (var i = list.length - 1; i > 0; i--) {
         final j = rng.nextInt(i + 1);
-        final tmp = list[i]; list[i] = list[j]; list[j] = tmp;
+        final tmp = list[i];
+        list[i] = list[j];
+        list[j] = tmp;
       }
       return list;
     }
@@ -49,12 +58,15 @@ class WordSearchService {
     }
 
     final starts = shuffle(
-      [for (var r = 0; r < size; r++) for (var c = 0; c < size; c++) [r, c]],
+      [
+        for (var r = 0; r < size; r++)
+          for (var c = 0; c < size; c++) [r, c]
+      ],
     );
 
     for (final s in starts) {
       final path = <GridPosition>[];
-      final vis  = <int>{};
+      final vis = <int>{};
       if (dfs(0, s[0], s[1], path, vis)) {
         final grid = List.generate(size, (_) => List.filled(size, ''));
         for (var i = 0; i < w.length; i++) {
@@ -86,25 +98,33 @@ class WordSearchService {
     List<Map<String, dynamic>> rows;
 
     if (sessionId != null) {
-      // Try session-scoped query first.
+      // Level 1: exact session match — the normal path.
       rows = await _db
           .from(_table)
           .select()
           .eq('match_id', matchId)
           .eq('session_id', sessionId);
 
-      // Fallback: puzzle rows may have been written without a session_id
-      // (e.g. the session RPC failed silently in GameHub). Widen to match-level
-      // and accept rows whose session_id is null or matches ours.
+      // Level 2 fallback: puzzle rows written before session_id tracking
+      // existed (pre-Fix 3 GameHub builds). Only take the 2 most-recent
+      // null-session rows so completed rows from old games never bleed
+      // into the current session.
       if (rows.isEmpty) {
-        final all = await _db.from(_table).select().eq('match_id', matchId);
-        rows = all
-            .where((r) =>
-                r['session_id'] == null || r['session_id'] == sessionId)
+        final all = await _db
+            .from(_table)
+            .select()
+            .eq('match_id', matchId)
+            .order('created_at', ascending: false);
+        rows = (all as List)
+            .cast<Map<String, dynamic>>()
+            .where((r) => r['session_id'] == null)
+            .take(2)
             .toList();
-        // Last resort: any row for this match (handles legacy data).
-        if (rows.isEmpty) rows = all;
       }
+
+      // would load data from a previous completed game when the current
+      // session has no rows yet (puzzle not submitted). An empty snapshot
+      // is the correct result: player starts fresh at category picker.
     } else {
       rows = await _db.from(_table).select().eq('match_id', matchId);
     }
@@ -141,21 +161,17 @@ class WordSearchService {
     if (result == null) return null;
 
     final payload = {
-      'match_id':   matchId,
+      'match_id': matchId,
       'creator_id': myUserId,
-      'solver_id':  partnerUserId,
-      'topic':      topic,
-      'word':       word.toUpperCase(),
-      'grid':       result.grid,
-      'word_path':  result.path.map((p) => p.toJson()).toList(),
-      'status':     'waiting',
+      'solver_id': partnerUserId,
+      'topic': topic,
+      'word': word.toUpperCase(),
+      'grid': result.grid,
+      'word_path': result.path.map((p) => p.toJson()).toList(),
+      'status': 'waiting',
     };
 
-    final response = await _db
-        .from(_table)
-        .insert(payload)
-        .select()
-        .single();
+    final response = await _db.from(_table).insert(payload).select().single();
 
     return WordSearchGame.fromJson(response);
   }
@@ -171,7 +187,7 @@ class WordSearchService {
     final response = await _db
         .from(_table)
         .update({
-          'status':    'solved',
+          'status': 'solved',
           'solved_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', gameId)
@@ -185,7 +201,7 @@ class WordSearchService {
     final response = await _db
         .from(_table)
         .update({
-          'status':    'skipped',
+          'status': 'skipped',
           'solved_at': DateTime.now().toUtc().toIso8601String(),
         })
         .eq('id', gameId)
@@ -220,13 +236,13 @@ class WordSearchService {
     return _db
         .channel(channelName)
         .onPostgresChanges(
-          event:  PostgresChangeEvent.all,
+          event: PostgresChangeEvent.all,
           schema: 'public',
-          table:  _table,
+          table: _table,
           filter: PostgresChangeFilter(
-            type:   PostgresChangeFilterType.eq,
+            type: PostgresChangeFilterType.eq,
             column: 'match_id',
-            value:  matchId,
+            value: matchId,
           ),
           callback: (_) => onRefresh(),
         )
@@ -268,9 +284,9 @@ class WordSearchService {
     required String loserId,
   }) async {
     await _db.from(_scores).insert({
-      'match_id':  matchId,
+      'match_id': matchId,
       'winner_id': winnerId,
-      'loser_id':  loserId,
+      'loser_id': loserId,
     });
   }
 
@@ -280,14 +296,13 @@ class WordSearchService {
     required String myUserId,
     required String partnerUserId,
   }) async {
-    final rows = await _db
-        .from(_scores)
-        .select('winner_id')
-        .eq('match_id', matchId);
+    final rows =
+        await _db.from(_scores).select('winner_id').eq('match_id', matchId);
 
     int myWins = 0, partnerWins = 0;
     for (final row in rows) {
-      if (row['winner_id'] == myUserId) myWins++;
+      if (row['winner_id'] == myUserId)
+        myWins++;
       else if (row['winner_id'] == partnerUserId) partnerWins++;
     }
     return {'myWins': myWins, 'partnerWins': partnerWins};
@@ -298,13 +313,13 @@ class WordSearchService {
     return _db
         .channel('scores_$matchId')
         .onPostgresChanges(
-          event:  PostgresChangeEvent.insert,
+          event: PostgresChangeEvent.insert,
           schema: 'public',
-          table:  _scores,
+          table: _scores,
           filter: PostgresChangeFilter(
-            type:   PostgresChangeFilterType.eq,
+            type: PostgresChangeFilterType.eq,
             column: 'match_id',
-            value:  matchId,
+            value: matchId,
           ),
           callback: (_) => onRefresh(),
         )

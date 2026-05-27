@@ -7,6 +7,7 @@ import '../data/rps_models.dart';
 import '../data/rps_supabase_service.dart';
 import '../rps_theme.dart';
 import '../widgets/rps_widgets.dart';
+import 'rps_intro_screen.dart';
 import 'rps_waiting_screen.dart';
 import 'rps_reveal_screen.dart';
 
@@ -21,6 +22,7 @@ class RPSPickScreen extends StatefulWidget {
     required this.onChatUnlocked,
     this.popCount = 1,
     this.chatAlreadyUnlocked = false,
+    this.showIntroFirst = false,
   });
 
   final String currentUserId;
@@ -31,6 +33,10 @@ class RPSPickScreen extends StatefulWidget {
   final VoidCallback onChatUnlocked;
   final int popCount;
   final bool chatAlreadyUnlocked;
+  /// When true and no move has been submitted yet, redirect to RPSIntroScreen
+  /// so the user sees the intro/tutorial before picking their move.
+  /// Used by the chats screen when the user hasn't started the game yet.
+  final bool showIntroFirst;
 
   @override
   State<RPSPickScreen> createState() => _RPSPickScreenState();
@@ -40,6 +46,9 @@ class _RPSPickScreenState extends State<RPSPickScreen>
     with SingleTickerProviderStateMixin {
   RPSMove? _selected;
   bool _submitting = false;
+  // True while we're checking DB state on entry — hides the pick UI to avoid
+  // a flash before _checkRejoin() redirects to WaitingScreen / RevealScreen.
+  bool _checking = true;
   late final AnimationController _glowCtrl;
 
   final _svc = RPSSupabaseService();
@@ -50,6 +59,74 @@ class _RPSPickScreenState extends State<RPSPickScreen>
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2400))
       ..repeat(reverse: true);
+    // On re-entry, check DB state and redirect to the right screen.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkRejoin());
+  }
+
+  /// Checks whether the user has already submitted a move for this session.
+  /// If so, jumps past PickScreen to WaitingScreen or RevealScreen.
+  /// Always clears [_checking] so the pick UI shows when the user truly
+  /// hasn't moved yet — preventing a blank screen on fresh entry.
+  Future<void> _checkRejoin() async {
+    final myMove = await _svc.fetchMyMove(widget.sessionId, widget.currentUserId);
+    if (!mounted) return;
+    if (myMove == null) {
+      if (widget.showIntroFirst) {
+        // User hasn't started — redirect to intro so they see instructions first.
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => RPSIntroScreen(
+            currentUserId:       widget.currentUserId,
+            currentUserName:     widget.currentUserName,
+            opponentId:          widget.opponentId,
+            opponentName:        widget.opponentName,
+            sessionId:           widget.sessionId,
+            popCount:            widget.popCount,
+            chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
+            onChatUnlocked:      widget.onChatUnlocked,
+          ),
+        ));
+      } else {
+        // No move yet and already past intro — show the pick UI.
+        setState(() => _checking = false);
+      }
+      return;
+    }
+
+    final result = await _svc.fetchResult(widget.sessionId, widget.currentUserId);
+    if (!mounted) return;
+    // Navigation away — _checking stays true so nothing flashes.
+
+    if (result != null) {
+      // Both players submitted — jump to reveal.
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => RPSRevealScreen(
+          currentUserId:       widget.currentUserId,
+          currentUserName:     widget.currentUserName,
+          opponentId:          widget.opponentId,
+          opponentName:        widget.opponentName,
+          myMove:              result.myMove!,
+          opponentMove:        result.opponentMove!,
+          popCount:            widget.popCount,
+          chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
+          onChatUnlocked:      widget.onChatUnlocked,
+        ),
+      ));
+    } else {
+      // Only I submitted — resume on waiting screen.
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => RPSWaitingScreen(
+          currentUserId:      widget.currentUserId,
+          currentUserName:    widget.currentUserName,
+          opponentId:         widget.opponentId,
+          opponentName:       widget.opponentName,
+          sessionId:          widget.sessionId,
+          myMove:             myMove,
+          popCount:           widget.popCount,
+          chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
+          onChatUnlocked:     widget.onChatUnlocked,
+        ),
+      ));
+    }
   }
 
   @override
@@ -109,6 +186,12 @@ class _RPSPickScreenState extends State<RPSPickScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Still checking DB state — render a blank themed scaffold so there's
+    // nothing to flash before we navigate to Waiting / Reveal / Pick.
+    if (_checking) {
+      return Scaffold(backgroundColor: RPSTheme.bg, body: RPSBackground(child: const SizedBox.expand()));
+    }
+
     return Scaffold(
       backgroundColor: RPSTheme.bg,
       body: RPSBackground(

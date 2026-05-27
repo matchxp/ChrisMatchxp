@@ -54,6 +54,9 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
   bool _scoreRecorded       = false;
   bool _completionSent      = false;
   bool _stepRestored        = false; // true once resumeFrom() has been called
+  // True until the first _refresh() completes when skipWelcome=true — hides
+  // the category screen from flashing before resumeFrom() restores the step.
+  bool _initialized         = false;
 
   // ── Lifecycle ──────────────────────────────────────────────
 
@@ -73,6 +76,7 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
 
   Future<void> _init() async {
     await _refresh();
+    if (mounted) setState(() => _initialized = true);
     _ch = _svc.subscribeToMatch(
       widget.matchId,
       () { if (mounted) _refresh(); },
@@ -159,22 +163,36 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
     final mg = snap.myGame;
     if (pg == null || mg == null) return;
 
-    // Win = I solved (not skipped) and partner skipped.
-    // Draw = both solved or both skipped.
-    // Loss = I skipped and partner solved.
-    final iSkipped       = pg.isSkipped;  // I skipped partner's puzzle
-    final partnerSkipped = mg.isSkipped;  // partner skipped my puzzle
-    final iWon   = !iSkipped && partnerSkipped;
-    final isDraw = iSkipped == partnerSkipped;
+    // Win  = I solved AND partner skipped  → complete_game_session records the score.
+    // Draw = both solved OR both skipped.
+    //   • Both solved: each player records their own +1 via recordWinner so the
+    //     scoreboard reflects the effort of BOTH players finding the word.
+    //   • Both skipped: no points for anyone.
+    // Loss = I skipped AND partner solved  → complete_game_session records the score.
+    //
+    // NOTE: complete_game_session (SECURITY DEFINER RPC) already inserts a
+    // game_scores row for the winner whenever p_winner_id is non-null.
+    // We must NOT call recordWinner for wins/losses — that would double-count.
+    // We ONLY call recordWinner here for the "both solved" draw, which
+    // complete_game_session skips (it only inserts when winner != null).
+    final iSolved        = !pg.isSkipped; // I found partner's word
+    final partnerSolved  = !mg.isSkipped; // partner found my word
+    final iWon   = iSolved && !partnerSolved;
+    final isDraw = iSolved == partnerSolved; // both solved OR both skipped
 
     _scoreRecorded = true;
-    if (!isDraw && iWon) {
+
+    if (isDraw && iSolved) {
+      // Both players solved → award each player +1 on their own device.
+      // complete_game_session is called with winner=null so it won't add
+      // a second row for this scenario.
       _svc.recordWinner(
         matchId:  widget.matchId,
         winnerId: widget.currentUserId,
         loserId:  widget.partnerUserId,
-      );
+      ).catchError((e) => debugPrint('[WordSearch] recordWinner error: $e'));
     }
+    // For wins/losses: complete_game_session handles the score insert.
     _sendCompletion(iWon: iWon, isDraw: isDraw);
   }
 
@@ -299,11 +317,24 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    // On re-entry (skipWelcome=true) hide everything until the first _refresh()
+    // completes and resumeFrom() can jump straight to the right step —
+    // prevents the category/welcome screen from flashing.
+    if (!_initialized && widget.skipWelcome) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF120D2E),
+        body: SizedBox.expand(),
+      );
+    }
+    // Only skip the welcome screen if the user has actually started this game
+    // (has a row in word_search_games). If they haven't done anything yet
+    // (e.g. sender tapping their own challenge card), show welcome as normal.
+    final effectiveSkipWelcome = widget.skipWelcome && _snap.myGame != null;
     return WordSearchGameScreen(
       key:                  _gameKey,
       partnerName:          widget.partnerName,
       onGameEvent:          _onGameEvent,
-      skipWelcome:          widget.skipWelcome,
+      skipWelcome:          effectiveSkipWelcome,
       chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
     );
   }

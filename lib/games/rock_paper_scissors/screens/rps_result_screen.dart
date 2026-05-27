@@ -5,10 +5,10 @@
 
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:confetti/confetti.dart';
 import '../data/rps_models.dart';
 import '../rps_theme.dart';
 import '../widgets/rps_widgets.dart';
-import 'rps_intro_screen.dart';
 
 class RPSResultScreen extends StatefulWidget {
   const RPSResultScreen({
@@ -48,7 +48,7 @@ class _RPSResultScreenState extends State<RPSResultScreen>
   late final AnimationController _float2Ctrl;
   late final Animation<double> _float1;
   late final Animation<double> _float2;
-  late final AnimationController _confettiCtrl;
+  late final ConfettiController _confetti;
 
   @override
   void initState() {
@@ -66,12 +66,9 @@ class _RPSResultScreenState extends State<RPSResultScreen>
     _float2 = Tween<double>(begin: 0, end: -12)
         .animate(CurvedAnimation(parent: _float2Ctrl, curve: Curves.easeInOut));
 
-    // FIX: Only start repeating the confetti controller on a win —
-    // previously it repeated for everyone and then redundantly called forward().
-    _confettiCtrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 4));
+    _confetti = ConfettiController(duration: const Duration(seconds: 6));
     if (widget.result == RPSResult.win) {
-      _confettiCtrl.repeat();
+      _confetti.play();
     }
   }
 
@@ -79,7 +76,7 @@ class _RPSResultScreenState extends State<RPSResultScreen>
   void dispose() {
     _float1Ctrl.dispose();
     _float2Ctrl.dispose();
-    _confettiCtrl.dispose();
+    _confetti.dispose();
     super.dispose();
   }
 
@@ -120,12 +117,6 @@ class _RPSResultScreenState extends State<RPSResultScreen>
     }
   }
 
-  void _playAgain() {
-    // Play Again is not supported for online matches (would need a new
-    // session). For now, navigate back to the game hub.
-    Navigator.of(context).popUntil((r) => r.isFirst);
-  }
-
   /// Pop back to ChatConversationScreen and fire the unlock callback.
   void _startChat() {
     debugPrint('[RPS] Start Chatting tapped');
@@ -144,13 +135,26 @@ class _RPSResultScreenState extends State<RPSResultScreen>
             children: [
               const RPSGlowBlobs(),
 
-              // Confetti (win only)
+              // Confetti raining from the top (win only)
               if (result == RPSResult.win)
-                AnimatedBuilder(
-                  animation: _confettiCtrl,
-                  builder: (_, __) => CustomPaint(
-                    painter: _ConfettiPainter(_confettiCtrl.value),
-                    child: const SizedBox.expand(),
+                IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConfettiWidget(
+                      confettiController: _confetti,
+                      blastDirection: pi / 2,
+                      numberOfParticles: 30,
+                      gravity: 0.3,
+                      colors: const [
+                        RPSTheme.gold,
+                        RPSTheme.purpleLight,
+                        Color(0xFF06B6D4),
+                        Color(0xFFEC4899),
+                        Color(0xFF22C55E),
+                        Color(0xFFF97316),
+                        Colors.white,
+                      ],
+                    ),
                   ),
                 ),
 
@@ -220,14 +224,10 @@ class _RPSResultScreenState extends State<RPSResultScreen>
                     const Spacer(),
 
                     RPSPillButton(
-                        label: widget.chatAlreadyUnlocked ? 'Continue Chatting' : 'Start Chatting',
-                        onPressed: _startChat), //investigate from this var
-                    const SizedBox(height: 10),
-                    RPSPillButton(
-                      label: 'Play Again',
-                      onPressed: _playAgain,
-                      isOutlined: true,
-                    ),
+                        label: widget.chatAlreadyUnlocked
+                            ? 'Continue Chatting'
+                            : 'Start Chatting',
+                        onPressed: _startChat),
                   ],
                 ),
               ),
@@ -285,70 +285,4 @@ class _MoveResult extends StatelessWidget {
       ),
     );
   }
-}
-
-// ── Confetti painter ──────────────────────────────────────────────────────────
-
-class _ConfettiPainter extends CustomPainter {
-  _ConfettiPainter(this.progress);
-  final double progress;
-
-  static final _rng = Random(42);
-  static final _colours = [
-    RPSTheme.gold,
-    RPSTheme.purpleLight,
-    const Color(0xFF06B6D4),
-    const Color(0xFFEC4899),
-    const Color(0xFF22C55E),
-    const Color(0xFFF97316),
-    Colors.white,
-  ];
-  static final _pieces = List.generate(
-    80,
-    (_) => _Piece(
-      x: _rng.nextDouble(),
-      startY: -0.1 - _rng.nextDouble() * 0.3,
-      speed: 1.0 + _rng.nextDouble() * 2.4,
-      color: _colours[_rng.nextInt(_colours.length)],
-      w: 3 + _rng.nextDouble() * 8,
-      h: 2 + _rng.nextDouble() * 5,
-      angle: _rng.nextDouble() * pi * 2,
-      spin: (_rng.nextDouble() - 0.5) * 0.17,
-      drift: (_rng.nextDouble() - 0.5) * 0.75,
-    ),
-  );
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final p in _pieces) {
-      final y = (p.startY + progress * p.speed / 4) % 1.1;
-      canvas.save();
-      canvas.translate(p.x * size.width, y * size.height);
-      canvas.rotate(p.angle + progress * p.spin * 10);
-      canvas.drawRect(
-        Rect.fromCenter(center: Offset.zero, width: p.w, height: p.h),
-        Paint()..color = p.color.withOpacity(0.85),
-      );
-      canvas.restore();
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ConfettiPainter old) => old.progress != progress;
-}
-
-class _Piece {
-  const _Piece({
-    required this.x,
-    required this.startY,
-    required this.speed,
-    required this.color,
-    required this.w,
-    required this.h,
-    required this.angle,
-    required this.spin,
-    required this.drift,
-  });
-  final double x, startY, speed, w, h, angle, spin, drift;
-  final Color color;
 }

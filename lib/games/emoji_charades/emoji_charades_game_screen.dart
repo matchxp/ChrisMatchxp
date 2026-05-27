@@ -19,7 +19,6 @@ import 'emoji_charades_data.dart';
 import '../word_search/word_search_service.dart';
 
 // ── Palette ──────────────────────────────────────────────────
-const _kBg = Color(0xFF07060F);
 const _kBgMid = Color(0xFF120D2E);
 const _kPurple = Color(0xFF8B5CF6);
 const _kPurpleD = Color(0xFF6930C3); //use for noti color
@@ -116,6 +115,10 @@ class _State extends State<EmojiCharadesGameScreen>
 
   // ── Phase ─────────────────────────────────────────────────
   _Phase _phase = _Phase.intro;
+
+  // True while _loadMyRecord() is restoring state on re-entry (skipIntro=true).
+  // Hides the UI so the category picker doesn't flash before the real phase loads.
+  bool _checking = false;
 
   // ── My picks ──────────────────────────────────────────────
   int _catIdx = 0;
@@ -242,6 +245,7 @@ class _State extends State<EmojiCharadesGameScreen>
 
     if (widget.skipIntro) {
       _phase = _Phase.category;
+      _checking = true; // hide UI until _loadMyRecord restores the real phase
     } else {
       _startIntro();
     }
@@ -415,11 +419,27 @@ class _State extends State<EmojiCharadesGameScreen>
         } else if (emojis.isNotEmpty) {
           // Was creating the charade but hadn't submitted yet.
           _goTo(_Phase.create);
+        } else {
+          // emojis empty + not submitted → user hasn't really started.
+          // Show intro so they see the game instructions first.
+          _goTo(_Phase.intro);
         }
-        // emojis empty + not submitted → stay at category (already set by skipIntro)
       }
 
       _checkCompletionOnLoad();
+      // Phase restored — reveal the UI now.
+      if (_checking) setState(() => _checking = false);
+    } else if (mounted && _checking) {
+      // No DB record — user hasn't started the game at all.
+      // If we got here via skipIntro (sender tapping their own card),
+      // show the intro so they get the full experience before picking a category.
+      setState(() {
+        _checking = false;
+        if (widget.skipIntro) {
+          _phase = _Phase.intro;
+        }
+      });
+      if (widget.skipIntro) _startIntro();
     }
   }
 
@@ -479,27 +499,36 @@ class _State extends State<EmojiCharadesGameScreen>
     });
   }
 
-  /// Record EC win/loss to the shared game_scores table.
-  /// Called by whoever finishes second (the one who triggers onChatUnlocked).
+  /// Record EC score to the shared game_scores table.
+  ///
+  /// Scoring rules (matching WS for consistency):
+  ///   • Win  (I solved, they skipped)   → complete_game_session already inserted
+  ///                                        a score row server-side — do nothing here.
+  ///   • Loss (I skipped, they solved)   → same; complete_game_session handled it.
+  ///   • Both solved                     → award each player +1 (complete_game_session
+  ///                                        skips the insert for draws/null winner).
+  ///   • Both skipped                    → no points for anyone.
+  ///
+  /// We must NOT call recordWinner for wins/losses — complete_game_session
+  /// (SECURITY DEFINER) already inserts a game_scores row, so a client-side
+  /// call here would double-count every win.
   void _recordEcScore() {
     switch (_outcome) {
       case _Outcome.iSolvedTheySkipped:
+      case _Outcome.iSkippedTheySolved:
+        // complete_game_session handles the score for competitive outcomes.
+        break;
+      case _Outcome.bothSolved:
+        // Both guessed correctly → award current player +1.
+        // Partner's device does the same for themselves.
         WordSearchService().recordWinner(
           matchId: widget.matchId,
           winnerId: widget.currentUserId,
           loserId: widget.partnerUserId,
         );
         break;
-      case _Outcome.iSkippedTheySolved:
-        WordSearchService().recordWinner(
-          matchId: widget.matchId,
-          winnerId: widget.partnerUserId,
-          loserId: widget.currentUserId,
-        );
-        break;
-      case _Outcome.bothSolved:
       case _Outcome.bothSkipped:
-        // Draw — no score recorded.
+        // Both skipped — no points.
         break;
     }
   }
@@ -587,6 +616,11 @@ class _State extends State<EmojiCharadesGameScreen>
   // ============================================================
   @override
   Widget build(BuildContext context) {
+    // Still loading DB state on re-entry — show blank background to prevent
+    // the category picker from flashing before the real phase is restored.
+    if (_checking) {
+      return const Scaffold(backgroundColor: _kBgMid, body: SizedBox.expand());
+    }
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -601,7 +635,11 @@ class _State extends State<EmojiCharadesGameScreen>
             ),
           ),
           child: Stack(children: [
-            _buildPhase(),
+            // SafeArea(top: false) pads only the bottom so phase content
+            // (buttons, "Start Chatting", etc.) clears the system nav bar
+            // on Samsung devices.  The top SafeArea is handled per-phase
+            // inside _topBar()'s own SafeArea(bottom: false).
+            SafeArea(top: false, child: _buildPhase()),
             if (_showTut && _phase == _Phase.intro) _buildTutorial(),
             IgnorePointer(
               child: Align(
@@ -1135,6 +1173,7 @@ class _State extends State<EmojiCharadesGameScreen>
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 42, letterSpacing: 4),
                     maxLines: 2,
+                    inputFormatters: [_EmojiOnlyFormatter()],
                     decoration: const InputDecoration(
                       border: InputBorder.none,
                       hintText: '',
@@ -1321,7 +1360,7 @@ class _State extends State<EmojiCharadesGameScreen>
     final showTimer = !_skipped && !_ansCorrect && !_timerDone;
 
     return Column(children: [
-      _topBar(onBack: () => _goTo(_Phase.waiting)),
+      _topBar(), // no back arrow on the solve screen
 
       // ── Category + sub-label ─────────────────────────────────
       const SizedBox(height: 20),
@@ -1563,7 +1602,7 @@ class _State extends State<EmojiCharadesGameScreen>
     final theirInit = widget.partnerName[0].toUpperCase();
 
     return Column(children: [
-      _topBar(onBack: () => _goTo(_Phase.solve)),
+      _topBar(onBack: () => Navigator.of(context).pop()),
       const SizedBox(height: 22),
       _PulsingRings(child: const Text('🎯', style: TextStyle(fontSize: 22))),
       const SizedBox(height: 10),
@@ -1678,7 +1717,7 @@ class _State extends State<EmojiCharadesGameScreen>
     final theirStatus = _partnerSkipped ? '(skipped)' : '✓';
 
     return Column(children: [
-      _topBar(onBack: () => Navigator.of(context).pop()),
+      _topBar(), // no back arrow on the done/reveal screen
       Expanded(
           child: Column(children: [
         const SizedBox(height: 20),
@@ -1709,8 +1748,6 @@ class _State extends State<EmojiCharadesGameScreen>
             _primaryBtn(widget.chatAlreadyUnlocked ? 'Continue Chatting' : 'Start Chatting', () {
               widget.onChatUnlocked?.call();
             }),
-            const SizedBox(height: 9),
-            _ghostBtn('Play Again', _playAgain),
           ]),
         ),
       ])),
@@ -1736,32 +1773,6 @@ class _State extends State<EmojiCharadesGameScreen>
         ],
       ));
 
-  void _playAgain() {
-    _timer?.cancel();
-    _hintTimer?.cancel();
-    setState(() {
-      _phase = _Phase.intro;
-      _catIdx = 0;
-      _phraseIdx = 0;
-      _myEmojis = '';
-      _emojiCtrl.clear();
-      _ansInput = '';
-      _ansCtrl.clear();
-      _ansCorrect = false;
-      _ansWrong = false;
-      _skipped = false;
-      _iSolved = false;
-      _timerVal = 15;
-      _timerDone = false;
-      _partnerRow = null;
-    });
-    _db
-        .from('emoji_charades_games')
-        .delete()
-        .eq('match_id', widget.matchId)
-        .eq('user_id', widget.currentUserId);
-    _startIntro();
-  }
 
   // ============================================================
   //  SHARED: Card
@@ -2072,6 +2083,42 @@ class _ShakeWidgetState extends State<_ShakeWidget>
             Transform.translate(offset: Offset(_x.value, 0), child: child),
         child: widget.child,
       );
+}
+
+/// Strips any non-emoji characters from text input so the create-emoji field
+/// only accepts emojis.  Covers:
+///   • Main emoji block (U+1F000–U+1FFFF) — emoticons, symbols, pictographs …
+///   • Misc symbols & dingbats (U+2300–U+27BF) — ☀️ ⭐ ⏰ ✂️ …
+///   • Geometric shapes / misc arrows (U+25A0–U+2BFF)
+///   • Regional indicator pairs (U+1F1E0–U+1F1FF) — country flags
+///   • Zero-width joiner U+200D — compound emoji like 👨‍👩‍👧
+///   • Variation selector-16 U+FE0F — emoji presentation selector
+///   • Combining enclosing keycap U+20E3 — 1️⃣ 2️⃣ …
+class _EmojiOnlyFormatter extends TextInputFormatter {
+  static final _nonEmoji = RegExp(
+    r'[^\u{1F000}-\u{1FFFF}'  // Main emoji block
+    r'\u{2300}-\u{27BF}'      // Misc technical + symbols + dingbats
+    r'\u{25A0}-\u{2BFF}'      // Geometric shapes / misc arrows
+    r'\u{1F1E0}-\u{1F1FF}'   // Regional indicator symbols (flags)
+    r'\u{200D}'               // ZWJ
+    r'\u{FE0F}'               // Variation selector-16
+    r'\u{20E3}'               // Combining enclosing keycap
+    r']',
+    unicode: true,
+  );
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final filtered = newValue.text.replaceAll(_nonEmoji, '');
+    if (filtered == newValue.text) return newValue;
+    return TextEditingValue(
+      text: filtered,
+      selection: TextSelection.collapsed(offset: filtered.length),
+    );
+  }
 }
 
 class _SlimOutlineBtn extends StatelessWidget {

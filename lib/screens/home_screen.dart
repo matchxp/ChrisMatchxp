@@ -1,4 +1,3 @@
-import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,6 +7,7 @@ import 'preferences_screen.dart';
 import '../services/matching_service.dart';
 import '../services/auth_service.dart';
 import '../games/game_hub_screen.dart';
+import '../widgets/matchxp_background.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,15 +33,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isLoading = true;
   bool _hasError = false;
 
-  // Match popup
-  bool _showMatchPopup = false;
+  // Match popup — rendered via root Overlay so it layers above the nav bar
+  OverlayEntry? _matchOverlayEntry;
   Map<String, dynamic>? _matchedCardProfile;
   String? _matchedMatchId;
   String? _matchedPartnerUserId;
   String? _myPhoto;
   late AnimationController _matchAnimController;
-
-  RealtimeChannel? _matchNotifChannel;
 
   final MatchingService _matchingService = MatchingService();
 
@@ -60,30 +58,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _resetAnimations();
     _loadProfiles();
     _loadMyPhoto();
-    _subscribeToMatchNotifications();
   }
 
   Future<void> _loadMyPhoto() async {
-    final currentUserId = Supabase.instance.client.auth.currentUser?.id
-        ?? AuthService().getCurrentUserId();
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id ??
+        AuthService().getCurrentUserId();
     if (currentUserId == null) return;
     final profile = await _matchingService.getProfileById(currentUserId);
     if (!mounted || profile == null) return;
     final images = _getAllImages(profile);
     setState(() => _myPhoto = images.isNotEmpty ? images.first : null);
-  }
-
-  void _subscribeToMatchNotifications() {
-    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    if (currentUserId == null) return;
-    _matchNotifChannel = _matchingService.subscribeToMatchNotifications(
-      currentUserId,
-      (matchId, partnerId) async {
-        final profile = await _matchingService.getProfileById(partnerId);
-        if (!mounted || profile == null) return;
-        _triggerMatchPopup(profile, matchId: matchId, partnerUserId: partnerId);
-      },
-    );
   }
 
   void _resetAnimations() {
@@ -154,9 +138,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    if (_matchNotifChannel != null) {
-      Supabase.instance.client.removeChannel(_matchNotifChannel!);
-    }
+    _matchOverlayEntry?.remove();
+    _matchOverlayEntry = null;
     _swipeAnimationController.dispose();
     _matchAnimController.dispose();
     super.dispose();
@@ -225,15 +208,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _matchedCardProfile = cardProfile;
       _matchedMatchId = matchId;
       _matchedPartnerUserId = partnerUserId;
-      _showMatchPopup = true;
     });
     _matchAnimController.forward(from: 0);
     HapticFeedback.heavyImpact();
+    _matchOverlayEntry = OverlayEntry(
+      builder: (_) => Positioned.fill(child: _buildMatchPopup()),
+    );
+    Navigator.of(context, rootNavigator: true).overlay?.insert(_matchOverlayEntry!);
   }
 
   void _closeMatchPopup() {
+    _matchOverlayEntry?.remove();
+    _matchOverlayEntry = null;
     setState(() {
-      _showMatchPopup = false;
       _matchedCardProfile = null;
       _matchedMatchId = null;
       _matchedPartnerUserId = null;
@@ -453,8 +440,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
-          if (_showMatchPopup && _matchedCardProfile != null)
-            _buildMatchPopup(),
         ],
       ),
     );
@@ -466,163 +451,156 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final photo = images.isNotEmpty ? images[0] : '';
     final name = profile['name'] as String? ?? 'Match';
 
-    return GestureDetector(
+    return Material(
+      type: MaterialType.transparency,
+      child: GestureDetector(
       onTap: _closeMatchPopup,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                const Color(0xFF2E0858).withValues(alpha: 0.96),
-                const Color(0xFF180430).withValues(alpha: 0.98),
-              ],
-            ),
-          ),
+      child: MatchXPBackground(
           child: Align(
             alignment: const Alignment(0, 0.25),
-            child: ScaleTransition(
-              scale: CurvedAnimation(
-                parent: _matchAnimController,
-                curve: Curves.elasticOut,
-              ),
-              child: GestureDetector(
-                onTap: () {},
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Title
-                      const SizedBox(height: 60),
-                      Text(
-                        ' IT\'S A MATCH!',
-                        style: GoogleFonts.bebasNeue(
-                          fontSize: 72,
-                          color: Colors.white,
+            child: Transform.translate(
+              offset: const Offset(0, -10),
+              child: ScaleTransition(
+                scale: CurvedAnimation(
+                  parent: _matchAnimController,
+                  curve: Curves.elasticOut,
+                ),
+                child: GestureDetector(
+                  onTap: () {},
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Title
+                        const SizedBox(height: 10),
+                        Text(
+                          ' IT\'S A MATCH!',
+                          style: GoogleFonts.bebasNeue(
+                            fontSize: 72,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      // Subtitle
-                      Text(
-                        'Play a game with $name to unlock your chat',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontWeight: FontWeight.w400,
+                        const SizedBox(height: 4),
+                        // Subtitle
+                        Text(
+                          'Play a game with $name to unlock your chat',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.w400,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 110),
-                      // Two cards — poker overlap, right card lifted
-                      Center(
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(left: 150),
-                              child: Transform.translate(
-                                offset: const Offset(0, -24),
-                                child: Transform.rotate(
-                                  angle: 0.18,
-                                  child: _matchAvatar(
-                                      photo, const Color(0xFF6C3FE8)),
+                        const SizedBox(height: 110),
+                        // Two cards — poker overlap, right card lifted
+                        Center(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            alignment: Alignment.centerLeft,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(left: 150),
+                                child: Transform.translate(
+                                  offset: const Offset(0, -24),
+                                  child: Transform.rotate(
+                                    angle: 0.18,
+                                    child: _matchAvatar(
+                                        photo, const Color(0xFF6C3FE8)),
+                                  ),
                                 ),
                               ),
-                            ),
-                            Transform.rotate(
-                              angle: -0.08,
-                              child: _matchAvatar(
-                                  _myPhoto, const Color(0xFF6C3FE8)),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 80),
-                      // Buttons — same size pill style
-                      GestureDetector(
-                        onTap: () {
-                          final matchId = _matchedMatchId;
-                          final partnerUserId = _matchedPartnerUserId;
-                          final partnerName =
-                              _matchedCardProfile?['name'] as String? ??
-                                  'Match';
-                          final currentUserId =
-                              Supabase.instance.client.auth.currentUser?.id ??
-                                  '';
-                          _closeMatchPopup();
-                          if (matchId != null && partnerUserId != null) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => GameHubScreen(
-                                  matchId: matchId,
-                                  currentUserId: currentUserId,
-                                  partnerUserId: partnerUserId,
-                                  partnerName: partnerName,
-                                  onChatUnlocked: () {},
-                                ),
+                              Transform.rotate(
+                                angle: -0.08,
+                                child: _matchAvatar(
+                                    _myPhoto, const Color(0xFF6C3FE8)),
                               ),
-                            );
-                          }
-                        },
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6C3FE8),
-                            borderRadius: BorderRadius.circular(50),
+                            ],
                           ),
-                          child: const Text(
-                            'PLAY GAME TO UNLOCK CHAT',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              letterSpacing: 0.5,
+                        ),
+                        const SizedBox(height: 60),
+                        // Buttons — same size pill style
+                        GestureDetector(
+                          onTap: () {
+                            final matchId = _matchedMatchId;
+                            final partnerUserId = _matchedPartnerUserId;
+                            final partnerName =
+                                _matchedCardProfile?['name'] as String? ??
+                                    'Match';
+                            final currentUserId =
+                                Supabase.instance.client.auth.currentUser?.id ??
+                                    '';
+                            _closeMatchPopup();
+                            if (matchId != null && partnerUserId != null) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => GameHubScreen(
+                                    matchId: matchId,
+                                    currentUserId: currentUserId,
+                                    partnerUserId: partnerUserId,
+                                    partnerName: partnerName,
+                                    onChatUnlocked: () {},
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6C3FE8),
+                              borderRadius: BorderRadius.circular(50),
+                            ),
+                            child: const Text(
+                              'PLAY GAME TO UNLOCK CHAT',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      GestureDetector(
-                        onTap: _closeMatchPopup,
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.35),
-                              width: 1.5,
+                        const SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: _closeMatchPopup,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.35),
+                                width: 1.5,
+                              ),
+                              borderRadius: BorderRadius.circular(50),
                             ),
-                            borderRadius: BorderRadius.circular(50),
-                          ),
-                          child: Text(
-                            'KEEP SWIPING',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white.withValues(alpha: 0.75),
-                              letterSpacing: 0.5,
+                            child: Text(
+                              'KEEP SWIPING',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white.withValues(alpha: 0.75),
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 32),
-                    ],
+                        const SizedBox(height: 32),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+              ), // ScaleTransition
+            ), // Transform.translate
+          ), // Align
+      ), // MatchXPBackground
+    ), // GestureDetector
+    ); // Material
   }
 
   Widget _matchAvatar(String? photo, Color borderColor) {

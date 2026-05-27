@@ -70,7 +70,9 @@ class _MainNavigationState extends State<MainNavigation> {
     super.dispose();
   }
 
-  // ── Poll for new matches (so User A gets the popup too) ──────────────────
+  // ── Poll for new matches — notifies User A (first liker) with a banner ─────
+  // User A does NOT get the full match popup (only User B does, inline after
+  // their like creates the match). User A gets a notification banner instead.
 
   Future<void> _pollForNewMatches() async {
     final matches = await _matchingService.getMatchesWithProfiles();
@@ -79,7 +81,7 @@ class _MainNavigationState extends State<MainNavigation> {
     for (final match in matches) {
       final matchId = match['match_id'] as String;
       if (_initialMatchLoadDone && !_knownMatchIds.contains(matchId)) {
-        // New match detected — show the "It's a Match!" banner
+        // New match detected — show a notification banner for User A.
         final profile = match['profile'] as Map<String, dynamic>?;
         if (profile != null) {
           final name = profile['first_name'] as String? ?? 'Someone';
@@ -281,41 +283,30 @@ class _MainNavigationState extends State<MainNavigation> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1A2E),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(
-                color: const Color(0xFF6C3FE8).withValues(alpha: 0.25),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildNavItem(
-                    icon: Icons.explore_outlined,
-                    activeIcon: Icons.explore,
-                    index: 0),
-                _buildNavItem(
-                    icon: Icons.favorite_border_rounded,
-                    activeIcon: Icons.favorite_rounded,
-                    index: 1),
-                _buildNavItem(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    activeIcon: Icons.chat_bubble_rounded,
-                    index: 2),
-                _buildNavItem(
-                    icon: Icons.person_outline_rounded,
-                    activeIcon: Icons.person_rounded,
-                    index: 3),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(
+                  icon: Icons.explore_outlined,
+                  activeIcon: Icons.explore,
+                  index: 0),
+              _buildNavItem(
+                  icon: Icons.favorite_border_rounded,
+                  activeIcon: Icons.favorite_rounded,
+                  index: 1),
+              _buildNavItem(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  activeIcon: Icons.chat_bubble_rounded,
+                  index: 2),
+              _buildNavItem(
+                  icon: Icons.person_outline_rounded,
+                  activeIcon: Icons.person_rounded,
+                  index: 3),
+            ],
+          ),     // Row
+        ),       // Padding
+      ),         // SafeArea
+    );           // outer Container
   }
 
   Widget _buildNavItem({

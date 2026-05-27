@@ -154,8 +154,10 @@ class MatchingService {
           .maybeSingle();
 
       if (mutualLike != null) {
-        // It's a match! Create match record and return the matchId
-        final matchId = await _createMatch(currentUserId, likedUserId);
+        // It's a match! Create match record and return the matchId.
+        // currentUserId is User B (second liker who completed the match).
+        final matchId = await _createMatch(currentUserId, likedUserId,
+            matchedBy: currentUserId);
         debugPrint('🎉 IT\'S A MATCH! matchId=$matchId');
         // Notify User A (the first liker) — they missed the popup when they swiped
         if (matchId != null) {
@@ -201,7 +203,9 @@ class MatchingService {
   }
 
   /// Create a match between two users. Returns the new match's ID.
-  Future<String?> _createMatch(String userId1, String userId2) async {
+  /// [matchedBy] is the user who completed the match (the second liker, User B).
+  Future<String?> _createMatch(String userId1, String userId2,
+      {String? matchedBy}) async {
     try {
       // Ensure consistent ordering (smaller ID first)
       final ids = [userId1, userId2]..sort();
@@ -209,6 +213,7 @@ class MatchingService {
       final row = await _supabase.from('matches').insert({
         'user_id_1': ids[0],
         'user_id_2': ids[1],
+        if (matchedBy != null) 'matched_by': matchedBy,
       }).select('id').single();
 
       final matchId = row['id'] as String;
@@ -324,6 +329,7 @@ class MatchingService {
           result.add({
             'match_id': match['id'],
             'matched_at': match['matched_at'],
+            'matched_by': match['matched_by'], // who completed the match (User B)
             'profile': profile,
           });
         }
@@ -416,7 +422,10 @@ class MatchingService {
     }
   }
 
-  /// Mark all incoming messages in a match as read by the current user
+  /// Mark all incoming messages in a match as read by the current user.
+  /// Also broadcasts a `read_receipt` event so the sender's screen updates
+  /// the double-tick immediately without waiting for a postgres_changes event
+  /// (messages table is not in the realtime publication).
   Future<void> markMessagesAsRead(String matchId) async {
     try {
       final currentUserId = _supabase.auth.currentUser?.id;
@@ -428,6 +437,13 @@ class MatchingService {
           .eq('match_id', matchId)
           .neq('sender_id', currentUserId)
           .eq('is_read', false);
+
+      // Notify the sender's device via broadcast so their double-tick updates
+      // instantly — postgres_changes UPDATEs never fire for messages.
+      _chatChannels[matchId]?.sendBroadcastMessage(
+        event: 'read_receipt',
+        payload: {'match_id': matchId},
+      );
 
       debugPrint('✅ Marked messages as read for match: $matchId');
     } catch (e) {
@@ -472,12 +488,12 @@ class MatchingService {
 
   /// Subscribe to new messages using Supabase Broadcast (WebSocket, ~50ms latency).
   /// Falls back to postgres_changes as a safety net for messages missed during
-  /// a brief disconnect. Also listens for UPDATE events (read receipts).
+  /// a brief disconnect. Also listens for read_receipt broadcast events.
   RealtimeChannel subscribeToMessages(
       String matchId,
       void Function(Map<String, dynamic>) onMessage, {
-      void Function(Map<String, dynamic>)? onUpdate,
       void Function()? onTyping,
+      void Function()? onReadReceipt,
   }) {
     late RealtimeChannel channel;
 
@@ -495,6 +511,13 @@ class MatchingService {
           event: 'typing',
           callback: (_) { if (onTyping != null) onTyping(); },
         )
+        // Read receipt broadcast — fires when the partner opens/reads the chat.
+        // postgres_changes UPDATEs never fire for messages (not in publication),
+        // so we use broadcast as the delivery mechanism.
+        .onBroadcast(
+          event: 'read_receipt',
+          callback: (_) { if (onReadReceipt != null) onReadReceipt(); },
+        )
         // Fallback: postgres_changes INSERT — catches messages if broadcast missed
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
@@ -506,20 +529,6 @@ class MatchingService {
             value: matchId,
           ),
           callback: (payload) => onMessage(payload.newRecord),
-        )
-        // Read receipt: postgres_changes UPDATE — fires when is_read flips to true
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'messages',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'match_id',
-            value: matchId,
-          ),
-          callback: (payload) {
-            if (onUpdate != null) onUpdate(payload.newRecord);
-          },
         )
         .subscribe((status, error) {
           // Only store the channel once it's fully connected and ready to broadcast
@@ -536,6 +545,14 @@ class MatchingService {
 
   /// Clean up when leaving a chat screen
   void unsubscribeFromChat(String matchId) {
+    _chatChannels.remove(matchId);
+  }
+
+  /// Permanently delete a match (and all related messages / game data via CASCADE).
+  /// Returns normally on success; throws on error (unauthorized or DB failure).
+  Future<void> deleteMatch(String matchId) async {
+    await _supabase.rpc('delete_match', params: {'p_match_id': matchId});
+    // Clean up any open broadcast channel for this match
     _chatChannels.remove(matchId);
   }
 

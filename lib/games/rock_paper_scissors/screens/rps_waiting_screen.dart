@@ -151,7 +151,11 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     RPSNavBar(
-                      onBack: () => Navigator.pop(context),
+                      onBack: () {
+                        int pops = 0;
+                        Navigator.of(context)
+                            .popUntil((_) => pops++ >= widget.popCount);
+                      },
                     ),
 
                     const SizedBox(height: 48),

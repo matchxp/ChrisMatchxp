@@ -268,7 +268,9 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
 
   void _go(WSStep step) => setState(() => _me = _me.copyWith(step: step));
 
-  bool get _showBack => _backs.containsKey(_me.step);
+  bool get _showBack => _backs.containsKey(_me.step) ||
+      _me.step == WSStep.wait ||
+      _me.step == WSStep.waitPartner;
   bool get _showTitle => _me.step != WSStep.welcome;
 
   // ═══════════════════════════════════════════════════════════
@@ -1256,13 +1258,6 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
           _primaryBtn(
               widget.chatAlreadyUnlocked ? 'Continue Chatting' : 'Start Chatting',
               () => widget.onGameEvent?.call({'event': 'chatPressed'})),
-          const SizedBox(height: 10),
-          _outlineBtn('Play again', () {
-            _skipTimer?.cancel();
-            _confettiTicker?.stop();
-            _wordCtrl.clear();
-            setState(() { _me = WSState.fresh(); _partner = WSState.fresh(); _showSkip = false; _particles = []; });
-          }),
         ]),
       )),
     ]);

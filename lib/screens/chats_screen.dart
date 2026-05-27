@@ -9,6 +9,7 @@ import '../games/word_search/word_search_models.dart';
 import '../games/word_search/word_search_supabase_wrapper.dart';
 import '../games/emoji_charades/emoji_charades_game_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_intro_screen.dart';
+import '../games/rock_paper_scissors/screens/rps_pick_screen.dart';
 import '../games/game_hub_screen.dart';
 import '../widgets/matchxp_background.dart';
 import 'chat_conversation_screen.dart';
@@ -45,9 +46,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   final String _currentUserId =
       Supabase.instance.client.auth.currentUser?.id ?? '';
 
-  // ── Search ─────────────────────────────────────────────────────────────────
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
+  // (search removed)
 
   // Each item: { match_id, profile, last_message, unread_count, game_phase }
   List<Map<String, dynamic>> _matchesWithProfiles = [];
@@ -57,41 +56,26 @@ class _ChatsScreenState extends State<ChatsScreen> {
   final Set<String> _onlineUserIds = {};
 
   // ── Auto-refresh ───────────────────────────────────────────────────────────
-  // Polls at 10-second intervals, but ONLY while there are locked matches
-  // (i.e. pending games in progress). Once every match is unlocked there is
-  // nothing time-sensitive to watch, so the timer is cancelled to save
-  // battery, data, and backend quota.
+  // Polls every 10 seconds unconditionally so new matches and pending-game
+  // circles always appear without the user tapping the refresh button.
+  // The _isFetching guard prevents concurrent fetches from stacking.
   Timer? _autoRefreshTimer;
   bool _isFetching = false; // prevents stacking concurrent fetches
-
-  void _scheduleRefreshIfNeeded() {
-    final hasPending = _matchesWithProfiles
-        .any((m) => !(m['chat_unlocked'] as bool? ?? false));
-    if (hasPending && _autoRefreshTimer == null) {
-      // There are active games to watch — start polling every 10 s.
-      _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-        if (mounted && !_isFetching) _loadMatches();
-      });
-    } else if (!hasPending) {
-      // Nothing pending — cancel the timer to save resources.
-      _autoRefreshTimer?.cancel();
-      _autoRefreshTimer = null;
-    }
-  }
 
   @override
   void initState() {
     super.initState();
     _loadMatches();
     ChatsScreen.refreshNotifier.addListener(_onExternalRefresh);
-    _searchController.addListener(_onSearchChanged);
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted && !_isFetching) _loadMatches();
+    });
   }
 
   @override
   void dispose() {
     _autoRefreshTimer?.cancel();
     ChatsScreen.refreshNotifier.removeListener(_onExternalRefresh);
-    _searchController.dispose();
     super.dispose();
   }
 
@@ -99,155 +83,162 @@ class _ChatsScreenState extends State<ChatsScreen> {
     if (mounted) _loadMatches();
   }
 
-  void _onSearchChanged() {
-    setState(() => _searchQuery = _searchController.text.toLowerCase().trim());
-  }
-
   Future<void> _loadMatches() async {
     if (_isFetching) return;
     _isFetching = true;
     try {
-    final matches = await _matchingService.getMatchesWithProfiles();
+      final matches = await _matchingService.getMatchesWithProfiles();
 
-    // For each match fetch last message + unread count + game phase in parallel
-    final enriched = await Future.wait(matches.map((m) async {
-      final matchId = m['match_id'] as String;
-      final last = await _matchingService.getLastMessage(matchId);
+      // For each match fetch last message + unread count + game phase in parallel
+      final enriched = await Future.wait(matches.map((m) async {
+        final matchId = m['match_id'] as String;
+        final last = await _matchingService.getLastMessage(matchId);
 
-      // Fetch unread count
-      int unreadCount = 0;
-      try {
-        final rows = await Supabase.instance.client
-            .from('messages')
-            .select('id')
-            .eq('match_id', matchId)
-            .neq('sender_id', _currentUserId)
-            .eq('is_read', false);
-        unreadCount = (rows as List).length;
-      } catch (_) {}
-
-      // Fetch game phase — checks Word Search first, then Emoji Charades
-      MatchGamePhase? gamePhase;
-      try {
-        final snap = await _wordSearchService.getSnapshot(
-          matchId: matchId,
-          myUserId: _currentUserId,
-        );
-        gamePhase = snap.phase;
-      } catch (_) {}
-
-      // If word search not completed, also check Emoji Charades
-      if (gamePhase != MatchGamePhase.bothSolved) {
+        // Fetch unread count
+        int unreadCount = 0;
         try {
-          final ecRows = await Supabase.instance.client
-              .from('emoji_charades_games')
-              .select('solved')
-              .eq('match_id', matchId);
-          final ecList = List<Map<String, dynamic>>.from(ecRows as List);
-          if (ecList.length >= 2 && ecList.every((r) => r['solved'] == true)) {
-            gamePhase = MatchGamePhase.bothSolved;
-          } else if (ecList.isNotEmpty && gamePhase == null) {
-            gamePhase = MatchGamePhase.solving;
-          }
-        } catch (_) {}
-      }
-
-      // Determine chat_unlocked, circle_color, and active session data
-      bool chatUnlocked = gamePhase == MatchGamePhase.bothSolved;
-      String circleColor = 'grey';
-      String? activeSessionId;
-      String? activeGameType;
-      String? activeSessionStatus;
-      if (!chatUnlocked) {
-        try {
-          final sessions = await Supabase.instance.client
-              .from('game_sessions')
-              .select('id, challenger_id, status, game_type')
+          final rows = await Supabase.instance.client
+              .from('messages')
+              .select('id')
               .eq('match_id', matchId)
-              .order('created_at', ascending: false);
-          final sessionList =
-              List<Map<String, dynamic>>.from(sessions as List);
-          chatUnlocked = sessionList.any((s) => s['status'] == 'completed');
-          if (!chatUnlocked) {
-            final active = sessionList.firstWhere(
-              (s) => s['status'] != 'completed',
-              orElse: () => <String, dynamic>{},
-            );
-            if (active.isNotEmpty) {
-              final challengerId = active['challenger_id'] as String?;
-              activeSessionId = active['id'] as String?;
-              activeGameType = active['game_type'] as String?;
-              activeSessionStatus = active['status'] as String?;
-              if (gamePhase == MatchGamePhase.solving ||
-                  gamePhase == MatchGamePhase.waitingPartnerSolve) {
-                circleColor = 'purple';
-              } else {
-                circleColor =
-                    challengerId == _currentUserId ? 'green' : 'red';
+              .neq('sender_id', _currentUserId)
+              .eq('is_read', false);
+          unreadCount = (rows as List).length;
+        } catch (_) {}
+
+        // Fetch game phase — checks Word Search first, then Emoji Charades
+        MatchGamePhase? gamePhase;
+        try {
+          final snap = await _wordSearchService.getSnapshot(
+            matchId: matchId,
+            myUserId: _currentUserId,
+          );
+          gamePhase = snap.phase;
+        } catch (_) {}
+
+        // If word search not completed, also check Emoji Charades
+        if (gamePhase != MatchGamePhase.bothSolved) {
+          try {
+            final ecRows = await Supabase.instance.client
+                .from('emoji_charades_games')
+                .select('solved')
+                .eq('match_id', matchId);
+            final ecList = List<Map<String, dynamic>>.from(ecRows as List);
+            if (ecList.length >= 2 &&
+                ecList.every((r) => r['solved'] == true)) {
+              gamePhase = MatchGamePhase.bothSolved;
+            } else if (ecList.isNotEmpty && gamePhase == null) {
+              gamePhase = MatchGamePhase.solving;
+            }
+          } catch (_) {}
+        }
+
+        // Determine chat_unlocked, circle_color, and active session data
+        bool chatUnlocked = gamePhase == MatchGamePhase.bothSolved;
+        String circleColor = 'grey';
+        String? activeSessionId;
+        String? activeGameType;
+        String? activeSessionStatus;
+        if (!chatUnlocked) {
+          try {
+            final sessions = await Supabase.instance.client
+                .from('game_sessions')
+                .select('id, challenger_id, status, game_type')
+                .eq('match_id', matchId)
+                .order('created_at', ascending: false);
+            final sessionList =
+                List<Map<String, dynamic>>.from(sessions as List);
+            chatUnlocked = sessionList.any((s) => s['status'] == 'completed');
+            if (!chatUnlocked) {
+              final active = sessionList.firstWhere(
+                (s) => s['status'] != 'completed',
+                orElse: () => <String, dynamic>{},
+              );
+              if (active.isNotEmpty) {
+                final challengerId = active['challenger_id'] as String?;
+                activeSessionId = active['id'] as String?;
+                activeGameType = active['game_type'] as String?;
+                activeSessionStatus = active['status'] as String?;
+                if (gamePhase == MatchGamePhase.solving ||
+                    gamePhase == MatchGamePhase.waitingPartnerSolve) {
+                  circleColor = 'purple';
+                } else {
+                  // 'purple' = I sent the challenge (sender) — waiting for partner
+                  // 'green'  = I received the challenge (receiver)
+                  circleColor =
+                      challengerId == _currentUserId ? 'purple' : 'green';
+                }
               }
+            }
+          } catch (_) {}
+        }
+
+        // Determine if the current user is allowed to send game challenges.
+        // matched_by = the user who completed the match (User B, second liker).
+        // null means legacy match → allow both (graceful fallback).
+        final matchedBy = m['matched_by'] as String?;
+        final canSendGame = matchedBy == null || matchedBy == _currentUserId;
+
+        return {
+          ...m,
+          'last_message': last,
+          'unread_count': unreadCount,
+          'game_phase': gamePhase,
+          'chat_unlocked': chatUnlocked,
+          'circle_color': circleColor,
+          'active_session_id': activeSessionId,
+          'active_game_type': activeGameType,
+          'active_session_status': activeSessionStatus,
+          'can_send_game': canSendGame,
+        };
+      }));
+
+      // Fetch online presence via last_seen
+      final Set<String> online = {};
+      final userIds = enriched
+          .map((m) => (m['profile'] as Map<String, dynamic>)['id'] as String?)
+          .whereType<String>()
+          .toList();
+      if (userIds.isNotEmpty) {
+        try {
+          final rows = await Supabase.instance.client
+              .from('profiles')
+              .select('id, last_seen')
+              .inFilter('id', userIds);
+          final cutoff = DateTime.now().subtract(const Duration(minutes: 5));
+          for (final row in rows as List) {
+            final raw = row['last_seen'] as String?;
+            if (raw == null) continue;
+            final dt = DateTime.tryParse(raw)?.toLocal();
+            if (dt != null && dt.isAfter(cutoff)) {
+              online.add(row['id'] as String);
             }
           }
         } catch (_) {}
       }
 
-      return {
-        ...m,
-        'last_message': last,
-        'unread_count': unreadCount,
-        'game_phase': gamePhase,
-        'chat_unlocked': chatUnlocked,
-        'circle_color': circleColor,
-        'active_session_id': activeSessionId,
-        'active_game_type': activeGameType,
-        'active_session_status': activeSessionStatus,
-      };
-    }));
+      // Sort: most recent message first
+      enriched.sort((a, b) {
+        final aMsg = a['last_message'] as Map<String, dynamic>?;
+        final bMsg = b['last_message'] as Map<String, dynamic>?;
+        if (aMsg == null && bMsg == null) return 0;
+        if (aMsg == null) return 1;
+        if (bMsg == null) return -1;
+        final aTime = DateTime.tryParse(aMsg['created_at'] as String? ?? '') ??
+            DateTime(0);
+        final bTime = DateTime.tryParse(bMsg['created_at'] as String? ?? '') ??
+            DateTime(0);
+        return bTime.compareTo(aTime);
+      });
 
-    // Fetch online presence via last_seen
-    final Set<String> online = {};
-    final userIds = enriched
-        .map((m) => (m['profile'] as Map<String, dynamic>)['id'] as String?)
-        .whereType<String>()
-        .toList();
-    if (userIds.isNotEmpty) {
-      try {
-        final rows = await Supabase.instance.client
-            .from('profiles')
-            .select('id, last_seen')
-            .inFilter('id', userIds);
-        final cutoff = DateTime.now().subtract(const Duration(minutes: 5));
-        for (final row in rows as List) {
-          final raw = row['last_seen'] as String?;
-          if (raw == null) continue;
-          final dt = DateTime.tryParse(raw)?.toLocal();
-          if (dt != null && dt.isAfter(cutoff)) {
-            online.add(row['id'] as String);
-          }
-        }
-      } catch (_) {}
-    }
-
-    // Sort: most recent message first
-    enriched.sort((a, b) {
-      final aMsg = a['last_message'] as Map<String, dynamic>?;
-      final bMsg = b['last_message'] as Map<String, dynamic>?;
-      if (aMsg == null && bMsg == null) return 0;
-      if (aMsg == null) return 1;
-      if (bMsg == null) return -1;
-      final aTime = DateTime.tryParse(aMsg['created_at'] as String? ?? '') ?? DateTime(0);
-      final bTime = DateTime.tryParse(bMsg['created_at'] as String? ?? '') ?? DateTime(0);
-      return bTime.compareTo(aTime);
-    });
-
-    if (!mounted) return;
-    setState(() {
-      _matchesWithProfiles = enriched;
-      _onlineUserIds
-        ..clear()
-        ..addAll(online);
-      _loading = false;
-    });
-    _scheduleRefreshIfNeeded();
+      if (!mounted) return;
+      setState(() {
+        _matchesWithProfiles = enriched;
+        _onlineUserIds
+          ..clear()
+          ..addAll(online);
+        _loading = false;
+      });
     } finally {
       _isFetching = false;
     }
@@ -282,12 +273,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
     // ── Structured message types (new) ────────────────────────────────────────
     final msgType = lastMsg['message_type'] as String? ?? 'text';
     if (msgType == 'game_challenge') {
-      final meta     = (lastMsg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+      final meta = (lastMsg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
       final gameType = meta['game_type'] as String? ?? 'rps';
-      final label    = switch (gameType) {
-        'word_search'    => 'Word Search',
+      final label = switch (gameType) {
+        'word_search' => 'Word Search',
         'emoji_charades' => 'Emoji Charades',
-        _                => 'Rock Paper Scissors',
+        _ => 'Rock Paper Scissors',
       };
       return '\u{1F3AE} $label challenge';
     }
@@ -295,9 +286,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
     // ── Legacy content-prefix checks ─────────────────────────────────────────
     final content = lastMsg['content'] as String? ?? '';
-    if (content.startsWith('[image]'))        return '\u{1F4F7} Photo';
-    if (content.startsWith('[video]'))        return '\u{1F3A5} Video';
-    if (content.startsWith('[voice]'))        return '\u{1F3A4} Voice message';
+    if (content.startsWith('[image]')) return '\u{1F4F7} Photo';
+    if (content.startsWith('[video]')) return '\u{1F3A5} Video';
+    if (content.startsWith('[voice]')) return '\u{1F3A4} Voice message';
     if (content.startsWith('[GAME_REQUEST]')) return '\u{1F3AE} Game challenge';
     return content;
   }
@@ -314,18 +305,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
     return '${diff.inDays}d';
-  }
-
-  List<Map<String, dynamic>> get _filtered {
-    if (_searchQuery.isEmpty) return _matchesWithProfiles;
-    return _matchesWithProfiles.where((m) {
-      final profile = m['profile'] as Map<String, dynamic>;
-      final name = _profileName(profile).toLowerCase();
-      final preview = _lastMessagePreview(
-              m['last_message'] as Map<String, dynamic>?)
-          .toLowerCase();
-      return name.contains(_searchQuery) || preview.contains(_searchQuery);
-    }).toList();
   }
 
   // ── Game phase helpers ─────────────────────────────────────────────────────
@@ -350,18 +329,25 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   Color _gameBadgeColor(String label) {
     switch (label) {
-      case 'SOLVING':  return const Color(0xFFF59E0B);
-      case 'WAITING':  return const Color(0xFF6C3FE8);
-      default:         return const Color(0xFF6B7280);
+      case 'SOLVING':
+        return const Color(0xFFF59E0B);
+      case 'WAITING':
+        return const Color(0xFF6C3FE8);
+      default:
+        return const Color(0xFF6B7280);
     }
   }
 
   Color _getCircleBorderColor(String circleColor) {
     switch (circleColor) {
-      case 'green':  return const Color(0xFF22C55E);
-      case 'red':    return const Color(0xFFEF4444);
-      case 'purple': return const Color(0xFF7C3AED);
-      default:       return const Color(0xFF4B5563);
+      case 'green':   // receiver — bright green glow
+        return const Color(0xFF22C55E);
+      case 'yellow':  // sender  — amber/yellow glow
+        return const Color(0xFFEAB308);
+      case 'purple':
+        return const Color(0xFF7C3AED);
+      default:        // grey — no active session
+        return const Color(0xFF4B5563);
     }
   }
 
@@ -369,8 +355,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
       .where((m) => !(m['chat_unlocked'] as bool? ?? false))
       .toList();
 
-  List<Map<String, dynamic>> get _unlockedFiltered =>
-      _filtered.where((m) => m['chat_unlocked'] as bool? ?? false).toList();
+  List<Map<String, dynamic>> get _unlockedFiltered => _matchesWithProfiles
+      .where((m) => m['chat_unlocked'] as bool? ?? false)
+      .toList();
 
   // ── Build ──────────────────────────────────────────────────────────────────
 
@@ -383,18 +370,16 @@ class _ChatsScreenState extends State<ChatsScreen> {
           child: Column(
             children: [
               _buildHeader(),
-              _buildSearchBar(),
               if (_loading)
                 const Expanded(
                   child: Center(
-                    child: CircularProgressIndicator(
-                        color: Color(0xFF6C3FE8)),
+                    child: CircularProgressIndicator(color: Color(0xFF6C3FE8)),
                   ),
                 )
               else if (_matchesWithProfiles.isEmpty)
                 _buildEmptyState()
               else ...[
-                if (_lockedMatches.isNotEmpty) _buildMatchesSection(),
+                _buildMatchesSection(),
                 _buildMessagesSection(),
               ],
             ],
@@ -418,60 +403,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
               SvgPicture.string(_xpSvg, height: 22),
             ],
           ),
-          GestureDetector(
-            onTap: _loadMatches,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3A3A3A),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.refresh,
-                  color: Color(0xFF6C3FE8), size: 20),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF3A3A3A),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.search,
-              color: Colors.white.withValues(alpha: 0.5), size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
-              decoration: InputDecoration(
-                hintText: 'Search conversations…',
-                hintStyle: TextStyle(
-                    fontSize: 15,
-                    color: Colors.white.withValues(alpha: 0.4)),
-                border: InputBorder.none,
-                isDense: true,
-              ),
-            ),
-          ),
-          if (_searchQuery.isNotEmpty)
-            GestureDetector(
-              onTap: () {
-                _searchController.clear();
-                FocusScope.of(context).unfocus();
-              },
-              child: Icon(Icons.close,
-                  size: 18, color: Colors.white.withValues(alpha: 0.5)),
-            ),
         ],
       ),
     );
@@ -512,33 +443,44 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   Widget _buildMatchesSection() {
     final list = _lockedMatches;
-    if (list.isEmpty) return const SizedBox.shrink();
-    return Column(
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 6),
-          child: Text(
-            'Pending Games',
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+          child: const Text(
+            'Match',
             style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.45),
-              letterSpacing: 0.5,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
             ),
           ),
         ),
-        SizedBox(
-          height: 100,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: list.length,
-            itemBuilder: (context, index) => _buildMatchAvatar(list[index]),
+        if (list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text(
+              'No new matches yet',
+              style: TextStyle(
+                  fontSize: 14, color: Colors.white.withValues(alpha: 0.4)),
+            ),
+          )
+        else
+          SizedBox(
+            height: 100,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: list.length,
+              itemBuilder: (context, index) => _buildMatchAvatar(list[index]),
+            ),
           ),
-        ),
       ],
-    );
+    ),   // Column
+    );   // SizedBox
   }
 
   Widget _buildMatchAvatar(Map<String, dynamic> match) {
@@ -612,9 +554,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         child: Text(
           name.isNotEmpty ? name[0].toUpperCase() : '?',
           style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 22),
+              color: Colors.white, fontWeight: FontWeight.w700, fontSize: 22),
         ),
       ),
     );
@@ -622,59 +562,22 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   Widget _buildMessagesSection() {
     final list = _unlockedFiltered;
-    final hasLocked = _lockedMatches.isNotEmpty;
 
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _searchQuery.isEmpty
-                      ? 'Messages'
-                      : 'Results (${list.length})',
-                  style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white),
-                ),
-                if (list.isNotEmpty)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${list.length}',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white),
-                    ),
-                  ),
-              ],
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 4, 24, 12),
+            child: Text(
+              'Messages',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white),
             ),
           ),
-          if (list.isEmpty && _searchQuery.isNotEmpty)
-            Expanded(
-              child: Center(
-                child: Text(
-                  'No results for "$_searchQuery"',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 14),
-                ),
-              ),
-            )
-          else if (list.isEmpty && hasLocked)
+          if (list.isEmpty)
             Expanded(
               child: Center(
                 child: Text(
@@ -704,9 +607,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final isRead = lastMsg['is_read'];
     // FIX BUG-02: use != true so that null is_read (field absent from DB row)
     // is correctly treated as unread, not silently skipped as read.
-    return senderId != null &&
-        senderId != _currentUserId &&
-        isRead != true;
+    return senderId != null && senderId != _currentUserId && isRead != true;
   }
 
   Widget _buildChatItem(Map<String, dynamic> match) {
@@ -726,16 +627,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: unread ? const Color(0xFF3A3A3A) : const Color(0xFF3A3A3A),
-          borderRadius: BorderRadius.circular(16),
-          border: unread
-              ? Border.all(
-                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.25),
-                  width: 1,
-                )
-              : null,
-        ),
         child: Row(
           children: [
             // ── Avatar with online dot ───────────────────────────────────
@@ -748,8 +639,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     child: photo.isNotEmpty
                         ? Image.network(photo,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                _avatarInitial(name))
+                            errorBuilder: (_, __, ___) => _avatarInitial(name))
                         : _avatarInitial(name),
                   ),
                 ),
@@ -764,9 +654,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                         color: const Color(0xFF22C55E),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: unread
-                              ? const Color(0xFF3A3A3A)
-                              : const Color(0xFF3A3A3A),
+                          color: Colors.transparent,
                           width: 2,
                         ),
                       ),
@@ -828,8 +716,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     preview,
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight:
-                          unread ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
                       color: unread
                           ? Colors.white.withValues(alpha: 0.9)
                           : Colors.white.withValues(alpha: 0.5),
@@ -851,8 +738,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     color: unread
                         ? const Color(0xFF9D70FF)
                         : Colors.white.withValues(alpha: 0.4),
-                    fontWeight:
-                        unread ? FontWeight.w600 : FontWeight.normal,
+                    fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
                 if (unread && unreadCount > 0) ...[
@@ -860,8 +746,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   Container(
                     constraints:
                         const BoxConstraints(minWidth: 20, minHeight: 20),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
@@ -905,16 +791,65 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final color = match['circle_color'] as String? ?? 'grey';
     switch (color) {
       case 'grey':
-        _openGameHubForMatch(match);
-      case 'green':
-        _checkAndNavigate(match);
-      case 'red':
+        final canSendGame = match['can_send_game'] as bool? ?? true;
+        if (canSendGame) {
+          // Before opening GameHub, check if there's already an active session
+          // that wasn't loaded yet (timing race with the auto-refresh timer).
+          _openGameOrHub(match);
+        } else {
+          final name =
+              _profileName(match['profile'] as Map<String, dynamic>);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Waiting for $name to start a game...'),
+              backgroundColor: const Color(0xFF6C3FE8),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      case 'green':   // receiver — accept and enter
         _acceptAndNavigate(match);
-      case 'purple':
+      case 'purple':  // sender waiting OR both solving — re-enter game
         _enterGame(match, skipIntro: true);
       default:
         _openConversation(match);
     }
+  }
+
+  // Grey circle tap for sender: check DB for a stale active session first.
+  // If one exists (timing race where circle hasn't refreshed yet), go to it
+  // directly. Otherwise fall through to GameHub.
+  Future<void> _openGameOrHub(Map<String, dynamic> match) async {
+    final matchId = match['match_id'] as String;
+    try {
+      final sessions = await Supabase.instance.client
+          .from('game_sessions')
+          .select('id, game_type, status, challenger_id')
+          .eq('match_id', matchId)
+          .neq('status', 'completed')
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if (!mounted) return;
+
+      if ((sessions as List).isNotEmpty) {
+        final s = Map<String, dynamic>.from(sessions.first as Map);
+        // Only re-enter sessions where the current user is the challenger.
+        if ((s['challenger_id'] as String?) == _currentUserId) {
+          _enterGame({
+            ...match,
+            'active_session_id': s['id'],
+            'active_game_type': s['game_type'],
+            'active_session_status': s['status'],
+            'circle_color': 'purple',
+          }, skipIntro: true);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) _openGameHubForMatch(match);
   }
 
   // Grey: open GameHub so user can pick and send a challenge
@@ -933,18 +868,19 @@ class _ChatsScreenState extends State<ChatsScreen> {
           partnerUserId: partnerUserId,
           partnerName: partnerName,
           onChatUnlocked: () {},
-          onGameSelected: (gameType) =>
-              _sendChallengeForMatch(matchId, partnerUserId, partnerName, gameType),
+          onGameSelected: (gameType) => _sendChallengeForMatch(
+              matchId, partnerUserId, partnerName, gameType),
         ),
       ),
-    );
+    ).then((_) { if (mounted) _loadMatches(); });
   }
 
-  Future<void> _sendChallengeForMatch(
-      String matchId, String partnerUserId, String partnerName, String gameType) async {
+  Future<void> _sendChallengeForMatch(String matchId, String partnerUserId,
+      String partnerName, String gameType) async {
     String? sessionId;
     try {
-      sessionId = await Supabase.instance.client.rpc('create_game_challenge', params: {
+      sessionId =
+          await Supabase.instance.client.rpc('create_game_challenge', params: {
         'p_match_id': matchId,
         'p_challenged_id': partnerUserId,
         'p_game_type': gameType,
@@ -956,43 +892,55 @@ class _ChatsScreenState extends State<ChatsScreen> {
       }
     } catch (_) {}
     if (!mounted) return;
-    _loadMatches();
+
     if (sessionId != null) {
+      // Immediately reflect purple circle in-memory so the UI is correct on return.
+      setState(() {
+        final idx = _matchesWithProfiles.indexWhere(
+            (m) => m['match_id'] == matchId);
+        if (idx >= 0) {
+          _matchesWithProfiles[idx] = {
+            ..._matchesWithProfiles[idx],
+            'circle_color': 'purple',
+            'active_session_id': sessionId,
+            'active_game_type': gameType,
+            'active_session_status': 'active',
+            'chat_unlocked': false,
+          };
+        }
+      });
+
+      // skipIntro: false — the sender is entering this game for the first time;
+      // always show them the intro/welcome screen.
+      // Re-entry (after backing out) is handled by _openGameOrHub with skipIntro: true.
       _enterGame({
         'match_id': matchId,
         'profile': {'id': partnerUserId, 'first_name': partnerName},
         'active_session_id': sessionId,
         'active_game_type': gameType,
-      });
+        'active_session_status': 'active',
+        'circle_color': 'purple',
+        'can_send_game': true,
+      }, skipIntro: false);
     }
+
+    _loadMatches(); // background refresh
   }
 
-  // Green: accept (idempotent) and enter game — challenger re-enters their own session
-  Future<void> _checkAndNavigate(Map<String, dynamic> match) async {
-    final sessionId = match['active_session_id'] as String?;
-    if (sessionId == null) return;
-
-    try {
-      await Supabase.instance.client
-          .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
-    } catch (_) {}
-    if (!mounted) return;
-    // skipIntro=true: User A has already seen the intro and submitted their
-    // puzzle — jump straight to the correct step (wait / solve / done).
-    _enterGame(match, skipIntro: true);
-  }
-
-  // Red: accept the challenge then navigate into the game
+  // Green: receiver accepts and enters game.
+  // skipIntro = true on re-entry (session already active before this tap).
   Future<void> _acceptAndNavigate(Map<String, dynamic> match) async {
     final sessionId = match['active_session_id'] as String?;
     if (sessionId == null) return;
+    final alreadyActive =
+        (match['active_session_status'] as String?) == 'active';
 
     try {
       await Supabase.instance.client
           .rpc('accept_game_challenge', params: {'p_session_id': sessionId});
     } catch (_) {}
     if (!mounted) return;
-    _enterGame(match);
+    _enterGame(match, skipIntro: alreadyActive);
   }
 
   // Purple / green-active: navigate straight into the game
@@ -1053,23 +1001,39 @@ class _ChatsScreenState extends State<ChatsScreen> {
           ),
         ).then(onReturn);
       case 'rps':
+        // On re-entry (skipIntro=true) jump straight to RPSPickScreen —
+        // it runs _checkRejoin() and routes to Pick / Waiting / Reveal.
+        // On first play (skipIntro=false) show the intro screen normally.
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => RPSIntroScreen(
-              currentUserId: _currentUserId,
-              currentUserName: 'You',
-              opponentId: partnerUserId,
-              opponentName: partnerName,
-              sessionId: sessionId,
-              popCount: 1,
-              onChatUnlocked: () {
-                // RPS uses popCount for navigation; just reload on return
-                if (mounted) _loadMatches();
-              },
-            ),
+            builder: (_) => skipIntro
+                ? RPSPickScreen(
+                    currentUserId: _currentUserId,
+                    currentUserName: 'You',
+                    opponentId: partnerUserId,
+                    opponentName: partnerName,
+                    sessionId: sessionId,
+                    popCount: 1,
+                    chatAlreadyUnlocked: match['chat_unlocked'] == true,
+                    showIntroFirst: true, // show intro if user hasn't played yet
+                    onChatUnlocked: () {
+                      if (mounted) _loadMatches();
+                    },
+                  )
+                : RPSIntroScreen(
+                    currentUserId: _currentUserId,
+                    currentUserName: 'You',
+                    opponentId: partnerUserId,
+                    opponentName: partnerName,
+                    sessionId: sessionId,
+                    popCount: 1,
+                    onChatUnlocked: () {
+                      if (mounted) _loadMatches();
+                    },
+                  ),
           ),
-        );
+        ).then(onReturn);
       default:
         Navigator.push(
           context,

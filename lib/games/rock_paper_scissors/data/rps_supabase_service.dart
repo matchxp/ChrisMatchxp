@@ -135,6 +135,22 @@ class RPSSupabaseService {
     );
   }
 
+  /// Returns the current user's submitted move for this session, null if not yet submitted.
+  Future<RPSMove?> fetchMyMove(String sessionId, String currentUserId) async {
+    try {
+      final rows = await _client
+          .from('rps_moves')
+          .select('move')
+          .eq('session_id', sessionId)
+          .eq('player_id', currentUserId);
+      if ((rows as List).isEmpty) return null;
+      return RPSMove.values.firstWhere((m) => m.name == rows.first['move'],
+          orElse: () => RPSMove.rock);
+    } catch (_) {
+      return null;
+    }
+  }
+
   void dispose() {
     _movesChannel?.unsubscribe();
     _sessionChannel?.unsubscribe();

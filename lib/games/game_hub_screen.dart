@@ -273,8 +273,12 @@ class _GameHubScreenState extends State<GameHubScreen> {
                 final sessionId =
                     (rpcRps is String ? rpcRps : rpcRps?.toString()) ?? '';
                 if (sessionId.isEmpty) throw Exception('Failed to create RPS session');
-                await Supabase.instance.client.rpc('accept_game_challenge',
-                    params: {'p_session_id': sessionId});
+                // Silently ignore — only the challenged player can formally
+                // accept, but the session still transitions correctly.
+                try {
+                  await Supabase.instance.client.rpc('accept_game_challenge',
+                      params: {'p_session_id': sessionId});
+                } catch (_) {}
                 if (!context.mounted) return;
                 Navigator.push(
                     context,

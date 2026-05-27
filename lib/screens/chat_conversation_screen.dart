@@ -17,7 +17,6 @@ import '../games/word_search/word_search_models.dart';
 import '../games/word_search/word_search_supabase_wrapper.dart';
 import '../games/emoji_charades/emoji_charades_game_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_intro_screen.dart';
-import '../games/rock_paper_scissors/screens/rps_pick_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_waiting_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_reveal_screen.dart';
 import '../games/rock_paper_scissors/data/rps_models.dart';
@@ -776,18 +775,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     _channel = _matchingService.subscribeToMessages(
       widget.matchId,
       (msg) {
-        // game_accepted: partner accepted our challenge — navigate to game.
+        // game_accepted: partner accepted our challenge.
+        // No auto-navigation — challenger enters the game by tapping the card.
+        // Just refresh the message stream so the card status updates.
         if (msg['event_type'] == 'game_accepted') {
-          final acceptedBy = msg['accepted_by'] as String?;
-          debugPrint(
-              '[onMessage] game_accepted received acceptedBy=$acceptedBy me=$_currentUserId');
-          // Navigate if the acceptor is NOT us (i.e., we are the challenger).
-          if (acceptedBy != _currentUserId && mounted) {
-            _navigateToGame(
-              msg['game_type'] as String,
-              msg['session_id'] as String,
-            );
-          }
+          debugPrint('[onMessage] game_accepted — refreshing card status');
+          if (mounted) _restartMessageStream();
           return;
         }
         // Only refresh on messages from the partner — our own broadcasts
@@ -797,14 +790,17 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         if (mounted) _restartMessageStream();
       },
       onTyping: _handlePartnerTyping,
-      onUpdate: (updatedMsg) {
-        // Patch in-place for snappier is_read / reaction updates.
+      onReadReceipt: () {
+        // Partner opened chat and marked our messages as read.
+        // Patch every outgoing message to is_read:true so the double-tick
+        // shows immediately — no stream restart needed.
         if (!mounted) return;
-        final id = updatedMsg['id'];
         setState(() {
-          final idx = _messages.indexWhere((m) => m['id'] == id);
-          if (idx != -1) {
-            _messages[idx] = {..._messages[idx], ...updatedMsg};
+          for (int i = 0; i < _messages.length; i++) {
+            if (_messages[i]['sender_id'] == _currentUserId &&
+                _messages[i]['is_read'] != true) {
+              _messages[i] = {..._messages[i], 'is_read': true};
+            }
           }
         });
       },
@@ -911,9 +907,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
       _matchingService.broadcastMessage(widget.matchId, realMsg);
 
-      final meta = realMsg['meta'];
-      final sessionId = (meta is Map ? meta['session_id'] : null) as String?;
-      if (sessionId != null) _pollForGameAcceptance(sessionId, gameType);
+      // No auto-navigation after sending — challenger enters via the card tap.
     } catch (e) {
       if (!mounted) return;
       setState(() => _messages.removeWhere((m) =>
@@ -993,10 +987,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       final createdAt =
           DateTime.tryParse(row['created_at'] as String? ?? '');
 
-      // Skip sessions older than 5 minutes — treat as expired, no auto-nav.
+      // Skip sessions older than 24 hours — treat as expired, no auto-nav.
       if (createdAt != null &&
           DateTime.now().toUtc().difference(createdAt.toUtc()) >
-              const Duration(minutes: 5)) {
+              const Duration(hours: 24)) {
         debugPrint('[Resume] session expired, skipping session=$sessionId');
         return;
       }
@@ -1068,7 +1062,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       if (!mounted) return;
       _restartMessageStream();
       _refreshSessionStream();
-      _loadScores();
+      // _loadScores() is intentionally omitted here — game_scores is in the
+      // supabase_realtime publication so subscribeToScores() fires as soon as
+      // a score row is inserted, updating the board exactly once. Calling it
+      // again here would cause a visible double-update.
     }
 
     // ── RPS rejoin: check DB to resume at the right screen ────────────
@@ -1083,11 +1080,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         if (!mounted) return;
 
         if (myRows.isEmpty) {
-          // Haven't picked yet — skip intro, go straight to pick screen.
+          // Haven't picked yet — show intro first (user hasn't started the game).
           Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => RPSPickScreen(
+                builder: (_) => RPSIntroScreen(
                   currentUserId: _currentUserId,
                   currentUserName: 'You',
                   opponentId: partnerUserId,
@@ -1297,11 +1294,77 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 _showBlockDialog();
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.heart_broken_outlined,
+                  color: Color(0xFFFF4D6D)),
+              title: Text('Unmatch $_otherName',
+                  style: const TextStyle(color: Color(0xFFFF4D6D))),
+              onTap: () {
+                Navigator.pop(context);
+                _showUnmatchDialog();
+              },
+            ),
             const SizedBox(height: 8),
           ],
         ),
       ),
     );
+  }
+
+  // ── Unmatch ────────────────────────────────────────────────────────────────
+  void _showUnmatchDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A0D3A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Unmatch?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'You will no longer be matched with $_otherName. '
+          'All messages and game history will be deleted permanently.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6))),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // close dialog
+              await _doUnmatch();
+            },
+            child: const Text(
+              'Unmatch',
+              style: TextStyle(
+                  color: Color(0xFFFF4D6D), fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _doUnmatch() async {
+    try {
+      await _matchingService.deleteMatch(widget.matchId);
+      if (!mounted) return;
+      // Pop back to chats list — the match no longer exists
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not unmatch: $e'),
+          backgroundColor: const Color(0xFFFF4D6D),
+        ),
+      );
+    }
   }
 
   void _showReportDialog() {
@@ -1600,7 +1663,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       body: MatchXPBackground(
         child: Padding(
           // Shift the entire content area above the keyboard.
-          padding: EdgeInsets.only(bottom: keyboardHeight),
+          // When keyboard is hidden (keyboardHeight == 0), still pad by the
+          // system nav bar height so the input bar is never hidden behind it
+          // on Samsung devices and other phones with on-screen navigation bars.
+          padding: EdgeInsets.only(
+            bottom: math.max(
+              keyboardHeight,
+              MediaQuery.of(context).padding.bottom,
+            ),
+          ),
           child: Stack(
             children: [
               Column(
@@ -2055,50 +2126,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                       fontFamily: 'Fredoka One')),
             ]),
           ]),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: () {
-              setState(() => _scoreboardExpanded = false);
-              final partnerUserId = widget.otherProfile['id'] as String? ?? '';
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => GameHubScreen(
-                      matchId: widget.matchId,
-                      currentUserId: _currentUserId,
-                      partnerUserId: partnerUserId,
-                      partnerName: _otherName,
-                      chatAlreadyUnlocked: _chatUnlocked,
-                      onChatUnlocked: () {
-                        if (mounted) setState(() => _chatUnlocked = true);
-                      },
-                    ),
-                  )).then((_) {
-                if (mounted) {
-                  _loadScores();
-                  _restartMessageStream();
-                  _refreshSessionStream();
-                  _checkGameStatus();
-                }
-              });
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6C3FE8).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.3)),
-              ),
-              child: const Text('🎮  Play Again',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: Color(0xFF6C3FE8),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700)),
-            ),
-          ),
         ]),
       ),
     );
@@ -2630,7 +2657,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   }
 
   // ── Game challenge bubble (message_type = 'game_challenge') ──────────────
-  static const _kInviteExpiry = Duration(minutes: 5);
+  static const _kInviteExpiry = Duration(hours: 24);
 
   Widget _buildGameChallengeBubble(
       Map<String, dynamic> msg, bool isMe, bool showTime) {
@@ -2671,10 +2698,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     final canAccept =
         !isMe && liveStatus == 'pending' && sessionId != null && !isExpired;
     // 'active'    = both players accepted / both submitted their puzzles — normal rejoin
-    // 'submitted' = one player already submitted their puzzle (Word Search / EC),
-    //               the other hasn't yet.  Both players should still be able to
-    //               tap the card to re-enter the game at the correct step.
-    final canRejoin = (liveStatus == 'active' || liveStatus == 'submitted') &&
+    // 'submitted' = one player already submitted their puzzle (Word Search / EC)
+    // 'pending' + isMe = challenger sent the challenge and can enter immediately
+    //                    (new flow: sender plays before receiver accepts)
+    final canRejoin = ((liveStatus == 'pending' && isMe) ||
+            liveStatus == 'active' ||
+            liveStatus == 'submitted') &&
         sessionId != null &&
         !isExpired;
     final isDone = liveStatus == 'completed' || isExpired;
@@ -3328,7 +3357,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           createdAt != null &&
           DateTime.now().toUtc().difference(createdAt) > _kInviteExpiry;
       if (isExpired) continue;
-      if (liveStatus == 'active' || liveStatus == 'submitted') {
+      final isSentByMe = msg['sender_id'] == _currentUserId;
+      // Active/submitted = anyone can rejoin.
+      // Pending + I sent it = challenger re-enters their own game before
+      // receiver accepts (new sender-plays-first flow).
+      if (liveStatus == 'active' ||
+          liveStatus == 'submitted' ||
+          (liveStatus == 'pending' && isSentByMe)) {
         final gameType = meta['game_type'] as String? ?? 'word_search';
         return (gameType: gameType, sessionId: sessionId);
       }
@@ -3425,7 +3460,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                       },
                     ),
                   ),
-                ).then((_) => _checkGameStatus());
+                ).then((_) {
+                    // Refresh messages + sessions so the game_challenge card
+                    // created by GameHub's RPC appears in _messages.
+                    // Without this, _findRejoinableChallenge returns null and
+                    // the locked bar keeps showing "Play a Game" instead of
+                    // "Resume Game", trapping the user in a duplicate-guard loop.
+                    if (mounted) {
+                      _restartMessageStream();
+                      _refreshSessionStream();
+                      _checkGameStatus();
+                    }
+                  });
               }
             },
             child: Container(

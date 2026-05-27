@@ -17,13 +17,17 @@ class RPSTutorialSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: RPSTheme.bgPanel,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(top: BorderSide(color: RPSTheme.dimLine)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
+    // SafeArea(top: false) ensures the "GOT IT" button is not hidden behind
+    // the system navigation bar on Samsung and other Android devices.
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: RPSTheme.bgPanel,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(top: BorderSide(color: RPSTheme.dimLine)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -89,7 +93,8 @@ class RPSTutorialSheet extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
         ],
-      ),
-    );
+      ),       // Column
+      ),       // Container
+    );         // SafeArea
   }
 }

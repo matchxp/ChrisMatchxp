@@ -21,6 +21,7 @@ class RPSIntroScreen extends StatefulWidget {
     required this.onChatUnlocked,
     this.popCount = 1,
     this.chatAlreadyUnlocked = false,
+    this.skipIntro = false,
   });
 
   final String currentUserId;
@@ -31,6 +32,9 @@ class RPSIntroScreen extends StatefulWidget {
   final VoidCallback onChatUnlocked;
   final int popCount;
   final bool chatAlreadyUnlocked;
+  /// When true, bypass the intro animation and jump straight to RPSPickScreen.
+  /// RPSPickScreen will then check DB state and route to Pick / Waiting / Reveal.
+  final bool skipIntro;
 
   @override
   State<RPSIntroScreen> createState() => _RPSIntroScreenState();
@@ -74,6 +78,11 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
     Future.delayed(const Duration(milliseconds: 1200), () { if (mounted) _fc2.repeat(reverse: true); });
 
     _scheduleNextShuffle();
+
+    // Skip intro on re-entry — RPSPickScreen will detect DB state and route correctly.
+    if (widget.skipIntro) {
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _play(); });
+    }
   }
 
   @override
