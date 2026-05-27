@@ -173,12 +173,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
           } catch (_) {}
         }
 
-        // Determine if the current user is allowed to send game challenges.
-        // matched_by = the user who completed the match (User B, second liker).
-        // null means legacy match → allow both (graceful fallback).
-        final matchedBy = m['matched_by'] as String?;
-        final canSendGame = matchedBy == null || matchedBy == _currentUserId;
-
         return {
           ...m,
           'last_message': last,
@@ -189,7 +183,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
           'active_session_id': activeSessionId,
           'active_game_type': activeGameType,
           'active_session_status': activeSessionStatus,
-          'can_send_game': canSendGame,
         };
       }));
 
@@ -791,23 +784,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final color = match['circle_color'] as String? ?? 'grey';
     switch (color) {
       case 'grey':
-        final canSendGame = match['can_send_game'] as bool? ?? true;
-        if (canSendGame) {
-          // Before opening GameHub, check if there's already an active session
-          // that wasn't loaded yet (timing race with the auto-refresh timer).
-          _openGameOrHub(match);
-        } else {
-          final name =
-              _profileName(match['profile'] as Map<String, dynamic>);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Waiting for $name to start a game...'),
-              backgroundColor: const Color(0xFF6C3FE8),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
+        // Both users can send a game request — whoever sends first wins.
+        // _openGameOrHub checks for an existing session before opening GameHub.
+        _openGameOrHub(match);
       case 'green':   // receiver — accept and enter
         _acceptAndNavigate(match);
       case 'purple':  // sender waiting OR both solving — re-enter game
@@ -817,12 +796,15 @@ class _ChatsScreenState extends State<ChatsScreen> {
     }
   }
 
-  // Grey circle tap for sender: check DB for a stale active session first.
-  // If one exists (timing race where circle hasn't refreshed yet), go to it
-  // directly. Otherwise fall through to GameHub.
+  // Grey circle tap: check DB for an existing active session first.
+  // If one exists, route appropriately (re-enter as challenger OR accept as
+  // challenged). If no session exists but the partner is currently on the
+  // GameHub choosing screen, show a "partner is choosing" message.
+  // Otherwise open GameHub so the user can pick a game.
   Future<void> _openGameOrHub(Map<String, dynamic> match) async {
     final matchId = match['match_id'] as String;
     try {
+      // 1. Check for an active/pending session — highest priority.
       final sessions = await Supabase.instance.client
           .from('game_sessions')
           .select('id, game_type, status, challenger_id')
@@ -835,8 +817,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
       if ((sessions as List).isNotEmpty) {
         final s = Map<String, dynamic>.from(sessions.first as Map);
-        // Only re-enter sessions where the current user is the challenger.
-        if ((s['challenger_id'] as String?) == _currentUserId) {
+        final challengerId = s['challenger_id'] as String?;
+        if (challengerId == _currentUserId) {
+          // I sent this challenge — re-enter as challenger.
           _enterGame({
             ...match,
             'active_session_id': s['id'],
@@ -844,20 +827,91 @@ class _ChatsScreenState extends State<ChatsScreen> {
             'active_session_status': s['status'],
             'circle_color': 'purple',
           }, skipIntro: true);
-          return;
+        } else {
+          // Partner sent first — I'm the receiver. Accept and enter.
+          _acceptAndNavigate({
+            ...match,
+            'active_session_id': s['id'],
+            'active_game_type': s['game_type'],
+            'active_session_status': s['status'],
+            'circle_color': 'green',
+          });
         }
+        return;
+      }
+
+      // 2. No session yet — check if someone is currently on the GameHub
+      //    choosing screen. If it's the partner AND their slot hasn't expired,
+      //    block this user until the partner finishes or times out (5 min).
+      //    The expiry handles edge cases where the partner switched tabs or
+      //    force-closed the app without clearing the slot.
+      final matchRow = await Supabase.instance.client
+          .from('matches')
+          .select('game_chooser_id, game_chooser_expires_at')
+          .eq('id', matchId)
+          .maybeSingle();
+
+      if (!mounted) return;
+
+      final gameChooserId = matchRow?['game_chooser_id'] as String?;
+      final expiresAtRaw = matchRow?['game_chooser_expires_at'] as String?;
+      final expiresAt = expiresAtRaw != null
+          ? DateTime.tryParse(expiresAtRaw)?.toLocal()
+          : null;
+      final slotIsActive = gameChooserId != null &&
+          (expiresAt == null || DateTime.now().isBefore(expiresAt));
+
+      if (slotIsActive && gameChooserId != _currentUserId) {
+        // Partner is on the game-picker screen and their slot is still live.
+        final name = _profileName(match['profile'] as Map<String, dynamic>);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$name is choosing a game, please wait...'),
+          backgroundColor: const Color(0xFF6C3FE8),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ));
+        return;
       }
     } catch (_) {}
 
     if (mounted) _openGameHubForMatch(match);
   }
 
-  // Grey: open GameHub so user can pick and send a challenge
-  void _openGameHubForMatch(Map<String, dynamic> match) {
+  // Grey: claim the "choosing" slot then open GameHub so user can pick a game.
+  // The slot is released automatically when the user leaves GameHub (back button
+  // or game selected). This prevents the partner from opening GameHub at the
+  // same time and creating two simultaneous challenges.
+  Future<void> _openGameHubForMatch(Map<String, dynamic> match) async {
     final profile = match['profile'] as Map<String, dynamic>;
     final matchId = match['match_id'] as String;
     final partnerUserId = profile['id'] as String? ?? '';
     final partnerName = _profileName(profile);
+
+    // Claim the slot with a 5-minute expiry. Failure is silently swallowed —
+    // we still open GameHub so the UX is never blocked by a DB write.
+    final expiresAt = DateTime.now().toUtc().add(const Duration(minutes: 5));
+    try {
+      await Supabase.instance.client.from('matches').update({
+        'game_chooser_id': _currentUserId,
+        'game_chooser_expires_at': expiresAt.toIso8601String(),
+      }).eq('id', matchId);
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    // Heartbeat: renew the expiry every 4 minutes so a user who is still
+    // actively on GameHub (or briefly switched tabs) never has their slot
+    // expire mid-session. The timer is cancelled as soon as GameHub is popped.
+    // If the app is force-closed, the timer dies and the last 5-min window
+    // eventually expires on its own (worst case ~9 min total).
+    Timer? heartbeat;
+    heartbeat = Timer.periodic(const Duration(minutes: 1), (_) {
+      final renewed = DateTime.now().toUtc().add(const Duration(minutes: 5));
+      Supabase.instance.client.from('matches').update({
+        'game_chooser_expires_at': renewed.toIso8601String(),
+      }).eq('id', matchId).eq('game_chooser_id', _currentUserId)
+          .then((_) {}).catchError((_) {});
+    });
 
     Navigator.push(
       context,
@@ -872,11 +926,83 @@ class _ChatsScreenState extends State<ChatsScreen> {
               matchId, partnerUserId, partnerName, gameType),
         ),
       ),
-    ).then((_) { if (mounted) _loadMatches(); });
+    ).then((_) async {
+      // User left GameHub (back button or game selected) — cancel heartbeat
+      // and release the slot.
+      heartbeat?.cancel();
+      await _clearGameChooser(matchId);
+      if (mounted) _loadMatches();
+    });
+  }
+
+  // Clears the "choosing" slot — only if it's still this user (guards against
+  // accidentally clearing a slot the partner claimed after we left). Safe to
+  // call redundantly (e.g. both from _sendChallengeForMatch and from .then()).
+  Future<void> _clearGameChooser(String matchId) async {
+    try {
+      await Supabase.instance.client.from('matches').update({
+        'game_chooser_id': null,
+        'game_chooser_expires_at': null,
+      }).eq('id', matchId).eq('game_chooser_id', _currentUserId);
+    } catch (_) {}
   }
 
   Future<void> _sendChallengeForMatch(String matchId, String partnerUserId,
       String partnerName, String gameType) async {
+    // Release the "choosing" slot immediately — a session is about to be
+    // created which acts as the new lock. Also clears before the pre-check
+    // so the partner's slot is freed even if we end up navigating to theirs.
+    await _clearGameChooser(matchId);
+    if (!mounted) return;
+
+    // Guard: check if the partner already sent a session while we were in
+    // GameHub (race condition — both users can now send). If so, navigate to
+    // that session instead of creating a duplicate.
+    try {
+      final existing = await Supabase.instance.client
+          .from('game_sessions')
+          .select('id, game_type, status, challenger_id')
+          .eq('match_id', matchId)
+          .neq('status', 'completed')
+          .order('created_at', ascending: false)
+          .limit(1);
+      if (!mounted) return;
+      if ((existing as List).isNotEmpty) {
+        final s = Map<String, dynamic>.from(existing.first as Map);
+        final challengerId = s['challenger_id'] as String?;
+        final matchData = _matchesWithProfiles.firstWhere(
+          (m) => m['match_id'] == matchId,
+          orElse: () => {
+            'match_id': matchId,
+            'profile': {'id': partnerUserId, 'first_name': partnerName},
+            'chat_unlocked': false,
+          },
+        );
+        if (challengerId == _currentUserId) {
+          // I already have a pending session — re-enter it.
+          _enterGame({
+            ...matchData,
+            'active_session_id': s['id'],
+            'active_game_type': s['game_type'],
+            'active_session_status': s['status'],
+            'circle_color': 'purple',
+          }, skipIntro: true);
+        } else {
+          // Partner sent first — accept theirs and play.
+          _acceptAndNavigate({
+            ...matchData,
+            'active_session_id': s['id'],
+            'active_game_type': s['game_type'],
+            'active_session_status': s['status'],
+            'circle_color': 'green',
+          });
+        }
+        _loadMatches();
+        return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+
     String? sessionId;
     try {
       sessionId =
@@ -920,7 +1046,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
         'active_game_type': gameType,
         'active_session_status': 'active',
         'circle_color': 'purple',
-        'can_send_game': true,
       }, skipIntro: false);
     }
 

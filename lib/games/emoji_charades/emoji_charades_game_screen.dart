@@ -1158,14 +1158,9 @@ class _State extends State<EmojiCharadesGameScreen>
                 ),
                 child: Stack(alignment: Alignment.center, children: [
                   if (!hasEmojis)
-                    Column(mainAxisSize: MainAxisSize.min, children: [
-                      const Text('😊', style: TextStyle(fontSize: 36)),
-                      const SizedBox(height: 10),
-                      Text('Tap to open emoji keyboard',
-                          textAlign: TextAlign.center,
-                          style: _f(15, c: const Color(0xFF4E3D72))),
-                      const SizedBox(height: 48),
-                    ]),
+                    Text('Tap to open emoji keyboard',
+                        textAlign: TextAlign.center,
+                        style: _f(15, c: const Color(0xFF4E3D72))),
                   TextField(
                     controller: _emojiCtrl,
                     focusNode: _emojiFocus,
