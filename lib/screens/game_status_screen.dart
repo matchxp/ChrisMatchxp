@@ -62,7 +62,7 @@ class GameStatusScreen extends StatelessWidget {
       case MatchGamePhase.waitingPartnerSolve:
         return 'You solved it! ✅  Waiting for $name to solve yours…';
       case MatchGamePhase.bothSolved:
-        return 'Chat unlocked 🎉  Start messaging!';
+        return 'Chat unlocked! Start messaging!';
       case null:
         return 'No game started yet — challenge $name!';
     }

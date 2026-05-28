@@ -204,6 +204,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required String matchId,
     required String partnerUserId,
   }) {
+    // Remove any existing popup before inserting a new one so we don't leak
+    // a stuck entry when two matches arrive before the first is dismissed.
+    _matchOverlayEntry?.remove();
+    _matchOverlayEntry = null;
+
     setState(() {
       _matchedCardProfile = cardProfile;
       _matchedMatchId = matchId;
@@ -214,7 +219,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _matchOverlayEntry = OverlayEntry(
       builder: (_) => Positioned.fill(child: _buildMatchPopup()),
     );
-    Navigator.of(context, rootNavigator: true).overlay?.insert(_matchOverlayEntry!);
+    Navigator.of(context, rootNavigator: true)
+        .overlay
+        ?.insert(_matchOverlayEntry!);
   }
 
   void _closeMatchPopup() {
@@ -454,8 +461,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Material(
       type: MaterialType.transparency,
       child: GestureDetector(
-      onTap: _closeMatchPopup,
-      child: MatchXPBackground(
+        onTap: _closeMatchPopup,
+        child: MatchXPBackground(
           child: Align(
             alignment: const Alignment(0, 0.25),
             child: Transform.translate(
@@ -492,7 +499,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             fontWeight: FontWeight.w400,
                           ),
                         ),
-                        const SizedBox(height: 110),
+                        const SizedBox(height: 95),
                         // Two cards — poker overlap, right card lifted
                         Center(
                           child: Stack(
@@ -518,7 +525,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 60),
+                        const SizedBox(height: 70),
                         // Buttons — same size pill style
                         GestureDetector(
                           onTap: () {
@@ -598,8 +605,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ), // ScaleTransition
             ), // Transform.translate
           ), // Align
-      ), // MatchXPBackground
-    ), // GestureDetector
+        ), // MatchXPBackground
+      ), // GestureDetector
     ); // Material
   }
 
@@ -699,7 +706,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('🎉', style: TextStyle(fontSize: 60)),
           const SizedBox(height: 16),
           const Text(
             "You've seen everyone!",

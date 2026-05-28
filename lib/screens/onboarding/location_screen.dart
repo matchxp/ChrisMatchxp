@@ -61,7 +61,7 @@ class _LocationScreenState extends State<LocationScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Profile Complete! 🎉'),
+            content: Text('Profile complete!'),
             backgroundColor: _purple,
           ),
         );

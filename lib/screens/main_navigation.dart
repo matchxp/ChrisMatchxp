@@ -54,7 +54,7 @@ class _MainNavigationState extends State<MainNavigation> {
   void initState() {
     super.initState();
     _loadMatchesAndSubscribe();
-    _matchPollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _matchPollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _pollForNewMatches();
     });
   }
@@ -85,12 +85,11 @@ class _MainNavigationState extends State<MainNavigation> {
         // New match detected — show a notification banner for User A.
         final profile = match['profile'] as Map<String, dynamic>?;
         if (profile != null) {
-          final name = profile['first_name'] as String? ?? 'Someone';
           _showNotificationBanner(
             matchId: matchId,
-            senderName: "It's a Match! 🎉",
+            senderName: "It's a Match!",
             senderPhoto: _firstPhoto(profile),
-            message: 'You and $name liked each other! Tap to play.',
+            message: 'Tap to play!',
             matchEntry: match,
           );
         }
@@ -212,8 +211,7 @@ class _MainNavigationState extends State<MainNavigation> {
     // 4 s window elapses, the old timer is cancelled (see _dismissNotification)
     // and can't accidentally dismiss the new banner.
     _autoDismissTimer?.cancel();
-    _autoDismissTimer =
-        Timer(const Duration(seconds: 4), _dismissNotification);
+    _autoDismissTimer = Timer(const Duration(seconds: 4), _dismissNotification);
   }
 
   Future<void> _handleNotificationTap(
@@ -315,10 +313,10 @@ class _MainNavigationState extends State<MainNavigation> {
                   activeIcon: Icons.person_rounded,
                   index: 3),
             ],
-          ),     // Row
-        ),       // Padding
-      ),         // SafeArea
-    );           // outer Container
+          ), // Row
+        ), // Padding
+      ), // SafeArea
+    ); // outer Container
   }
 
   Widget _buildNavItem({
@@ -422,186 +420,159 @@ class _NotificationBannerState extends State<_NotificationBanner>
       left: 0,
       right: 0,
       child: SafeArea(
-        child: AnimatedBuilder(
-          animation: _anim,
-          builder: (ctx, child) {
-            final slide = Tween<Offset>(
-              begin: const Offset(0, -1.2),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: _anim,
-              curve: Curves.easeOutCubic,
-            ));
-            final fade = CurvedAnimation(
-              parent: _anim,
-              curve: Curves.easeIn,
-            );
-            return SlideTransition(
-              position: slide,
-              child: FadeTransition(opacity: fade, child: child),
-            );
-          },
-          child: Material(
-            type: MaterialType.transparency,
-            // Pill-shaped banner — tap area and X are sibling GestureDetectors
-            // so they never compete in the gesture arena.
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(999),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF2D1060), Color(0xFF160830)],
-                ),
-                border: Border.all(
-                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.60),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.45),
-                    blurRadius: 28,
-                    spreadRadius: 1,
-                    offset: const Offset(0, 4),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 10),
-                    // ── Avatar ───────────────────────────────────────────────
-                    Container(
-                      width: 42,
-                      height: 42,
-                      margin: const EdgeInsets.symmetric(vertical: 9),
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [Color(0xFFA78BFA), Color(0xFF6C3FE8)],
-                        ),
-                      ),
-                      padding: const EdgeInsets.all(2),
-                      child: ClipOval(
-                        child: widget.senderPhoto.isNotEmpty
-                            ? Image.network(
-                                widget.senderPhoto,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    _initials(widget.senderName),
-                              )
-                            : _initials(widget.senderName),
-                      ),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.6,
+            child: AnimatedBuilder(
+              animation: _anim,
+              builder: (ctx, child) {
+                final slide = Tween<Offset>(
+                  begin: const Offset(0, -1.2),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: _anim,
+                  curve: Curves.easeOutCubic,
+                ));
+                final fade = CurvedAnimation(
+                  parent: _anim,
+                  curve: Curves.easeIn,
+                );
+                return SlideTransition(
+                  position: slide,
+                  child: FadeTransition(opacity: fade, child: child),
+                );
+              },
+              child: Material(
+                type: MaterialType.transparency,
+                // Pill-shaped banner — tap area and X are sibling GestureDetectors
+                // so they never compete in the gesture arena.
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF2D1060), Color(0xFF160830)],
                     ),
-                    const SizedBox(width: 10),
-                    // ── Name + message — tappable ─────────────────────────────
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: widget.onTap,
-                        behavior: HitTestBehavior.opaque,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
+                    border: Border.all(
+                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.60),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF6C3FE8).withValues(alpha: 0.45),
+                        blurRadius: 28,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 4),
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 10),
+                        // ── Avatar ───────────────────────────────────────────────
+                        Container(
+                          width: 36,
+                          height: 36,
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [Color(0xFFA78BFA), Color(0xFF6C3FE8)],
+                            ),
+                          ),
+                          padding: const EdgeInsets.all(2),
+                          child: ClipOval(
+                            child: widget.senderPhoto.isNotEmpty
+                                ? Image.network(
+                                    widget.senderPhoto,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        _initials(widget.senderName),
+                                  )
+                                : _initials(widget.senderName),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // ── Name + message — tappable ─────────────────────────────
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: widget.onTap,
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 7),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  // Pill MATCHXP badge
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFF6C3FE8),
-                                          Color(0xFF9D50BB),
-                                        ],
-                                      ),
-                                      borderRadius: BorderRadius.circular(99),
-                                    ),
-                                    child: const Text(
-                                      '✦ MATCHXP',
-                                      style: TextStyle(
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w800,
+                                  Flexible(
+                                    child: Text(
+                                      widget.senderName,
+                                      style: GoogleFonts.fredoka(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
                                         color: Colors.white,
-                                        letterSpacing: 0.8,
                                         decoration: TextDecoration.none,
+                                        height: 1.1,
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  const Spacer(),
+                                  const SizedBox(height: 2),
                                   Text(
-                                    'now',
+                                    widget.message,
                                     style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.white.withValues(alpha: 0.40),
+                                      fontSize: 12,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.65),
                                       decoration: TextDecoration.none,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                widget.senderName,
-                                style: GoogleFonts.fredoka(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                  decoration: TextDecoration.none,
-                                  height: 1.1,
-                                ),
-                              ),
-                              const SizedBox(height: 1),
-                              Text(
-                                widget.message,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white.withValues(alpha: 0.65),
-                                  decoration: TextDecoration.none,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // ── X button — sibling so it never competes with onTap ───
-                    GestureDetector(
-                      onTap: widget.onDismiss,
-                      behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.10),
-                          shape: BoxShape.circle,
+                        const SizedBox(width: 6),
+                        // ── X button — sibling so it never competes with onTap ───
+                        GestureDetector(
+                          onTap: widget.onDismiss,
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.10),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.close,
+                              size: 14,
+                              color: Colors.white.withValues(alpha: 0.60),
+                            ),
+                          ),
                         ),
-                        child: Icon(
-                          Icons.close,
-                          size: 14,
-                          color: Colors.white.withValues(alpha: 0.60),
-                        ),
-                      ),
+                        const SizedBox(width: 10),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ), // Material
-        ), // AnimatedBuilder
+              ), // Material
+            ), // AnimatedBuilder
+          ), // SizedBox
+        ), // Align
       ), // SafeArea
     ); // Positioned
   }
