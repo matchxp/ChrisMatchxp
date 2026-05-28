@@ -1677,7 +1677,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               Column(
                 children: [
                   SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
-                  if (_scoresLoaded && (_myWins > 0 || _partnerWins > 0))
+                  if (_scoresLoaded && _chatUnlocked)
                     _buildScoreboard(),
                   Expanded(child: _loading ? _buildLoader() : _buildMessageList()),
                   // Typing indicator sits just above reply banner / input
@@ -1950,7 +1950,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     final total = _myWins + _partnerWins;
     final myPct = total == 0 ? 0.5 : _myWins / total;
     final statusText = total == 0
-        ? 'No games yet'
+        ? "It's tied! 🤝"
         : _myWins == _partnerWins
             ? "It's tied! 🤝"
             : _myWins > _partnerWins

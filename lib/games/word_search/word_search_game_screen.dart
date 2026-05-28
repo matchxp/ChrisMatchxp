@@ -1092,17 +1092,18 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
         ] else ...[
           if (_showSkip) ...[
             const SizedBox(height: 12),
-            GestureDetector(
-              onTap: _doSkip,
-              child: Container(
-                width: double.infinity, height: 42,
-                decoration: BoxDecoration(
-                  color: _red.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: _red.withOpacity(0.35), width: 1.5),
+            Center(
+              child: GestureDetector(
+                onTap: _doSkip,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 11),
+                  decoration: BoxDecoration(
+                    color: _red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: _red.withOpacity(0.35), width: 1.5),
+                  ),
+                  child: Text('Skip This Time', style: _fredoka(14, FontWeight.w600, _redSoft)),
                 ),
-                alignment: Alignment.center,
-                child: Text('Skip This Time', style: _fredoka(14, FontWeight.w600, _redSoft)),
               ),
             ),
           ],

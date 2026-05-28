@@ -1156,25 +1156,23 @@ class _State extends State<EmojiCharadesGameScreen>
                         ]
                       : [],
                 ),
-                child: Stack(alignment: Alignment.center, children: [
-                  if (!hasEmojis)
-                    Text('Tap to open emoji keyboard',
-                        textAlign: TextAlign.center,
-                        style: _f(15, c: const Color(0xFF4E3D72))),
-                  TextField(
-                    controller: _emojiCtrl,
-                    focusNode: _emojiFocus,
-                    onChanged: (v) => setState(() => _myEmojis = v),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 42, letterSpacing: 4),
-                    maxLines: 2,
-                    inputFormatters: [_EmojiOnlyFormatter()],
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      hintText: '',
-                    ),
+                child: TextField(
+                  controller: _emojiCtrl,
+                  focusNode: _emojiFocus,
+                  onChanged: (v) => setState(() => _myEmojis = v),
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                    fontSize: hasEmojis ? 42.0 : 15.0,
+                    letterSpacing: hasEmojis ? 4.0 : 0.0,
                   ),
-                ]),
+                  maxLines: 2,
+                  inputFormatters: [_EmojiOnlyFormatter()],
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    hintText: 'Tap to open emoji keyboard',
+                    hintStyle: _f(15, c: const Color(0xFF4E3D72)),
+                  ),
+                ),
               ),
             ),
 
@@ -1391,139 +1389,144 @@ class _State extends State<EmojiCharadesGameScreen>
 
       // ── Timer ─────────────────────────────────────────────────
       if (showTimer) ...[
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           _TimerCircle(value: _timerVal, urgent: _timerVal <= 5),
           const SizedBox(width: 6),
           Text('seconds', style: _f(14, c: const Color(0xFF4E3D72))),
         ]),
-      ] else
-        const SizedBox(height: 14),
+      ],
+      const SizedBox(height: 16),
 
-      const Spacer(),
+      // ── Scrollable: answer area + skip + submit ───────────────
+      // Replaces the old Spacer/Spacer layout which collapsed when
+      // the keyboard opened, cramping the Skip and Submit buttons.
+      Expanded(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(
+            left: 18,
+            right: 18,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 28,
+          ),
+          child: Column(children: [
 
-      // ── Answer area ───────────────────────────────────────────
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        child: Column(children: [
-          if (_skipped) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-              decoration: BoxDecoration(
-                color: _kCard,
-                borderRadius: BorderRadius.circular(16),
-                border:
-                    Border.all(color: _kBorder.withOpacity(0.7), width: 1.5),
+            // ── Answer area ─────────────────────────────────────
+            if (_skipped) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                decoration: BoxDecoration(
+                  color: _kCard,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _kBorder.withOpacity(0.7), width: 1.5),
+                ),
+                child: Column(children: [
+                  Text('The answer was',
+                      style: _f(14, fw: FontWeight.w600, c: _kRed, ls: 0.8)),
+                  const SizedBox(height: 12),
+                  Text(_partnerPhrase,
+                      style: _f(28, fw: FontWeight.w700),
+                      textAlign: TextAlign.center),
+                ]),
               ),
-              child: Column(children: [
-                Text('The answer was',
-                    style: _f(14, fw: FontWeight.w600, c: _kRed, ls: 0.8)),
-                const SizedBox(height: 12),
-                Text(_partnerPhrase,
-                    style: _f(28, fw: FontWeight.w700),
-                    textAlign: TextAlign.center),
-              ]),
-            ),
-            const SizedBox(height: 10),
-            Text('Better luck next time!', style: _f(15, c: _kSub)),
-          ] else if (_ansCorrect) ...[
-            TextField(
-              controller: _ansCtrl,
-              readOnly: true,
-              textAlign: TextAlign.center,
-              style: _f(19, fw: FontWeight.w500, c: _kGreen),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: _kGreen.withOpacity(0.1),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: _kGreen, width: 2)),
-                focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: _kGreen, width: 2)),
-                enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: _kGreen, width: 2)),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text('✅ You got it!', style: _f(16, c: _kGreen)),
-          ] else ...[
-            _ShakeWidget(
-              shake: _ansWrong,
-              child: TextField(
+              const SizedBox(height: 10),
+              Text('Better luck next time!', style: _f(15, c: _kSub)),
+            ] else if (_ansCorrect) ...[
+              TextField(
                 controller: _ansCtrl,
-                onChanged: (v) => setState(() {
-                  _ansInput = v;
-                  if (_ansWrong) _ansWrong = false;
-                }),
-                onSubmitted: (_) => _submitAnswer(),
+                readOnly: true,
                 textAlign: TextAlign.center,
-                style: _f(19,
-                    fw: FontWeight.w500,
-                    c: _ansWrong ? const Color(0xFFFF6B6B) : _kText),
+                style: _f(19, fw: FontWeight.w500, c: _kGreen),
                 decoration: InputDecoration(
-                  hintText: 'Type your guess...',
-                  hintStyle: _f(19, c: const Color(0xFF4E3D72)),
                   filled: true,
-                  fillColor: _kCard,
+                  fillColor: _kGreen.withOpacity(0.1),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(
-                          color: _ansWrong
-                              ? const Color(0xFFFF6B6B)
-                              : _kPurple.withOpacity(0.35),
-                          width: 2)),
+                      borderSide: const BorderSide(color: _kGreen, width: 2)),
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: _kPurple, width: 2)),
+                      borderSide: const BorderSide(color: _kGreen, width: 2)),
                   enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(
-                          color: _ansWrong
-                              ? const Color(0xFFFF6B6B)
-                              : _kPurple.withOpacity(0.35),
-                          width: 2)),
+                      borderSide: const BorderSide(color: _kGreen, width: 2)),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            if (_ansWrong)
-              RichText(
-                  text: TextSpan(
-                style: _f(14, c: _kRed),
-                children: [
-                  const TextSpan(text: 'Hint: '),
-                  TextSpan(
-                      text: hint,
-                      style: _f(14,
-                          fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
-                ],
-              ))
-            else
-              Text('Press Enter or tap Submit',
-                  style: _f(15, c: const Color(0xFF4E3D72))),
-          ],
-        ]),
-      ),
+              const SizedBox(height: 10),
+              Text('✅ You got it!', style: _f(16, c: _kGreen)),
+            ] else ...[
+              _ShakeWidget(
+                shake: _ansWrong,
+                child: TextField(
+                  controller: _ansCtrl,
+                  onChanged: (v) => setState(() {
+                    _ansInput = v;
+                    if (_ansWrong) _ansWrong = false;
+                  }),
+                  onSubmitted: (_) => _submitAnswer(),
+                  textAlign: TextAlign.center,
+                  style: _f(19,
+                      fw: FontWeight.w500,
+                      c: _ansWrong ? const Color(0xFFFF6B6B) : _kText),
+                  decoration: InputDecoration(
+                    hintText: 'Type your guess...',
+                    hintStyle: _f(19, c: const Color(0xFF4E3D72)),
+                    filled: true,
+                    fillColor: _kCard,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                            color: _ansWrong
+                                ? const Color(0xFFFF6B6B)
+                                : _kPurple.withOpacity(0.35),
+                            width: 2)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: _kPurple, width: 2)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                            color: _ansWrong
+                                ? const Color(0xFFFF6B6B)
+                                : _kPurple.withOpacity(0.35),
+                            width: 2)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (_ansWrong)
+                RichText(
+                    text: TextSpan(
+                  style: _f(14, c: _kRed),
+                  children: [
+                    const TextSpan(text: 'Hint: '),
+                    TextSpan(
+                        text: hint,
+                        style: _f(14, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
+                  ],
+                ))
+              else
+                Text('Press Enter or tap Submit',
+                    style: _f(15, c: const Color(0xFF4E3D72))),
+            ],
 
-      if (_timerDone && !_ansCorrect && !_skipped) ...[
-        const SizedBox(height: 16),
-        _SlimOutlineBtn('Skip', () => _skipAnswer()),
-      ],
+            // ── Skip button ─────────────────────────────────────
+            if (_timerDone && !_ansCorrect && !_skipped) ...[
+              const SizedBox(height: 16),
+              _SlimOutlineBtn('Skip', () => _skipAnswer()),
+            ],
 
-      const Spacer(),
+            const SizedBox(height: 20),
 
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
-        child: _ansCorrect || _skipped
-            ? _primaryBtn('Continue', _afterSolve)
-            : _primaryBtn('Submit Answer', _submitAnswer),
+            // ── Submit / Continue button ─────────────────────────
+            _ansCorrect || _skipped
+                ? _primaryBtn('Continue', _afterSolve)
+                : _primaryBtn('Submit Answer', _submitAnswer),
+          ]),
+        ),
       ),
     ]);
   }
@@ -2124,19 +2127,17 @@ class _SlimOutlineBtn extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
         onTap: onTap,
         child: Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
                 color: const Color(0xFFFF6B6B).withOpacity(0.5), width: 1.5),
           ),
-          child: Center(
-              child: Text(label,
-                  style: GoogleFonts.fredoka(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: const Color(0xFFFF9999)))),
+          child: Text(label,
+              style: GoogleFonts.fredoka(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFFFF9999))),
         ),
       );
 }

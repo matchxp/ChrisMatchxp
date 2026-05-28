@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/matching_service.dart';
 import 'home_screen.dart';
@@ -184,22 +185,27 @@ class _MainNavigationState extends State<MainNavigation> {
     final dismissNotifier = ValueNotifier<bool>(false);
     _dismissRequested = dismissNotifier;
 
-    _notifOverlay = OverlayEntry(
+    // Capture a direct reference so onRemove always removes THIS specific
+    // entry — not whatever _notifOverlay happens to point to at call time
+    // (which may have been replaced by a newer banner).
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
       builder: (ctx) => _NotificationBanner(
         senderName: senderName,
         senderPhoto: senderPhoto,
         message: message,
         dismissNotifier: dismissNotifier,
         onRemove: () {
-          _notifOverlay?.remove();
-          _notifOverlay = null;
+          entry.remove();
+          if (_notifOverlay == entry) _notifOverlay = null;
         },
         onTap: () => _handleNotificationTap(matchId, matchEntry),
         onDismiss: _dismissNotification,
       ),
     );
+    _notifOverlay = entry;
 
-    overlay.insert(_notifOverlay!);
+    overlay.insert(entry);
 
     // Auto-dismiss after 4 seconds.
     // Use a cancellable Timer so that if a new notification arrives before the
@@ -252,13 +258,19 @@ class _MainNavigationState extends State<MainNavigation> {
   }
 
   void _dismissNotification() {
-    // Cancel the auto-dismiss timer so it can't fire again for a future banner.
     _autoDismissTimer?.cancel();
     _autoDismissTimer = null;
-    // Signal the banner to play its reverse animation and remove itself.
-    _dismissRequested?.value = true;
-    _dismissRequested = null;
-    // _notifOverlay is cleared by the banner's onRemove callback.
+    if (_dismissRequested != null) {
+      // Normal path: signal the banner to reverse-animate then remove itself.
+      _dismissRequested!.value = true;
+      _dismissRequested = null;
+    } else if (_notifOverlay != null) {
+      // Fallback: _dismissRequested was already cleared (e.g. auto-dismiss
+      // fired before the user tapped X) but the overlay entry is still alive
+      // because onRemove was never called. Force-remove it immediately.
+      _notifOverlay!.remove();
+      _notifOverlay = null;
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -431,185 +443,161 @@ class _NotificationBannerState extends State<_NotificationBanner>
           },
           child: Material(
             type: MaterialType.transparency,
-            // The banner card — not itself tappable; tap zones are split below
-            // so the X button and the "open chat" area never compete in the
-            // gesture arena.
+            // Pill-shaped banner — tap area and X are sibling GestureDetectors
+            // so they never compete in the gesture arena.
             child: Container(
               margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(999),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF2D1060), Color(0xFF160830)],
+                ),
                 border: Border.all(
-                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
+                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.60),
                   width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
+                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.45),
+                    blurRadius: 28,
+                    spreadRadius: 1,
+                    offset: const Offset(0, 4),
                   ),
                   BoxShadow(
-                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.2),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
+                    color: Colors.black.withValues(alpha: 0.55),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
-              child: Row(
-                children: [
-                  // ── Left/centre: avatar + text — tapping opens the chat ──
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: widget.onTap,
-                      behavior: HitTestBehavior.opaque,
-                      child: Row(
-                        children: [
-                          // Avatar with purple ring + dot
-                          Stack(
-                            clipBehavior: Clip.none,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 10),
+                    // ── Avatar ───────────────────────────────────────────────
+                    Container(
+                      width: 42,
+                      height: 42,
+                      margin: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFA78BFA), Color(0xFF6C3FE8)],
+                        ),
+                      ),
+                      padding: const EdgeInsets.all(2),
+                      child: ClipOval(
+                        child: widget.senderPhoto.isNotEmpty
+                            ? Image.network(
+                                widget.senderPhoto,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    _initials(widget.senderName),
+                              )
+                            : _initials(widget.senderName),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // ── Name + message — tappable ─────────────────────────────
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: widget.onTap,
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Color(0xFF6C3FE8),
-                                      Color(0xFF9D50BB)
-                                    ],
-                                  ),
-                                ),
-                                padding: const EdgeInsets.all(2),
-                                child: ClipOval(
-                                  child: widget.senderPhoto.isNotEmpty
-                                      ? Image.network(
-                                          widget.senderPhoto,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) =>
-                                              _initials(widget.senderName),
-                                        )
-                                      : _initials(widget.senderName),
-                                ),
-                              ),
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF6C3FE8),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: const Color(0xFF1E1E1E),
-                                        width: 2),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(width: 12),
-                          // Name + message
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
-                                      margin:
-                                          const EdgeInsets.only(bottom: 3),
-                                      decoration: BoxDecoration(
-                                        gradient: const LinearGradient(
-                                          colors: [
-                                            Color(0xFF6C3FE8),
-                                            Color(0xFF9D50BB)
-                                          ],
-                                        ),
-                                        borderRadius:
-                                            BorderRadius.circular(6),
+                              Row(
+                                children: [
+                                  // Pill MATCHXP badge
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFF6C3FE8),
+                                          Color(0xFF9D50BB),
+                                        ],
                                       ),
-                                      child: const Text(
-                                        'MATCHXP',
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: 0.5,
-                                          decoration: TextDecoration.none,
-                                        ),
-                                      ),
+                                      borderRadius: BorderRadius.circular(99),
                                     ),
-                                    const Spacer(),
-                                    Text(
-                                      'now',
+                                    child: const Text(
+                                      '✦ MATCHXP',
                                       style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.white
-                                            .withValues(alpha: 0.4),
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                        letterSpacing: 0.8,
                                         decoration: TextDecoration.none,
                                       ),
                                     ),
-                                  ],
-                                ),
-                                Text(
-                                  widget.senderName,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                    decoration: TextDecoration.none,
-                                    height: 1.2,
                                   ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  widget.message,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.white
-                                        .withValues(alpha: 0.6),
-                                    decoration: TextDecoration.none,
+                                  const Spacer(),
+                                  Text(
+                                    'now',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.white.withValues(alpha: 0.40),
+                                      decoration: TextDecoration.none,
+                                    ),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                widget.senderName,
+                                style: GoogleFonts.fredoka(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                  decoration: TextDecoration.none,
+                                  height: 1.1,
                                 ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 1),
+                              Text(
+                                widget.message,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white.withValues(alpha: 0.65),
+                                  decoration: TextDecoration.none,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  // ── X button — completely separate GestureDetector ────────
-                  // Sits as a sibling of the main tap area, not inside it, so
-                  // the two gesture detectors never compete in the arena.
-                  GestureDetector(
-                    onTap: widget.onDismiss,
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.close,
-                        size: 16,
-                        color: Colors.white.withValues(alpha: 0.7),
+                    const SizedBox(width: 6),
+                    // ── X button — sibling so it never competes with onTap ───
+                    GestureDetector(
+                      onTap: widget.onDismiss,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close,
+                          size: 14,
+                          color: Colors.white.withValues(alpha: 0.60),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                  ],
+                ),
               ),
             ),
           ), // Material
