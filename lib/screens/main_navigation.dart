@@ -13,6 +13,10 @@ import 'chat_conversation_screen.dart';
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
 
+  // Match IDs already shown via the full popup (User B) — skip the banner for these.
+  static final Set<String> _popupShownIds = {};
+  static void suppressBannerFor(String matchId) => _popupShownIds.add(matchId);
+
   @override
   State<MainNavigation> createState() => _MainNavigationState();
 }
@@ -82,16 +86,19 @@ class _MainNavigationState extends State<MainNavigation> {
     for (final match in matches) {
       final matchId = match['match_id'] as String;
       if (_initialMatchLoadDone && !_knownMatchIds.contains(matchId)) {
-        // New match detected — show a notification banner for User A.
-        final profile = match['profile'] as Map<String, dynamic>?;
-        if (profile != null) {
-          _showNotificationBanner(
-            matchId: matchId,
-            senderName: "It's a Match!",
-            senderPhoto: _firstPhoto(profile),
-            message: 'Tap to play!',
-            matchEntry: match,
-          );
+        // New match detected — only show banner for User A (first liker).
+        // User B already saw the full popup, so skip the banner for them.
+        if (!MainNavigation._popupShownIds.contains(matchId)) {
+          final profile = match['profile'] as Map<String, dynamic>?;
+          if (profile != null) {
+            _showNotificationBanner(
+              matchId: matchId,
+              senderName: "It's a Match!",
+              senderPhoto: _firstPhoto(profile),
+              message: 'Tap to play!',
+              matchEntry: match,
+            );
+          }
         }
       }
       _knownMatchIds.add(matchId);
@@ -421,7 +428,7 @@ class _NotificationBannerState extends State<_NotificationBanner>
       right: 0,
       child: SafeArea(
         child: Align(
-          alignment: Alignment.topLeft,
+          alignment: Alignment.topCenter,
           child: SizedBox(
             width: MediaQuery.of(context).size.width * 0.6,
             child: AnimatedBuilder(

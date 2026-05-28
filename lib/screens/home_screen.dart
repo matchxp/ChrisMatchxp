@@ -8,6 +8,7 @@ import '../services/matching_service.dart';
 import '../services/auth_service.dart';
 import '../games/game_hub_screen.dart';
 import '../widgets/matchxp_background.dart';
+import 'main_navigation.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -208,6 +209,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     // a stuck entry when two matches arrive before the first is dismissed.
     _matchOverlayEntry?.remove();
     _matchOverlayEntry = null;
+
+    // Tell MainNavigation not to show a banner for this match — User B already
+    // sees the full popup, so the poll banner would be redundant.
+    MainNavigation.suppressBannerFor(matchId);
 
     setState(() {
       _matchedCardProfile = cardProfile;
