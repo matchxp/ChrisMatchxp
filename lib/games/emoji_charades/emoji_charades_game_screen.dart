@@ -1160,7 +1160,7 @@ class _State extends State<EmojiCharadesGameScreen>
                   controller: _emojiCtrl,
                   focusNode: _emojiFocus,
                   onChanged: (v) => setState(() => _myEmojis = v),
-                  textAlign: TextAlign.left,
+                  textAlign: hasEmojis ? TextAlign.center : TextAlign.left,
                   style: TextStyle(
                     fontSize: hasEmojis ? 42.0 : 15.0,
                     letterSpacing: hasEmojis ? 4.0 : 0.0,
