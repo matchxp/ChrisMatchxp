@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/matching_service.dart';
@@ -9,6 +10,22 @@ import 'matches_screen.dart';
 import 'chats_screen.dart';
 import 'profile_screen.dart';
 import 'chat_conversation_screen.dart';
+
+const String _matchSvg = '''
+<svg viewBox="0 0 133 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M0 0.660437H10.3689L14.9919 33.7484H15.124L19.7471 0.660437H30.116V46.8911H23.2474V11.8879H23.1153L17.8318 46.8911H11.7558L6.4723 11.8879H6.34021V46.8911H0V0.660437Z" fill="white"/>
+  <path d="M41.8114 0.660437H51.652L59.181 46.8911H51.9161L50.5952 37.711V37.8431H42.3398L41.0189 46.8911H34.2824L41.8114 0.660437ZM49.7367 31.569L46.5005 8.71779H46.3684L43.1983 31.569H49.7367Z" fill="white"/>
+  <path d="M66.0144 7.26482H58.4194V0.660437H80.8743V7.26482H73.2792V46.8911H66.0144V7.26482Z" fill="white"/>
+  <path d="M95.0309 47.5516C91.5526 47.5516 88.8888 46.5609 87.0396 44.5796C85.2344 42.5983 84.3318 39.8024 84.3318 36.192V11.3595C84.3318 7.74914 85.2344 4.95329 87.0396 2.97197C88.8888 0.990658 91.5526 0 95.0309 0C98.5092 0 101.151 0.990658 102.956 2.97197C104.805 4.95329 105.73 7.74914 105.73 11.3595V16.2468H98.8614V10.8972C98.8614 8.03533 97.6506 6.60438 95.229 6.60438C92.8074 6.60438 91.5966 8.03533 91.5966 10.8972V36.7204C91.5966 39.5382 92.8074 40.9472 95.229 40.9472C97.6506 40.9472 98.8614 39.5382 98.8614 36.7204V29.6537H105.73V36.192C105.73 39.8024 104.805 42.5983 102.956 44.5796C101.151 46.5609 98.5092 47.5516 95.0309 47.5516Z" fill="white"/>
+  <path d="M110.737 0.660437H118.002V19.4829H125.795V0.660437H133.06V46.8911H125.795V26.0873H118.002V46.8911H110.737V0.660437Z" fill="white"/>
+</svg>
+''';
+
+const String _xpSvg = '''
+<svg viewBox="143.56 0 47.44 47.44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M149.761 0C146.336 0 143.56 2.77642 143.56 6.2013V41.2386C143.56 44.6635 146.336 47.4399 149.761 47.4399H184.799C188.224 47.4399 191 44.6635 191 41.2386V6.2013C191 2.77642 188.224 0 184.799 0H149.761ZM150.036 8.06172L155.574 23.5136L149.761 39.6883H154.522L158.275 28.6642H158.366L162.028 39.6883H167.338L161.525 23.5136L167.063 8.06172H162.303L158.824 18.2726H158.733L155.346 8.06172H150.036ZM177.602 8.06172H170.187V39.6883H175.222V26.8118H177.602C180.104 26.8118 181.981 26.1491 183.232 24.8238C184.483 23.4985 185.109 21.5557 185.109 18.9955V15.878C185.109 13.3178 184.483 11.375 183.232 10.0497C181.981 8.72437 180.104 8.06172 177.602 8.06172ZM179.433 21.616C179.036 22.0678 178.426 22.2937 177.602 22.2937H175.222V12.5798H177.602C178.426 12.5798 179.036 12.8057 179.433 13.2575C179.86 13.7093 180.074 14.4774 180.074 15.5617V19.3118C180.074 20.3961 179.86 21.1642 179.433 21.616Z" fill="#9A45DD"/>
+</svg>
+''';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -285,9 +302,26 @@ class _MainNavigationState extends State<MainNavigation> {
     return Scaffold(
       extendBody: true,
       backgroundColor: Colors.transparent,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: _screens,
+          ),
+          // ── Fixed logo overlay — renders once, never moves ──────────────
+          Positioned(
+            top: MediaQuery.of(context).viewPadding.top + 12,
+            left: 24,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SvgPicture.string(_matchSvg, height: 22),
+                const SizedBox(width: 6),
+                SvgPicture.string(_xpSvg, height: 22),
+              ],
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: _buildNavBar(),
     );
@@ -295,11 +329,11 @@ class _MainNavigationState extends State<MainNavigation> {
 
   Widget _buildNavBar() {
     return Container(
-      color: Colors.transparent,
+      color: Colors.black,
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+        child: SizedBox(
+          height: 60,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -320,10 +354,10 @@ class _MainNavigationState extends State<MainNavigation> {
                   activeIcon: Icons.person_rounded,
                   index: 3),
             ],
-          ), // Row
-        ), // Padding
-      ), // SafeArea
-    ); // outer Container
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildNavItem({
@@ -340,19 +374,26 @@ class _MainNavigationState extends State<MainNavigation> {
       },
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOut,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF6C3FE8).withValues(alpha: 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
+          shape: BoxShape.circle,
+          gradient: isSelected
+              ? const LinearGradient(
+                  colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
         ),
-        child: Icon(
-          isSelected ? activeIcon : icon,
-          color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF888888),
-          size: 24,
+        child: Center(
+          child: Icon(
+            isSelected ? activeIcon : icon,
+            color: Colors.white,
+            size: 24,
+          ),
         ),
       ),
     );

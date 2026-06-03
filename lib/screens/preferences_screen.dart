@@ -3,8 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../widgets/matchxp_background.dart';
 
 class PreferencesScreen extends StatefulWidget {
   const PreferencesScreen({Key? key}) : super(key: key);
@@ -25,13 +27,16 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   static const _purple2 = Color(0xFF9D50BB);
 
   // ── State ──────────────────────────────────────────────────────────────────
-  String _hereTo      = 'Make New Friends';
-  String _wantToMeet  = 'Woman';
-  String _ageRange    = '20 - 35';
-  String _language    = 'English';
+  String _hereTo     = 'Make New Friends';
+  String _wantToMeet = 'Woman';
+  double _ageMin     = 20;
+  double _ageMax     = 35;
+  String _language   = 'English';
   final _locationCtrl  = TextEditingController();
   final _locationFocus = FocusNode();
   double _distance     = 10;
+  List<String> _lookingFor  = [];
+  List<String> _connectWith = [];
 
   // ── Location autocomplete ──────────────────────────────────────────────────
   List<_LocationResult> _locationSuggestions = [];
@@ -49,15 +54,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   static const _meetOptions = [
     _Option('Woman',    Icons.female_rounded),
     _Option('Man',      Icons.male_rounded),
-    _Option('Everyone', Icons.people_alt_outlined),
-  ];
-  static const _ageOptions = [
-    _Option('18 - 24', Icons.cake_outlined),
-    _Option('20 - 35', Icons.cake_outlined),
-    _Option('25 - 35', Icons.cake_outlined),
-    _Option('30 - 40', Icons.cake_outlined),
-    _Option('35 - 50', Icons.cake_outlined),
-    _Option('40+',     Icons.cake_outlined),
+    _Option('Non-binary', Icons.people_alt_outlined),
   ];
   static const _langOptions = [
     _Option('English',    Icons.language_rounded),
@@ -176,17 +173,27 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final p = await _supabase
           .from('profiles')
           .select('here_to, want_to_meet, pref_age_range, '
-              'pref_language, location, max_distance_km')
+              'pref_language, location, max_distance_km, '
+              'looking_for, connect_with')
           .eq('id', uid)
           .maybeSingle();
       if (p == null || !mounted) return;
       setState(() {
-        _hereTo     = _safe(p['here_to'],        _hereToOptions, 'Make New Friends');
-        _wantToMeet = _safe(p['want_to_meet'],   _meetOptions,   'Woman');
-        _ageRange   = _safe(p['pref_age_range'], _ageOptions,    '20 - 35');
-        _language   = _safe(p['pref_language'],  _langOptions,   'English');
+        _hereTo     = _safe(p['here_to'],       _hereToOptions, 'Make New Friends');
+        _wantToMeet = _safe(p['want_to_meet'],  _meetOptions,   'Woman');
+        _language   = _safe(p['pref_language'], _langOptions,   'English');
+        final raw = p['pref_age_range'] as String? ?? '20 - 35';
+        final parts = raw.split(' - ');
+        _ageMin = double.tryParse(parts.first.trim()) ?? 20;
+        _ageMax = double.tryParse(parts.last.trim())  ?? 35;
         _locationCtrl.text = (p['location'] as String?) ?? '';
         _distance   = (p['max_distance_km'] as num?)?.toDouble() ?? 10;
+        final lf = p['looking_for'];
+        if (lf is List) _lookingFor = List<String>.from(lf);
+        else if (lf is String && lf.isNotEmpty) _lookingFor = [lf];
+        final cw = p['connect_with'];
+        if (cw is List) _connectWith = List<String>.from(cw);
+        else if (cw is String && cw.isNotEmpty) _connectWith = [cw];
       });
     } catch (_) {}
   }
@@ -204,10 +211,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       await _supabase.from('profiles').update({
         'here_to':         _hereTo,
         'want_to_meet':    _wantToMeet,
-        'pref_age_range':  _ageRange,
+        'pref_age_range':  '${_ageMin.round()} - ${_ageMax.round()}',
         'pref_language':   _language,
         'location':        _locationCtrl.text.trim(),
         'max_distance_km': _distance.round(),
+        'looking_for':     _lookingFor,
+        'connect_with':    _connectWith,
         'updated_at':      DateTime.now().toIso8601String(),
       }).eq('id', uid);
       if (mounted) {
@@ -242,12 +251,15 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     _locationCtrl.clear();
     _suppressSearch = false;
     setState(() {
-      _hereTo              = 'Make New Friends';
-      _wantToMeet          = 'Woman';
-      _ageRange            = '20 - 35';
-      _language            = 'English';
+      _hereTo      = 'Make New Friends';
+      _wantToMeet  = 'Woman';
+      _ageMin      = 20;
+      _ageMax      = 35;
+      _language    = 'English';
       _locationSuggestions = [];
-      _distance            = 10;
+      _distance    = 10;
+      _lookingFor  = [];
+      _connectWith = [];
     });
   }
 
@@ -280,8 +292,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
-      body: SafeArea(
+      backgroundColor: const Color(0xFF0C0B11),
+      body: MatchXPBackground(
+        child: SafeArea(
         child: Column(
           children: [
             _topBar(),
@@ -305,25 +318,19 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   _sectionLabel('Preferred age range'),
                   const SizedBox(height: 12),
                   _buildAgeRangeCard(),
-                    const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-                    _sectionLabel('Language'),
-                    const SizedBox(height: 12),
-                    _buildPickerRow(
-                      icon: Icons.language_rounded,
-                      value: _language,
-                      onTap: () => _showPicker(
-                        title: 'Preferred Language(s)',
-                        options: _langOptions,
-                        selected: _language,
-                        onSelect: (v) => setState(() => _language = v),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
+                  _sectionLabel('Language'),
+                  const SizedBox(height: 12),
+                  _buildLanguageTrigger(),
+                  const SizedBox(height: 24),
 
-                    _sectionLabel('Location & distance'),
-                    const SizedBox(height: 12),
+                  _sectionLabel('Location'),
+                  const SizedBox(height: 12),
                   _buildLocationCard(),
+                  const SizedBox(height: 24),
+
+                  _sectionLabel('Max distance'),
                   const SizedBox(height: 12),
                   _buildDistanceCard(),
                   const SizedBox(height: 32),
@@ -335,6 +342,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -357,9 +365,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             padding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
-              color: _card,
+              color: Colors.white.withOpacity(0.12),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: _purple.withOpacity(0.42)),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -384,139 +392,84 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   // ── Header ─────────────────────────────────────────────────────────────────
 
   Widget _buildHeader() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
+    crossAxisAlignment: CrossAxisAlignment.center,
     children: [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          ShaderMask(
-            shaderCallback: (b) => const LinearGradient(
-              colors: [Colors.white, Color(0xFFCBB4FF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ).createShader(b),
-            child: const Text('Preferences',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5)),
-          ),
-          const SizedBox(width: 10),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: _purple.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _purple.withOpacity(0.3)),
-            ),
-            child: const Text('Discovery',
-                style: TextStyle(
-                    color: _purple,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700)),
-          ),
-        ],
+      Text(
+        'Your Preferences',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.outfit(
+          fontSize: 30,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          letterSpacing: -0.5,
+        ),
       ),
-      const SizedBox(height: 6),
-      const Text(
-        'Fine-tune who and what you see on MatchXP',
-        style:
-            TextStyle(color: Colors.white38, fontSize: 13, height: 1.4),
+      const SizedBox(height: 4),
+      Text(
+        'Fine-tune who and what you see',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.outfit(
+          fontSize: 14,
+          fontWeight: FontWeight.w300,
+          color: Colors.white.withOpacity(0.50),
+        ),
       ),
     ],
   );
 
   Widget _sectionLabel(String text) => Text(text,
-      style: const TextStyle(
+      style: GoogleFonts.outfit(
           color: Colors.white,
           fontSize: 16,
           fontWeight: FontWeight.w700));
 
   // ── Here to (2×2 grid) ─────────────────────────────────────────────────────
 
-  static const _hereToMeta = [
-    _HereToMeta('Make New Friends',         Icons.people_outline_rounded,   Color(0xFF6C3FE8)),
-    _HereToMeta('Something Casual',         Icons.wb_sunny_outlined,        Color(0xFFFF9800)),
-    _HereToMeta('A Long-Term Relationship', Icons.favorite_outline_rounded, Color(0xFFFF6B8A)),
-    _HereToMeta('Not Sure Yet',             Icons.help_outline_rounded,     Color(0xFF00D4AA)),
-  ];
-
   Widget _buildHereToGrid() {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      childAspectRatio: 2.1,
-      children: _hereToMeta.map((meta) {
-        final selected = _hereTo == meta.label;
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: _hereToOptions.map((opt) {
+        final selected = _hereTo == opt.label;
         return GestureDetector(
           onTap: () {
             HapticFeedback.selectionClick();
-            setState(() => _hereTo = meta.label);
+            setState(() => _hereTo = opt.label);
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(50),
               color: selected
-                  ? meta.color.withOpacity(0.13)
-                  : _card,
-              borderRadius: BorderRadius.circular(18),
+                  ? _purple.withOpacity(0.12)
+                  : Colors.white.withOpacity(0.05),
               border: Border.all(
-                color: selected
-                    ? meta.color.withOpacity(0.65)
-                    : Colors.white.withOpacity(0.07),
-                width: selected ? 1.5 : 1,
+                color: selected ? _purple : _purple.withOpacity(0.42),
+                width: selected ? 2.0 : 1.0,
               ),
-              boxShadow: selected
-                  ? [
-                      BoxShadow(
-                          color: meta.color.withOpacity(0.18),
-                          blurRadius: 14,
-                          offset: const Offset(0, 4))
-                    ]
-                  : [],
             ),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: meta.color.withOpacity(selected ? 0.22 : 0.09),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Icon(meta.icon,
-                      color: selected ? meta.color : Colors.white30,
-                      size: 16),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    meta.label,
-                    maxLines: 2,
-                    style: TextStyle(
-                        color: selected ? Colors.white : Colors.white54,
-                        fontSize: 11.5,
-                        fontWeight: selected
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        height: 1.3),
+                Text(
+                  opt.label,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
-                if (selected)
+                if (selected) ...[
+                  const SizedBox(width: 8),
                   Container(
                     width: 18,
                     height: 18,
-                    decoration: BoxDecoration(
-                        color: meta.color, shape: BoxShape.circle),
-                    child: const Icon(Icons.check,
-                        color: Colors.white, size: 11),
+                    decoration: const BoxDecoration(
+                        color: _purple, shape: BoxShape.circle),
+                    child: const Icon(Icons.check, color: Colors.white, size: 11),
                   ),
+                ],
               ],
             ),
           ),
@@ -527,125 +480,271 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   // ── Want to Meet (3 pill cards) ────────────────────────────────────────────
 
-  static const _meetMeta = [
-    _MeetMeta('Woman',    Icons.female_rounded,      Color(0xFFFF6B8A)),
-    _MeetMeta('Man',      Icons.male_rounded,        Color(0xFF6C3FE8)),
-    _MeetMeta('Everyone', Icons.people_alt_outlined, Color(0xFF00D4AA)),
-  ];
-
   Widget _buildMeetPills() {
-    return Row(
-      children: List.generate(_meetMeta.length, (i) {
-        final meta     = _meetMeta[i];
-        final selected = _wantToMeet == meta.label;
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(right: i < _meetMeta.length - 1 ? 10 : 0),
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                setState(() => _wantToMeet = meta.label);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? meta.color.withOpacity(0.13)
-                      : _card,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: selected
-                        ? meta.color.withOpacity(0.6)
-                        : Colors.white.withOpacity(0.07),
-                    width: selected ? 1.5 : 1,
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: _meetOptions.map((opt) {
+        final selected = _wantToMeet == opt.label;
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => _wantToMeet = opt.label);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(50),
+              color: selected
+                  ? _purple.withOpacity(0.12)
+                  : Colors.white.withOpacity(0.05),
+              border: Border.all(
+                color: selected ? _purple : _purple.withOpacity(0.42),
+                width: selected ? 2.0 : 1.0,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  opt.label,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(meta.icon,
-                        color: selected ? meta.color : Colors.white24,
-                        size: 24),
-                    const SizedBox(height: 7),
-                    Text(meta.label,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: selected
-                                ? Colors.white
-                                : Colors.white38,
-                            fontSize: 12,
-                            fontWeight: selected
-                                ? FontWeight.w700
-                                : FontWeight.w400)),
-                  ],
-                ),
-              ),
+                if (selected) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 18,
+                    height: 18,
+                    decoration: const BoxDecoration(
+                        color: _purple, shape: BoxShape.circle),
+                    child: const Icon(Icons.check, color: Colors.white, size: 11),
+                  ),
+                ],
+              ],
             ),
           ),
         );
-      }),
+      }).toList(),
     );
   }
 
   // ── Age range ──────────────────────────────────────────────────────────────
 
   Widget _buildAgeRangeCard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${_ageMin.round()} – ${_ageMax.round()}',
+                style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [_purple, _purple2]),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${_ageMin.round()} – ${_ageMax.round()}',
+                style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: _purple,
+            inactiveTrackColor: Colors.white10,
+            thumbColor: Colors.white,
+            overlayColor: _purple.withOpacity(0.15),
+            rangeThumbShape:
+                const RoundRangeSliderThumbShape(enabledThumbRadius: 10),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+            trackHeight: 3,
+            valueIndicatorColor: _purple,
+            valueIndicatorTextStyle:
+                GoogleFonts.outfit(color: Colors.white, fontSize: 12),
+          ),
+          child: RangeSlider(
+            values: RangeValues(_ageMin, _ageMax),
+            min: 18,
+            max: 80,
+            divisions: 62,
+            labels: RangeLabels('${_ageMin.round()}', '${_ageMax.round()}'),
+            onChanged: (v) {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _ageMin = v.start;
+                _ageMax = v.end;
+              });
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('18', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 11)),
+              Text('80', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 11)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Language pill trigger + wrap bottom sheet ──────────────────────────────
+
+  Widget _buildLanguageTrigger() {
     return GestureDetector(
-      onTap: () => _showPicker(
-        title: 'Preferred Age Range',
-        options: _ageOptions,
-        selected: _ageRange,
-        onSelect: (v) => setState(() => _ageRange = v),
-      ),
+      onTap: _showLanguagePicker,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
-          color: _card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _purple.withOpacity(0.2)),
+          borderRadius: BorderRadius.circular(50),
+          color: Colors.white.withOpacity(0.05),
+          border: Border.all(color: _purple.withOpacity(0.42), width: 1.0),
         ),
         child: Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _purple.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: const Icon(Icons.cake_outlined,
-                  color: _purple, size: 19),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Age range',
-                      style: TextStyle(
-                          color: Colors.white38,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 3),
-                  Text(_ageRange,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.3)),
-                ],
-              ),
-            ),
-            const Icon(Icons.keyboard_arrow_down_rounded,
-                color: Colors.white30, size: 22),
+            Text('Preferred Language',
+                style: GoogleFonts.outfit(
+                    color: Colors.white54,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400)),
+            const Spacer(),
+            Text(_language,
+                style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, color: Colors.white38, size: 18),
           ],
         ),
       ),
     );
   }
 
-  // ── Language picker ────────────────────────────────────────────────────────
+  void _showLanguagePicker() {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF161616),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              ShaderMask(
+                shaderCallback: (b) => const LinearGradient(
+                  colors: [_purple, _purple2],
+                ).createShader(b),
+                child: Text('Preferred Language',
+                    style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800)),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: _langOptions.map((opt) {
+                  final selected = _language == opt.label;
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _language = opt.label);
+                      setSheet(() {});
+                      Navigator.pop(context);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(50),
+                        color: selected
+                            ? _purple.withOpacity(0.12)
+                            : Colors.white.withOpacity(0.05),
+                        border: Border.all(
+                          color: selected ? _purple : _purple.withOpacity(0.42),
+                          width: selected ? 2.0 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(opt.label,
+                              style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: selected
+                                      ? FontWeight.w600
+                                      : FontWeight.w400)),
+                          if (selected) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 18,
+                              height: 18,
+                              decoration: const BoxDecoration(
+                                  color: _purple, shape: BoxShape.circle),
+                              child: const Icon(Icons.check,
+                                  color: Colors.white, size: 11),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Generic picker row (unused for language now) ───────────────────────────
 
   Widget _buildPickerRow({
     required IconData icon,
@@ -658,9 +757,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           padding:
               const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
           decoration: BoxDecoration(
-            color: _card,
+            color: Colors.white.withOpacity(0.05),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.07)),
+            border: Border.all(color: _purple.withOpacity(0.42)),
           ),
           child: Row(
             children: [
@@ -697,13 +796,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
-            color: _card,
-            borderRadius: BorderRadius.circular(16),
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(50),
             border: Border.all(
-              color: _locationFocus.hasFocus
-                  ? _purple.withOpacity(0.5)
-                  : Colors.white.withOpacity(0.07),
-              width: _locationFocus.hasFocus ? 1.5 : 1,
+              color: _locationFocus.hasFocus ? _purple : _purple.withOpacity(0.42),
+              width: 1.0,
             ),
           ),
           child: Row(
@@ -764,8 +861,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           Container(
             margin: const EdgeInsets.only(top: 4),
             decoration: BoxDecoration(
-              color: _card2,
-              borderRadius: BorderRadius.circular(14),
+              color: const Color(0xFF1A0A2E),
+              borderRadius: BorderRadius.circular(24),
               border: Border.all(color: _purple.withOpacity(0.25)),
               boxShadow: [
                 BoxShadow(
@@ -775,7 +872,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(24),
               child: Column(
                 children: _locationSuggestions
                     .asMap()
@@ -858,106 +955,70 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   Widget _buildDistanceCard() {
     final km = _distance.round();
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: _purple.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: const Icon(Icons.radar_rounded,
-                    color: _purple, size: 19),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                km >= 160 ? 'Anywhere in Australia' : '$km km away',
+                style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Max distance',
-                        style: TextStyle(
-                            color: Colors.white38,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500)),
-                    const SizedBox(height: 2),
-                    Text(
-                      km >= 160 ? 'Anywhere in Australia' : '$km km away',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [_purple, _purple2]),
+                borderRadius: BorderRadius.circular(20),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 5),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                      colors: [_purple, _purple2]),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  km >= 160 ? '∞' : '$km km',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700),
-                ),
+              child: Text(
+                km >= 160 ? '∞' : '$km km',
+                style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700),
               ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: _purple,
+            inactiveTrackColor: Colors.white10,
+            thumbColor: Colors.white,
+            overlayColor: _purple.withOpacity(0.15),
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+            trackHeight: 3,
+          ),
+          child: Slider(
+            value: _distance,
+            min: 1,
+            max: 160,
+            divisions: 32,
+            onChanged: (v) {
+              HapticFeedback.selectionClick();
+              setState(() => _distance = v);
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Text('1 km', style: TextStyle(color: Colors.white24, fontSize: 11)),
+              Text('Anywhere', style: TextStyle(color: Colors.white24, fontSize: 11)),
             ],
           ),
-          const SizedBox(height: 12),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: _purple,
-              inactiveTrackColor: Colors.white10,
-              thumbColor: Colors.white,
-              overlayColor: _purple.withOpacity(0.15),
-              thumbShape:
-                  const RoundSliderThumbShape(enabledThumbRadius: 10),
-              overlayShape:
-                  const RoundSliderOverlayShape(overlayRadius: 20),
-              trackHeight: 3,
-            ),
-            child: Slider(
-              value: _distance,
-              min: 1,
-              max: 160,
-              divisions: 32,
-              onChanged: (v) {
-                HapticFeedback.selectionClick();
-                setState(() => _distance = v);
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text('1 km',
-                    style: TextStyle(
-                        color: Colors.white24, fontSize: 11)),
-                Text('Anywhere',
-                    style: TextStyle(
-                        color: Colors.white24, fontSize: 11)),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -998,9 +1059,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     color: Colors.white, strokeWidth: 2),
               ),
             )
-          : const Text('Save Preferences',
+          : Text('Save Preferences',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: GoogleFonts.outfit(
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -1015,20 +1076,6 @@ class _Option {
   final String   label;
   final IconData icon;
   const _Option(this.label, this.icon);
-}
-
-class _HereToMeta {
-  final String   label;
-  final IconData icon;
-  final Color    color;
-  const _HereToMeta(this.label, this.icon, this.color);
-}
-
-class _MeetMeta {
-  final String   label;
-  final IconData icon;
-  final Color    color;
-  const _MeetMeta(this.label, this.icon, this.color);
 }
 
 class _LocationResult {

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/profile_service.dart';
-import 'login_screen.dart';
+import '../widgets/matchxp_background.dart';
+import 'login_screen.dart' hide MatchXPBackground;
 import 'settings_screen.dart';
 import 'preferences_screen.dart';
 import 'edit_profile_screen.dart';
@@ -15,6 +18,22 @@ import 'onboarding/location_screen.dart';
 import 'onboarding/about_yourself_screen.dart';
 import 'onboarding/interests_screen.dart' hide BirthdayScreen;
 import 'onboarding/add_photos_screen.dart';
+
+const String _matchSvg = '''
+<svg viewBox="0 0 133 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M0 0.660437H10.3689L14.9919 33.7484H15.124L19.7471 0.660437H30.116V46.8911H23.2474V11.8879H23.1153L17.8318 46.8911H11.7558L6.4723 11.8879H6.34021V46.8911H0V0.660437Z" fill="white"/>
+  <path d="M41.8114 0.660437H51.652L59.181 46.8911H51.9161L50.5952 37.711V37.8431H42.3398L41.0189 46.8911H34.2824L41.8114 0.660437ZM49.7367 31.569L46.5005 8.71779H46.3684L43.1983 31.569H49.7367Z" fill="white"/>
+  <path d="M66.0144 7.26482H58.4194V0.660437H80.8743V7.26482H73.2792V46.8911H66.0144V7.26482Z" fill="white"/>
+  <path d="M95.0309 47.5516C91.5526 47.5516 88.8888 46.5609 87.0396 44.5796C85.2344 42.5983 84.3318 39.8024 84.3318 36.192V11.3595C84.3318 7.74914 85.2344 4.95329 87.0396 2.97197C88.8888 0.990658 91.5526 0 95.0309 0C98.5092 0 101.151 0.990658 102.956 2.97197C104.805 4.95329 105.73 7.74914 105.73 11.3595V16.2468H98.8614V10.8972C98.8614 8.03533 97.6506 6.60438 95.229 6.60438C92.8074 6.60438 91.5966 8.03533 91.5966 10.8972V36.7204C91.5966 39.5382 92.8074 40.9472 95.229 40.9472C97.6506 40.9472 98.8614 39.5382 98.8614 36.7204V29.6537H105.73V36.192C105.73 39.8024 104.805 42.5983 102.956 44.5796C101.151 46.5609 98.5092 47.5516 95.0309 47.5516Z" fill="white"/>
+  <path d="M110.737 0.660437H118.002V19.4829H125.795V0.660437H133.06V46.8911H125.795V26.0873H118.002V46.8911H110.737V0.660437Z" fill="white"/>
+</svg>
+''';
+
+const String _xpSvg = '''
+<svg viewBox="143.56 0 47.44 47.44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M149.761 0C146.336 0 143.56 2.77642 143.56 6.2013V41.2386C143.56 44.6635 146.336 47.4399 149.761 47.4399H184.799C188.224 47.4399 191 44.6635 191 41.2386V6.2013C191 2.77642 188.224 0 184.799 0H149.761ZM150.036 8.06172L155.574 23.5136L149.761 39.6883H154.522L158.275 28.6642H158.366L162.028 39.6883H167.338L161.525 23.5136L167.063 8.06172H162.303L158.824 18.2726H158.733L155.346 8.06172H150.036ZM177.602 8.06172H170.187V39.6883H175.222V26.8118H177.602C180.104 26.8118 181.981 26.1491 183.232 24.8238C184.483 23.4985 185.109 21.5557 185.109 18.9955V15.878C185.109 13.3178 184.483 11.375 183.232 10.0497C181.981 8.72437 180.104 8.06172 177.602 8.06172ZM179.433 21.616C179.036 22.0678 178.426 22.2937 177.602 22.2937H175.222V12.5798H177.602C178.426 12.5798 179.036 12.8057 179.433 13.2575C179.86 13.7093 180.074 14.4774 180.074 15.5617V19.3118C180.074 20.3961 179.86 21.1642 179.433 21.616Z" fill="#9A45DD"/>
+</svg>
+''';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -28,12 +47,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
 
-  // ── App colour tokens (same as the rest of the app) ──────────────────────
-  static const _bg = Color(0xFF000000);
-  static const _card = Color(0xFF16121F);
-  static const _purple = Color(0xFF6C3FE8);
+  // ── App colour tokens ─────────────────────────────────────────────────────
+  static const _bg      = Color(0xFF0C0B11);
+  static const _card    = Color(0xFF16121F);
+  static const _purple  = Color(0xFF6C3FE8);
   static const _purple2 = Color(0xFF9D50BB);
-  static const _pink = Color(0xFFFF6B8A);
+  static const _pink    = Color(0xFFFF6B8A);
 
   @override
   void initState() {
@@ -57,8 +76,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   double _calcCompletion(Map<String, dynamic> p) {
     int done = 0;
-    // FIX BUG-03: trim() before isNotEmpty so whitespace-only strings don't
-    // falsely count as a completed step.
     if ((p['first_name'] as String?)?.trim().isNotEmpty == true) done++;
     if ((p['gender'] as String?)?.trim().isNotEmpty == true) done++;
     if (p['birthday'] != null) done++;
@@ -91,71 +108,76 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _purple))
-          : RefreshIndicator(
-              onRefresh: _loadProfile,
-              color: _purple,
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  SliverToBoxAdapter(child: _buildHeader()),
-                  SliverToBoxAdapter(child: _buildAvatarSection()),
-                  SliverToBoxAdapter(child: _buildActionButtons()),
-                  SliverToBoxAdapter(child: _buildCompletionSection()),
-                  SliverToBoxAdapter(child: _buildFeatureCards()),
-                  SliverToBoxAdapter(child: _buildXPPlusSection()),
-                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
-                ],
+      body: MatchXPBackground(
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              // ── Fixed header — never scrolls ─────────────────────────────
+              _buildHeader(),
+              // ── Scrollable content ───────────────────────────────────────
+              Expanded(
+                child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(color: _purple))
+                  : RefreshIndicator(
+                      onRefresh: _loadProfile,
+                      color: _purple,
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          SliverToBoxAdapter(child: _buildAvatarSection()),
+                          SliverToBoxAdapter(child: _buildActionButtons()),
+                          SliverToBoxAdapter(child: _buildCompletionSection()),
+                          SliverToBoxAdapter(child: _buildFeatureCards()),
+                          SliverToBoxAdapter(child: _buildXPPlusSection()),
+                          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                        ],
+                      ),
+                    ),
               ),
-            ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   // ── Header ────────────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(children: const [
-              Text('MATCH',
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      letterSpacing: 1.5)),
-              Text('XP',
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: _purple,
-                      letterSpacing: 1.5)),
-            ]),
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()));
-              },
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _card,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _purple.withOpacity(0.3)),
-                ),
-                child: const Icon(Icons.settings_outlined,
-                    color: Colors.white, size: 20),
+    final topPad = MediaQuery.of(context).viewPadding.top + 12;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, topPad - 6, 24, 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const SizedBox(width: 34, height: 34), // spacer for overlay logo
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()));
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _card,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _purple.withOpacity(0.3)),
               ),
+              child: const Icon(Icons.settings_outlined,
+                  color: Color(0xFF6C3FE8), size: 18),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildHeaderSpacer() {
+    final topPad = MediaQuery.of(context).viewPadding.top + 12;
+    // Same height as _buildHeader() so content starts in the right place
+    return SizedBox(height: (topPad - 6) + 34 + 16);
   }
 
   // ── Avatar + name ─────────────────────────────────────────────────────────
@@ -179,7 +201,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             alignment: Alignment.bottomCenter,
             clipBehavior: Clip.none,
             children: [
-              // Gradient ring
               Container(
                 width: 124,
                 height: 124,
@@ -200,7 +221,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       : _avatarPlaceholder(),
                 ),
               ),
-              // Completion pill
               Positioned(
                 bottom: -13,
                 child: Container(
@@ -217,11 +237,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           spreadRadius: 1),
                     ],
                   ),
-                  child: Text('$percent%',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800)),
+                  child: Text(
+                    '$percent%',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -231,8 +254,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // Name + age
           Text(
             age != null ? '$name, $age' : name,
-            style: const TextStyle(
-                color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
+            style: GoogleFonts.outfit(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+            ),
           ),
 
           // Location
@@ -241,37 +267,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.location_on, color: Colors.white54, size: 14),
+                const Icon(Icons.location_on, color: Colors.white54, size: 14),
                 const SizedBox(width: 3),
-                Text(location,
-                    style:
-                        const TextStyle(color: Colors.white54, fontSize: 13)),
+                Text(
+                  location,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white54,
+                    fontSize: 13,
+                  ),
+                ),
               ],
             ),
           ],
 
           // XP badge
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-            decoration: BoxDecoration(
-              color: _card,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _purple.withOpacity(0.4)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('🎮', style: TextStyle(fontSize: 13)),
-                const SizedBox(width: 6),
-                Text('$xp XP',
-                    style: const TextStyle(
-                        color: _purple,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
           const SizedBox(height: 22),
         ],
       ),
@@ -334,25 +343,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
           borderRadius: BorderRadius.circular(30),
           border: Border.all(color: Colors.white24, width: 1.5),
         ),
-        child: Text(label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600)),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.outfit(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }
 
   // ── Profile completion ────────────────────────────────────────────────────
 
-  // Returns a list of incomplete steps: each entry has label, icon, color, and
-  // a builder that pushes the correct screen.
   List<_CompletionStep> _missingSteps(Map<String, dynamic> p) {
     final steps = <_CompletionStep>[];
 
-    // FIX BUG-03 (mirror of _calcCompletion): trim() so whitespace-only
-    // strings are treated the same as empty/null and the step stays visible.
     if ((p['first_name'] as String?)?.trim().isEmpty != false)
       steps.add(_CompletionStep(
         label: 'Add your name',
@@ -415,9 +423,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         label: 'Pick your interests',
         icon: Icons.favorite_border_rounded,
         color: const Color(0xFFE91E63),
-        // Some projects export a differently named widget from
-        // onboarding/interests_screen.dart; to avoid a build error
-        // when that symbol isn't a class, push a placeholder route.
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const SizedBox.shrink())),
       ));
@@ -443,7 +448,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final percent = (completion * 100).round();
     final missing = _missingSteps(p);
 
-    // Hide section once profile is fully complete
     if (missing.isEmpty) return const SizedBox.shrink();
 
     const total = 8;
@@ -469,16 +473,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header row ─────────────────────────────────────────────
               Row(
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Complete your profile',
-                          style: TextStyle(
+                          style: GoogleFonts.outfit(
                             color: Colors.white,
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -487,7 +490,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 3),
                         Text(
                           '$done of $total steps done',
-                          style: const TextStyle(
+                          style: GoogleFonts.outfit(
                             color: Colors.white54,
                             fontSize: 12,
                           ),
@@ -495,7 +498,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ],
                     ),
                   ),
-                  // Percentage badge
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -506,7 +508,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     child: Text(
                       '$percent%',
-                      style: const TextStyle(
+                      style: GoogleFonts.outfit(
                         color: Colors.white,
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
@@ -517,7 +519,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 14),
 
-              // ── Progress bar ────────────────────────────────────────────
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: LinearProgressIndicator(
@@ -529,7 +530,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 16),
 
-              // ── Incomplete steps ────────────────────────────────────────
               ...missing.map((step) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: GestureDetector(
@@ -562,14 +562,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Expanded(
                               child: Text(
                                 step.label,
-                                style: const TextStyle(
+                                style: GoogleFonts.outfit(
                                   color: Colors.white,
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ),
-                            Icon(Icons.chevron_right,
+                            const Icon(Icons.chevron_right,
                                 color: Colors.white30, size: 20),
                           ],
                         ),
@@ -633,7 +633,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
           ),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(999),
           boxShadow: [
             BoxShadow(
                 color: _purple.withOpacity(0.25),
@@ -655,15 +655,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
+                  Text(
+                    title,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const SizedBox(height: 3),
-                  Text(subtitle,
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.75), fontSize: 13)),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white.withOpacity(0.75),
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -681,186 +688,158 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Container(
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: _card,
-          borderRadius: BorderRadius.circular(24),
-          // Gradient border via a stack trick
-          border: Border.all(color: Colors.transparent),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _purple.withOpacity(0.25), width: 1.5),
           boxShadow: [
             BoxShadow(
-                color: _purple.withOpacity(0.2),
-                blurRadius: 24,
-                offset: const Offset(0, 6)),
+              color: _purple.withOpacity(0.15),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
           ],
         ),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            gradient: LinearGradient(
-              colors: [
-                _purple.withOpacity(0.08),
-                _purple2.withOpacity(0.04),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            border: Border.all(
-              color: _purple.withOpacity(0.3),
-              width: 1.5,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Header ──────────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                child: Row(
-                  children: [
-                    // Crown badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.workspace_premium_rounded,
-                              color: Colors.white, size: 14),
-                          SizedBox(width: 4),
-                          Text('PREMIUM',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.5)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // PREMIUM badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6B7280),
+                borderRadius: BorderRadius.circular(999),
               ),
-              const SizedBox(height: 14),
-
-              // ── Title + subtitle ─────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ShaderMask(
-                      shaderCallback: (b) => const LinearGradient(
-                        colors: [Colors.white, Color(0xFFCBB4FF)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ).createShader(b),
-                      child: const Text('XP+',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.5)),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text('Unlock unlimited likes & premium features',
-                        style: TextStyle(
-                            color: Colors.white54, fontSize: 13, height: 1.4)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-
-              // ── Feature list ─────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    _xpFeatureRow(Icons.bolt_rounded, const Color(0xFF6C3FE8),
-                        'Unlimited likes'),
-                    const SizedBox(height: 10),
-                    _xpFeatureRow(Icons.visibility_outlined,
-                        const Color(0xFF00D4AA), 'See who liked you'),
-                    const SizedBox(height: 10),
-                    _xpFeatureRow(Icons.replay_rounded, const Color(0xFFFF6B8A),
-                        'Unlimited rewinds'),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // ── Upgrade button ────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.mediumImpact();
-                    _snack('XP+ upgrade coming soon!');
-                  },
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [_purple, _purple2],
-                      ),
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        BoxShadow(
-                            color: _purple.withOpacity(0.45),
-                            blurRadius: 20,
-                            offset: const Offset(0, 6)),
-                      ],
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.workspace_premium_rounded,
-                            color: Colors.white, size: 18),
-                        SizedBox(width: 8),
-                        Text('Upgrade to XP+',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.3)),
-                      ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.workspace_premium_rounded,
+                      color: Colors.white, size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    'PREMIUM',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
                     ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // XP+ heading
+            Text(
+              'XP+',
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 30,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 2),
+
+            // Subtitle
+            Text(
+              'Unlock unlimited likes & premium features',
+              style: GoogleFonts.outfit(
+                color: Colors.white54,
+                fontSize: 13,
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Feature rows
+            _xpFeatureRow(Icons.bolt_rounded,        'Unlimited likes'),
+            const SizedBox(height: 8),
+            _xpFeatureRow(Icons.visibility_outlined,  'See who liked you'),
+            const SizedBox(height: 8),
+            _xpFeatureRow(Icons.replay_rounded,       'Unlimited rewinds'),
+            const SizedBox(height: 14),
+
+            // Upgrade button — styled as a selected preference pill
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                _snack('XP+ upgrade coming soon!');
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _purple.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(50),
+                  border: Border.all(color: _purple, width: 2.0),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Upgrade to XP+',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 18,
+                      height: 18,
+                      decoration: const BoxDecoration(
+                        color: _purple,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.check, color: Colors.white, size: 11),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _xpFeatureRow(IconData icon, Color color, String label) {
-    return Row(
-      children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: color, size: 16),
-        ),
-        const SizedBox(width: 12),
-        Text(label,
-            style: const TextStyle(
-                color: Colors.white70,
+  Widget _xpFeatureRow(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(color: _purple.withOpacity(0.42), width: 1.0),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white70, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.outfit(
+                color: Colors.white,
                 fontSize: 14,
-                fontWeight: FontWeight.w500)),
-        const Spacer(),
-        Icon(Icons.check_circle_rounded, color: color, size: 18),
-      ],
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+          Container(
+            width: 18,
+            height: 18,
+            decoration: const BoxDecoration(
+              color: _purple,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check, color: Colors.white, size: 11),
+          ),
+        ],
+      ),
     );
   }
 
@@ -880,7 +859,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
+      content: Text(msg, style: GoogleFonts.outfit()),
       backgroundColor: const Color(0xFF1A1A1A),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

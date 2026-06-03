@@ -357,10 +357,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: MatchXPBackground(
+    return Material(
+      color: Colors.transparent,
+      child: MatchXPBackground(
         child: SafeArea(
+          top: false,
           child: Column(
             children: [
               _buildHeader(),
@@ -384,22 +385,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SvgPicture.string(_matchSvg, height: 22),
-              const SizedBox(width: 6),
-              SvgPicture.string(_xpSvg, height: 22),
-            ],
-          ),
-        ],
-      ),
-    );
+    final topPad = MediaQuery.of(context).viewPadding.top + 12;
+    return SizedBox(height: topPad + 22 + 16); // status bar + logo height + bottom pad
   }
 
   Widget _buildEmptyState() {
