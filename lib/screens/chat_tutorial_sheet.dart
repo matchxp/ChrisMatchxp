@@ -75,28 +75,26 @@ class _ChatTutorialSheetState extends State<_ChatTutorialSheet> {
       glowColor: Color(0xFFA855F7),
       gradientColors: [Color(0xFF200840), Color(0xFF2D1270), Color(0xFF0C0B11)],
     ),
-    _TutorialCard(
+   _TutorialCard(
       emoji: '🔓',
       title: 'Unlock\nYour Chat',
       body: 'Both players complete the game and your chat unlocks! You can\'t message until the ice is broken.',
-      glowColor: Color(0xFF39FF14),
-      gradientColors: [Color(0xFF0A2010), Color(0xFF0C1A10), Color(0xFF0C0B11)],
+      glowColor: Color(0xFFAB5CF5),
+      gradientColors: [Color(0xFF2D0F60), Color(0xFF1A0838), Color(0xFF0C0B11)],
     ),
     _TutorialCard(
       emoji: '🏆',
       title: 'Earn\nPoints',
       body: 'Solve the puzzle = +1 point.\nSkip = 0 points.\nBeat your match on the scoreboard!',
-      glowColor: Color(0xFFFFB800),
-      gradientColors: [Color(0xFF2A1800), Color(0xFF1A1000), Color(0xFF0C0B11)],
+      glowColor: Color(0xFF8B5CF6),
+      gradientColors: [Color(0xFF1C0840), Color(0xFF2D1270), Color(0xFF0C0B11)],
     ),
     _TutorialCard(
       emoji: '🔥',
       title: 'Keep\nPlaying',
-      body: """
-Chat unlocked?
-Keep playing games inside the chat to rack up points and stay connected!""",
-      glowColor: Color(0xFFFF6B6B),
-      gradientColors: [Color(0xFF2A0A08), Color(0xFF1A0808), Color(0xFF0C0B11)],
+      body: 'Chat unlocked? Keep playing games inside the chat to rack up points and stay connected!',
+      glowColor: Color(0xFFA855F7),
+      gradientColors: [Color(0xFF200840), Color(0xFF2D1270), Color(0xFF0C0B11)],
     ),
   ];
 

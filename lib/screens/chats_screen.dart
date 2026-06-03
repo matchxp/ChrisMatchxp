@@ -419,7 +419,37 @@ Future<void> _loadSeenChallenges() async {
 
   Widget _buildHeader() {
     final topPad = MediaQuery.of(context).viewPadding.top + 12;
-    return SizedBox(height: topPad + 22 + 16); // status bar + logo height + bottom pad
+    return Stack(
+      children: [
+        SizedBox(height: topPad + 22 + 16, width: double.infinity),
+        Positioned(
+          top: topPad - 6,
+          right: 24,
+          child: GestureDetector(
+            onTap: () => showChatTutorial(context),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: const Color(0xFFAB5CF5).withValues(alpha: 0.5),
+                  width: 1.5,
+                ),
+                color: const Color(0xFF2D0F60).withValues(alpha: 0.6),
+              ),
+              child: const Center(
+                child: Text('?', style: TextStyle(
+                  color: Color(0xFFAB5CF5),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                )),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildEmptyState() {

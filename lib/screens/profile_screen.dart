@@ -390,7 +390,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<_CompletionStep> _missingSteps(Map<String, dynamic> p) {
     final steps = <_CompletionStep>[];
 
-    if ((p['first_name'] as String?)?.trim().isEmpty != false)
+    if ((p['first_name'] as String?)?.trim().isEmpty != false) {
       steps.add(_CompletionStep(
         label: 'Add your name',
         icon: Icons.person_outline_rounded,
