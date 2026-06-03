@@ -340,6 +340,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label: 'Edit Profile',
             onTap: () async {
               if (_profile == null) return;
+              await _loadProfile();
+              if (!mounted || _profile == null) return;
               final updated = await Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
