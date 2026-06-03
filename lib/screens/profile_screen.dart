@@ -49,11 +49,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
 
   // ── App colour tokens ─────────────────────────────────────────────────────
-  static const _bg      = Color(0xFF0C0B11);
-  static const _card    = Color(0xFF16121F);
-  static const _purple  = Color(0xFF6C3FE8);
+  static const _bg = Color(0xFF0C0B11);
+  static const _card = Color(0xFF16121F);
+  static const _purple = Color(0xFF6C3FE8);
   static const _purple2 = Color(0xFF9D50BB);
-  static const _pink    = Color(0xFFFF6B8A);
+  static const _pink = Color(0xFFFF6B8A);
 
   @override
   void initState() {
@@ -122,22 +122,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // ── Scrollable content ───────────────────────────────────────
               Expanded(
                 child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: _purple))
-                  : RefreshIndicator(
-                      onRefresh: _loadProfile,
-                      color: _purple,
-                      child: CustomScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        slivers: [
-                          SliverToBoxAdapter(child: _buildAvatarSection()),
-                          SliverToBoxAdapter(child: _buildActionButtons()),
-                          SliverToBoxAdapter(child: _buildCompletionSection()),
-                          SliverToBoxAdapter(child: _buildFeatureCards()),
-                          SliverToBoxAdapter(child: _buildXPPlusSection()),
-                          const SliverToBoxAdapter(child: SizedBox(height: 40)),
-                        ],
+                    ? const Center(
+                        child: CircularProgressIndicator(color: _purple))
+                    : RefreshIndicator(
+                        onRefresh: _loadProfile,
+                        color: _purple,
+                        child: CustomScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            SliverToBoxAdapter(child: _buildAvatarSection()),
+                            SliverToBoxAdapter(child: _buildActionButtons()),
+                            SliverToBoxAdapter(
+                                child: _buildCompletionSection()),
+                            SliverToBoxAdapter(child: _buildFeatureCards()),
+                            SliverToBoxAdapter(child: _buildXPPlusSection()),
+                            const SliverToBoxAdapter(
+                                child: SizedBox(height: 40)),
+                          ],
+                        ),
                       ),
-                    ),
               ),
             ],
           ),
@@ -162,7 +165,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               GestureDetector(
                 onTap: () {
                   HapticFeedback.lightImpact();
-                  Navigator.push(context,
+                  Navigator.push(
+                      context,
                       MaterialPageRoute(
                           builder: (_) => const PreviewProfileScreen()));
                 },
@@ -182,8 +186,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               GestureDetector(
                 onTap: () {
                   HapticFeedback.lightImpact();
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const SettingsScreen()));
                 },
                 child: Container(
                   padding: const EdgeInsets.all(8),
@@ -496,7 +502,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         decoration: BoxDecoration(
           color: _card,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _purple.withValues(alpha: 0.25), width: 1.5),
+          border:
+              Border.all(color: _purple.withValues(alpha: 0.25), width: 1.5),
           boxShadow: [
             BoxShadow(
               color: _purple.withValues(alpha: 0.12),
@@ -555,7 +562,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: LinearProgressIndicator(
@@ -566,7 +572,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-
               ...missing.map((step) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: GestureDetector(
@@ -581,7 +586,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: Colors.white.withValues(alpha: 0.04),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                              color: step.color.withValues(alpha: 0.25), width: 1),
+                              color: step.color.withValues(alpha: 0.25),
+                              width: 1),
                         ),
                         child: Row(
                           children: [
@@ -792,11 +798,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 14),
 
             // Feature rows
-            _xpFeatureRow(Icons.bolt_rounded,        'Unlimited likes'),
+            _xpFeatureRow(Icons.bolt_rounded, 'Unlimited likes'),
             const SizedBox(height: 8),
-            _xpFeatureRow(Icons.visibility_outlined,  'See who liked you'),
+            _xpFeatureRow(Icons.visibility_outlined, 'See who liked you'),
             const SizedBox(height: 8),
-            _xpFeatureRow(Icons.replay_rounded,       'Unlimited rewinds'),
+            _xpFeatureRow(Icons.replay_rounded, 'Unlimited rewinds'),
             const SizedBox(height: 14),
 
             // Upgrade button — styled as a selected preference pill
@@ -832,7 +838,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         color: _purple,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.check, color: Colors.white, size: 11),
+                      child: const Icon(Icons.check,
+                          color: Colors.white, size: 11),
                     ),
                   ],
                 ),

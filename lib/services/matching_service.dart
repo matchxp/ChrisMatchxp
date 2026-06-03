@@ -35,6 +35,27 @@ class MatchingService {
 
       debugPrint('👤 My profile: ${myProfile['first_name']}');
 
+      // Build gender filter from connect_with preference.
+      // 'Men' → 'Man', 'Women' → 'Woman', 'Everyone' → no filter.
+      final connectWith = myProfile['connect_with'];
+      final List<String> wantToMeet = connectWith is List
+          ? List<String>.from(connectWith)
+          : connectWith is String && connectWith.isNotEmpty
+              ? [connectWith]
+              : [];
+      final bool filterByGender =
+          wantToMeet.isNotEmpty && !wantToMeet.contains('Everyone');
+      final List<String> genderValues = wantToMeet
+          .map((w) => w == 'Men'
+              ? 'Man'
+              : w == 'Women'
+                  ? 'Woman'
+                  : w)
+          .toList();
+
+      debugPrint('🎯 connect_with: $wantToMeet → gender filter: '
+          '${filterByGender ? genderValues : "none"}');
+
       // Always exclude already matched users
       List<String> matchedIds = [];
       try {
@@ -66,6 +87,10 @@ class MatchingService {
 
       if (excludedIds.length > 1) {
         query = query.filter('id', 'not.in', '(${excludedIds.join(',')})');
+      }
+
+      if (filterByGender) {
+        query = query.filter('gender', 'in', '(${genderValues.join(',')})');
       }
 
       final profiles = await query
