@@ -1404,8 +1404,7 @@ if (widget.skipIntro && _phase != _Phase.done) {
     return Column(children: [
       _topBar(), // no back arrow on the solve screen
 
-      // ── Category + sub-label ─────────────────────────────────
-      const SizedBox(height: 20),
+      const SizedBox(height: 12),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
       
         Text(_partnerCat.label,
@@ -1415,12 +1414,12 @@ if (widget.skipIntro && _phase != _Phase.done) {
       const SizedBox(height: 14),
       RichText(
           text: TextSpan(
-        style: _f(16, c: _kSub),
+        style: _f(13, c: _kSub),
         children: [
           const TextSpan(text: 'Guess '),
           TextSpan(
               text: "${widget.partnerName}'s",
-              style: _f(16, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
+              style: _f(13, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
           const TextSpan(text: ' phrase'),
         ],
       )),
@@ -1439,11 +1438,11 @@ if (widget.skipIntro && _phase != _Phase.done) {
       // ── Emoji display ─────────────────────────────────────────
       const SizedBox(height: 110),
       Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(_partnerEmojis.isEmpty ? '🤔' : _partnerEmojis,
-              style: const TextStyle(fontSize: 76, letterSpacing: 6)),
+              style: const TextStyle(fontSize: 56, letterSpacing: 4)),
         ),
       ),
 
@@ -1474,7 +1473,7 @@ if (widget.skipIntro && _phase != _Phase.done) {
                   }),
                   onSubmitted: (_) => _submitAnswer(),
                   textAlign: TextAlign.center,
-                  style: _f(19,
+                  style: _f(17,
                       fw: FontWeight.w500,
                       c: _ansWrong ? const Color.fromARGB(255, 112, 13, 13) : _kText),
                   decoration: InputDecoration(
@@ -1504,16 +1503,16 @@ if (widget.skipIntro && _phase != _Phase.done) {
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               if (_ansWrong)
                 RichText(
                     text: TextSpan(
-                  style: _f(14, c: _kRed),
+                  style: _f(12, c: _kRed),
                   children: [
                     const TextSpan(text: 'Hint: '),
                     TextSpan(
                         text: hint,
-                        style: _f(14, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
+                        style: _f(12, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
                   ],
                 ))
               else
