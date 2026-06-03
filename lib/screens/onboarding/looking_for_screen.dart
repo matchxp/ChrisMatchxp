@@ -98,7 +98,7 @@ class _LookingForScreenState extends State<LookingForScreen> {
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                     ),
-                    Expanded(
+                    const Expanded(
                       child: OnboardingProgressDots(currentStep: 6),
                     ),
                     const SizedBox(width: 48),
@@ -126,7 +126,7 @@ class _LookingForScreenState extends State<LookingForScreen> {
                   style: GoogleFonts.outfit(
                     fontSize: 14,
                     fontWeight: FontWeight.w300,
-                    color: Colors.white.withOpacity(0.80),
+                    color: Colors.white.withValues(alpha: 0.80),
                   ),
                 ),
 
@@ -154,7 +154,7 @@ class _LookingForScreenState extends State<LookingForScreen> {
                           ? const LinearGradient(colors: [_purple, _purple2])
                           : null,
                       color: (_selected.isEmpty || _isSaving)
-                          ? Colors.white.withOpacity(0.08)
+                          ? Colors.white.withValues(alpha: 0.08)
                           : null,
                       borderRadius: BorderRadius.circular(50),
                     ),
@@ -199,8 +199,8 @@ class _LookingForScreenState extends State<LookingForScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),
@@ -219,10 +219,10 @@ class _LookingForScreenState extends State<LookingForScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(50),
           color: isSelected
-              ? _purple.withOpacity(0.15)
-              : Colors.white.withOpacity(0.05),
+              ? _purple.withValues(alpha: 0.15)
+              : Colors.white.withValues(alpha: 0.05),
           border: Border.all(
-            color: isSelected ? _purple : _purple.withOpacity(0.42),
+            color: isSelected ? _purple : _purple.withValues(alpha: 0.42),
             width: isSelected ? 2.0 : 1.0,
           ),
         ),
@@ -245,7 +245,7 @@ class _LookingForScreenState extends State<LookingForScreen> {
                 shape: BoxShape.circle,
                 color: isSelected ? _purple : Colors.transparent,
                 border: Border.all(
-                  color: isSelected ? _purple : Colors.white.withOpacity(0.35),
+                  color: isSelected ? _purple : Colors.white.withValues(alpha: 0.35),
                   width: 2,
                 ),
               ),

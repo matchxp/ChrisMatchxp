@@ -351,7 +351,7 @@ class _PhoneInputFieldSignupState extends State<PhoneInputFieldSignup> {
         boxShadow: _isFocused
             ? [
                 BoxShadow(
-                  color: const Color(0xFF6C3FE8).withOpacity(0.3),
+                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
                   blurRadius: 15,
                   offset: const Offset(0, 4),
                 ),

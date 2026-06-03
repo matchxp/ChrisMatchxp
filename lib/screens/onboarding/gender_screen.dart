@@ -82,7 +82,7 @@ class _GenderScreenState extends State<GenderScreen> {
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                     ),
-                    Expanded(
+                    const Expanded(
                       child: OnboardingProgressDots(currentStep: 2),
                     ),
                     const SizedBox(width: 48),
@@ -108,7 +108,7 @@ class _GenderScreenState extends State<GenderScreen> {
                   style: GoogleFonts.outfit(
                     fontSize: 14,
                     fontWeight: FontWeight.w300,
-                    color: Colors.white.withOpacity(0.50),
+                    color: Colors.white.withValues(alpha: 0.50),
                   ),
                 ),
 
@@ -136,7 +136,7 @@ class _GenderScreenState extends State<GenderScreen> {
                           ? const LinearGradient(colors: [_purple, _purple2])
                           : null,
                       color: (_selectedGender == null || _isSaving)
-                          ? Colors.white.withOpacity(0.08)
+                          ? Colors.white.withValues(alpha: 0.08)
                           : null,
                       borderRadius: BorderRadius.circular(50),
                     ),
@@ -183,8 +183,8 @@ class _GenderScreenState extends State<GenderScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),
@@ -203,10 +203,10 @@ class _GenderScreenState extends State<GenderScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(50),
           color: isSelected
-              ? _purple.withOpacity(0.12)
-              : Colors.white.withOpacity(0.05),
+              ? _purple.withValues(alpha: 0.12)
+              : Colors.white.withValues(alpha: 0.05),
           border: Border.all(
-            color: isSelected ? _purple : _purple.withOpacity(0.42),
+            color: isSelected ? _purple : _purple.withValues(alpha: 0.42),
             width: isSelected ? 2.0 : 1.0,
           ),
         ),

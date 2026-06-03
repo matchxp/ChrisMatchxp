@@ -37,7 +37,7 @@ class _FullProfileScreenState extends State<FullProfileScreen> {
                   icon: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.5),
+                      color: Colors.black.withValues(alpha: 0.5),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.arrow_back, color: Colors.white),
@@ -73,7 +73,7 @@ class _FullProfileScreenState extends State<FullProfileScreen> {
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.transparent,
-                              Colors.black.withOpacity(0.7),
+                              Colors.black.withValues(alpha: 0.7),
                             ],
                             stops: const [0.6, 1.0],
                           ),
@@ -95,7 +95,7 @@ class _FullProfileScreenState extends State<FullProfileScreen> {
                                   decoration: BoxDecoration(
                                     color: _currentPhotoIndex == index
                                         ? Colors.white
-                                        : Colors.white.withOpacity(0.3),
+                                        : Colors.white.withValues(alpha: 0.3),
                                     borderRadius: BorderRadius.circular(2),
                                   ),
                                 ),
@@ -265,10 +265,10 @@ class _FullProfileScreenState extends State<FullProfileScreen> {
                                     vertical: 10,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.1),
+                                    color: Colors.white.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(25),
                                     border: Border.all(
-                                      color: Colors.white.withOpacity(0.2),
+                                      color: Colors.white.withValues(alpha: 0.2),
                                     ),
                                   ),
                                   child: Text(
@@ -374,7 +374,7 @@ class _FullProfileScreenState extends State<FullProfileScreen> {
                   end: Alignment.topCenter,
                   colors: [
                     const Color(0xFF0A0A0A),
-                    const Color(0xFF0A0A0A).withOpacity(0.9),
+                    const Color(0xFF0A0A0A).withValues(alpha: 0.9),
                     Colors.transparent,
                   ],
                 ),

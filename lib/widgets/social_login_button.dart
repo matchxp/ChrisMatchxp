@@ -68,14 +68,14 @@ class _SocialLoginButtonState extends State<SocialLoginButton>
             boxShadow: _isPressed
                 ? [
                     BoxShadow(
-                      color: widget.color.withOpacity(0.5),
+                      color: widget.color.withValues(alpha: 0.5),
                       blurRadius: 20,
                       offset: const Offset(0, 5),
                     ),
                   ]
                 : [
                     BoxShadow(
-                      color: widget.color.withOpacity(0.3),
+                      color: widget.color.withValues(alpha: 0.3),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
                     ),

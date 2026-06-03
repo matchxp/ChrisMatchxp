@@ -18,14 +18,17 @@ class RPSPickScreen extends StatefulWidget {
     required this.currentUserName,
     required this.opponentId,
     required this.opponentName,
-    required this.sessionId,
+       required this.sessionId,
     required this.onChatUnlocked,
     this.popCount = 1,
     this.chatAlreadyUnlocked = false,
     this.showIntroFirst = false,
+    required this.matchId,
+    required this.partnerUserId,
+    required this.partnerName,
   });
 
-  final String currentUserId;
+   final String currentUserId;
   final String currentUserName;
   final String opponentId;
   final String opponentName;
@@ -37,6 +40,9 @@ class RPSPickScreen extends StatefulWidget {
   /// so the user sees the intro/tutorial before picking their move.
   /// Used by the chats screen when the user hasn't started the game yet.
   final bool showIntroFirst;
+  final String matchId;
+  final String partnerUserId;
+  final String partnerName;
 
   @override
   State<RPSPickScreen> createState() => _RPSPickScreenState();
@@ -83,6 +89,9 @@ class _RPSPickScreenState extends State<RPSPickScreen>
             popCount:            widget.popCount,
             chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
             onChatUnlocked:      widget.onChatUnlocked,
+            matchId:             widget.matchId,
+            partnerUserId:       widget.partnerUserId,
+            partnerName:         widget.partnerName,
           ),
         ));
       } else {
@@ -109,6 +118,9 @@ class _RPSPickScreenState extends State<RPSPickScreen>
           popCount:            widget.popCount,
           chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
           onChatUnlocked:      widget.onChatUnlocked,
+          matchId:             widget.matchId,
+          partnerUserId:       widget.partnerUserId,
+          partnerName:         widget.partnerName,
         ),
       ));
     } else {
@@ -124,6 +136,9 @@ class _RPSPickScreenState extends State<RPSPickScreen>
           popCount:           widget.popCount,
           chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
           onChatUnlocked:     widget.onChatUnlocked,
+          matchId:            widget.matchId,
+          partnerUserId:      widget.partnerUserId,
+          partnerName:        widget.partnerName,
         ),
       ));
     }
@@ -157,6 +172,9 @@ class _RPSPickScreenState extends State<RPSPickScreen>
             onChatUnlocked:       widget.onChatUnlocked,
             popCount:             widget.popCount,
             chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
+            matchId:              widget.matchId,
+            partnerUserId:        widget.partnerUserId,
+            partnerName:          widget.partnerName,
           ),
         ));
       } else {
@@ -172,6 +190,9 @@ class _RPSPickScreenState extends State<RPSPickScreen>
             onChatUnlocked:       widget.onChatUnlocked,
             popCount:             widget.popCount,
             chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
+            matchId:              widget.matchId,
+            partnerUserId:        widget.partnerUserId,
+            partnerName:          widget.partnerName,
           ),
         ));
       }
@@ -189,16 +210,16 @@ class _RPSPickScreenState extends State<RPSPickScreen>
     // Still checking DB state — render a blank themed scaffold so there's
     // nothing to flash before we navigate to Waiting / Reveal / Pick.
     if (_checking) {
-      return Scaffold(backgroundColor: RPSTheme.bg, body: RPSBackground(child: const SizedBox.expand()));
+      return const Scaffold(backgroundColor: Colors.transparent, body: RPSBackground(child: SizedBox.expand()));
     }
 
     return Scaffold(
-      backgroundColor: RPSTheme.bg,
+      backgroundColor: Colors.transparent,
       body: RPSBackground(
         child: SafeArea(
           child: Stack(
             children: [
-              const RPSGlowBlobs(),
+              // RPSGlowBlobs removed
               Padding(
                 padding: const EdgeInsets.fromLTRB(22, 24, 22, 72),
                 child: Column(
@@ -214,16 +235,16 @@ class _RPSPickScreenState extends State<RPSPickScreen>
                       builder: (_, __) => Text(
                         'Choose your move',
                         textAlign: TextAlign.center,
-                        style: RPSTheme.font(44, fw: FontWeight.w700)
+                        style: RPSTheme.font(40, fw: FontWeight.w700)
                             .copyWith(shadows: [
                           Shadow(
-                            color: Colors.white.withOpacity(
-                                0.55 + _glowCtrl.value * 0.45),
+                            color: Colors.white.withValues(
+                                alpha: 0.55 + _glowCtrl.value * 0.45),
                             blurRadius: 8 + _glowCtrl.value * 10,
                           ),
                           Shadow(
-                            color: RPSTheme.purpleLight.withOpacity(
-                                0.3 + _glowCtrl.value * 0.3),
+                            color: RPSTheme.purpleLight.withValues(
+                                alpha: 0.3 + _glowCtrl.value * 0.3),
                             blurRadius: 20 + _glowCtrl.value * 20,
                           ),
                         ]),

@@ -753,15 +753,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
+          const Row(
             children: [
-              const Text('MATCH',
+              Text('MATCH',
                   style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
                       letterSpacing: 1.5)),
-              const Text('XP',
+              Text('XP',
                   style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w800,
@@ -780,7 +780,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 color: const Color(0xFF1A1A1A),
                 borderRadius: BorderRadius.circular(10),
                 border:
-                    Border.all(color: const Color(0xFF6C3FE8).withOpacity(0.3)),
+                    Border.all(color: const Color(0xFF6C3FE8).withValues(alpha: 0.3)),
               ),
               child: const Icon(Icons.tune, color: Color(0xFF6C3FE8), size: 18),
             ),
@@ -871,7 +871,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -921,7 +921,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     colors: [
                       Colors.transparent,
                       Colors.transparent,
-                      Colors.black.withOpacity(0.75),
+                      Colors.black.withValues(alpha: 0.75),
                     ],
                     stops: const [0.0, 0.55, 1.0],
                   ),
@@ -1001,7 +1001,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF00D4AA).withOpacity(0.6),
+                                color: const Color(0xFF00D4AA).withValues(alpha: 0.6),
                                 blurRadius: 8,
                                 spreadRadius: 1,
                               ),
@@ -1016,10 +1016,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.5),
+                          color: Colors.black.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(20),
                           border:
-                              Border.all(color: Colors.white.withOpacity(0.3)),
+                              Border.all(color: Colors.white.withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1051,7 +1051,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                       horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFF6C3FE8)
-                                        .withOpacity(0.7),
+                                        .withValues(alpha: 0.7),
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Text(
@@ -1139,7 +1139,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: gradient.colors.first.withOpacity(0.4),
+              color: gradient.colors.first.withValues(alpha: 0.4),
               blurRadius: 20,
               offset: const Offset(0, 8),
             ),

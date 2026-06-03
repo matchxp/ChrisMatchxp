@@ -8,7 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 class RPSTheme {
   RPSTheme._();
 
-  static const Color bg      = Color(0xFF040210);
+  static const Color bg      = Color(0xFF120D2E);
   static const Color bgCard  = Color(0xFF1A0A2E);
   static const Color bgPanel = Color(0xFF120D2E);
 
@@ -19,18 +19,19 @@ class RPSTheme {
   static const Color muted       = Color(0xFF6D5F8A);
   static const Color dimLine     = Color(0xFF2A2050);
 
-  static const BoxDecoration bgDecoration = BoxDecoration(
-    gradient: RadialGradient(
-      center: Alignment(0.0, -1.0),
-      radius: 1.6,
+    static const BoxDecoration bgDecoration = BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topRight,
+      end: Alignment.bottomLeft,
+      stops: [0.0, 0.18, 0.38, 0.60, 0.82, 1.0],
       colors: [
-        Color(0xFF3B1580),
-        Color(0xFF1E0A50),
-        Color(0xFF110630),
-        Color(0xFF080418),
-        Color(0xFF040210),
+        Color.fromARGB(255, 110, 29, 131),
+        Color(0xFF2E0858),
+        Color(0xFF180430),
+        Color(0xFF0F0B1E),
+        Color(0xFF0D0B14),
+        Color(0xFF0C0B11),
       ],
-      stops: [0.0, 0.22, 0.48, 0.74, 1.0],
     ),
   );
 

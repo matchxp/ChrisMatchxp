@@ -52,7 +52,7 @@ class RecordLinux extends RecordPlatform {
   Future<Stream<Uint8List>> startStream(
     String recorderId,
     RecordConfig config,
-  ) async => Stream<Uint8List>.empty();
+  ) async => const Stream<Uint8List>.empty();
 
   @override
   Future<void> pause(String recorderId) async {}

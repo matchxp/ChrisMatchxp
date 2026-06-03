@@ -26,7 +26,9 @@ double calcCompletion(Map<String, dynamic> p) {
   if ((p['location'] as String?)?.isNotEmpty == true) done++;
   if (p['drinking_habit'] != null ||
       p['smoking_habit'] != null ||
-      p['workout_habit'] != null) done++;
+      p['workout_habit'] != null) {
+    done++;
+  }
   final i = p['interests'];
   if (i is List && i.isNotEmpty) done++;
   final ph = p['photos'];
@@ -52,11 +54,13 @@ int countMissingSteps(Map<String, dynamic> p) {
   if ((p['location'] as String?)?.isEmpty != false) missing++;
   if (p['drinking_habit'] == null &&
       p['smoking_habit'] == null &&
-      p['workout_habit'] == null) missing++;
+      p['workout_habit'] == null) {
+    missing++;
+  }
   final interests = p['interests'];
   if (interests is! List || (interests).isEmpty) missing++;
   final photos = p['photos'];
-  if (photos is! List || (photos as List).length < 2) missing++;
+  if (photos is! List || (photos).length < 2) missing++;
   return missing;
 }
 

@@ -13,6 +13,7 @@ import 'word_search_game_screen.dart';
 import 'word_search_data.dart';
 import 'word_search_service.dart';
 import 'word_search_models.dart';
+import '../game_hub_screen.dart';
 
 class WordSearchSupabaseWrapper extends StatefulWidget {
   final String matchId;
@@ -146,7 +147,12 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
         if (mg != null) {
           final catIdx = WordSearchData.categories.indexWhere((c) => c.key == mg.topic);
           state.resumeFrom(step,
-              myWord: mg.word, myCatIdx: catIdx >= 0 ? catIdx : 0);
+              myWord: mg.word,
+              myCatIdx: catIdx >= 0 ? catIdx : 0,
+              mySolved: snap.partnerGame?.isSkipped == false && snap.partnerGame?.isSolved == true,
+              mySkipped: snap.partnerGame?.isSkipped == true,
+              partnerSolved: snap.myGame?.isSkipped == false && snap.myGame?.isSolved == true,
+              partnerSkipped: snap.myGame?.isSkipped == true);
         } else {
           state.resumeFrom(step);
         }
@@ -155,6 +161,19 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
   }
 
   // ── Score recording ────────────────────────────────────────
+  //
+  // Mirrors the Emoji Charades pattern exactly (which is proven to work):
+  //   • Both solved   → result_label='both_solved', winnerId=null
+  //                     complete_game_session inserts +1 for each player server-side
+  //   • I won         → result_label='completed',   winnerId=me
+  //   • I lost        → result_label='completed',   winnerId=partner
+  //   • Both skipped  → result_label='both_skipped', winnerId=null
+  //
+  // pg = partnerGame = the row where I am solver_id  (the puzzle I need to solve)
+  // mg = myGame      = the row where I am creator_id (the puzzle partner needs to solve)
+  //
+  //   Did I solve?       → pg.isSolved && !pg.isSkipped
+  //   Did partner solve? → mg.isSolved && !mg.isSkipped
 
   void _recordScoreIfNeeded(MatchGamesSnapshot snap) {
     if (_scoreRecorded) return;
@@ -163,48 +182,65 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
     final mg = snap.myGame;
     if (pg == null || mg == null) return;
 
-    // Win  = I solved AND partner skipped  → complete_game_session records the score.
-    // Draw = both solved OR both skipped.
-    //   • Both solved: each player records their own +1 via recordWinner so the
-    //     scoreboard reflects the effort of BOTH players finding the word.
-    //   • Both skipped: no points for anyone.
-    // Loss = I skipped AND partner solved  → complete_game_session records the score.
-    //
-    // NOTE: complete_game_session (SECURITY DEFINER RPC) already inserts a
-    // game_scores row for the winner whenever p_winner_id is non-null.
-    // We must NOT call recordWinner for wins/losses — that would double-count.
-    // We ONLY call recordWinner here for the "both solved" draw, which
-    // complete_game_session skips (it only inserts when winner != null).
-    final iSolved        = !pg.isSkipped; // I found partner's word
-    final partnerSolved  = !mg.isSkipped; // partner found my word
-    final iWon   = iSolved && !partnerSolved;
-    final isDraw = iSolved == partnerSolved; // both solved OR both skipped
+    final iSolved       = pg.isSolved && !pg.isSkipped;
+    final partnerSolved = mg.isSolved && !mg.isSkipped;
+
+    debugPrint('[WordSearch] recordScore: iSolved=$iSolved partnerSolved=$partnerSolved sessionId=${widget.sessionId}');
 
     _scoreRecorded = true;
+    debugPrint('[WordSearch] OUTCOME: iSolved=$iSolved partnerSolved=$partnerSolved myId=${widget.currentUserId} partnerId=${widget.partnerUserId}');
 
-    if (isDraw && iSolved) {
-      // Both players solved → award each player +1 on their own device.
-      // complete_game_session is called with winner=null so it won't add
-      // a second row for this scenario.
-      _svc.recordWinner(
-        matchId:  widget.matchId,
-        winnerId: widget.currentUserId,
-        loserId:  widget.partnerUserId,
-      ).catchError((e) => debugPrint('[WordSearch] recordWinner error: $e'));
+    // Only insert a score row if I actually solved the puzzle.
+    // Each player runs this independently on their own device.
+    // RPC is still called to mark the session completed — but we
+    // never rely on it for score insertion.
+    if (iSolved) {
+      _insertMyScoreDirectly();
     }
-    // For wins/losses: complete_game_session handles the score insert.
-    _sendCompletion(iWon: iWon, isDraw: isDraw);
+    final resultLabel = (iSolved && partnerSolved) ? 'both_solved'
+        : iSolved ? 'completed'
+        : partnerSolved ? 'completed'
+        : 'both_skipped';
+    _sendCompletion(winnerId: null, resultLabel: resultLabel);
   }
 
-  void _sendCompletion({required bool iWon, required bool isDraw}) {
+  /// Each player calls this for themselves in the both-solved case.
+  /// Inserts directly into game_scores rather than relying on the RPC,
+  /// because the RPC is idempotent — only the first caller gets a row.
+  /// _scoreRecorded is set to true before this is called, so it can
+  /// only ever run once per device per round — no dedup query needed.
+  Future<void> _insertMyScoreDirectly() async {
+    try {
+      final recent = await Supabase.instance.client
+          .from('game_scores')
+          .select('id')
+          .eq('match_id', widget.matchId)
+          .eq('winner_id', widget.currentUserId)
+          .gte('created_at', DateTime.now().subtract(const Duration(seconds: 60)).toUtc().toIso8601String())
+          .maybeSingle();
+      if (recent != null) {
+        debugPrint('[WordSearch] Score already inserted recently, skipping.');
+        return;
+      }
+      await Supabase.instance.client.from('game_scores').insert({
+        'match_id':  widget.matchId,
+        'winner_id': widget.currentUserId,
+        'loser_id':  widget.partnerUserId,
+      });
+      debugPrint('[WordSearch] Inserted both_solved score for ${widget.currentUserId}');
+    } catch (e) {
+      debugPrint('[WordSearch] _insertMyScoreDirectly error: $e');
+    }
+  }
+
+  void _sendCompletion({required String? winnerId, required String resultLabel}) {
     if (_completionSent || widget.sessionId == null) return;
     _completionSent = true;
-    // Both players call — the RPC is idempotent, first writer wins.
-    final winnerId = isDraw ? null : (iWon ? widget.currentUserId : widget.partnerUserId);
+    debugPrint('[WordSearch] complete_game_session sessionId=${widget.sessionId} winnerId=$winnerId label=$resultLabel');
     Supabase.instance.client.rpc('complete_game_session', params: {
       'p_session_id':   widget.sessionId,
       'p_winner_id':    winnerId,
-      'p_result_label': 'completed',
+      'p_result_label': resultLabel,
     }).catchError((e) {
       debugPrint('[WordSearch] complete_game_session error: $e');
     });
@@ -226,6 +262,23 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
 
       case 'wordSkipped':
         await _handleWordSkipped();
+        break;
+
+      case 'playAgain':
+        if (context.mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => GameHubScreen(
+                matchId: widget.matchId,
+                currentUserId: widget.currentUserId,
+                partnerUserId: widget.partnerUserId,
+                partnerName: widget.partnerName,
+                chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
+                onChatUnlocked: widget.onChatUnlocked,
+              ),
+            ),
+          );
+        }
         break;
 
       case 'chatPressed':
@@ -336,6 +389,8 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
       onGameEvent:          _onGameEvent,
       skipWelcome:          effectiveSkipWelcome,
       chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
+      currentUserId:        widget.currentUserId,
+      partnerUserId:        widget.partnerUserId,
     );
   }
 }

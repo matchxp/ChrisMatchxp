@@ -22,6 +22,9 @@ class RPSRevealScreen extends StatefulWidget {
     required this.onChatUnlocked,
     this.popCount = 1,
     this.chatAlreadyUnlocked = false,
+    required this.matchId,
+    required this.partnerUserId,
+    required this.partnerName,
   });
 
   final String currentUserId;
@@ -33,6 +36,9 @@ class RPSRevealScreen extends StatefulWidget {
   final VoidCallback onChatUnlocked;
   final int popCount;
   final bool chatAlreadyUnlocked;
+  final String matchId;
+  final String partnerUserId;
+  final String partnerName;
 
   @override
   State<RPSRevealScreen> createState() => _RPSRevealScreenState();
@@ -90,9 +96,7 @@ class _RPSRevealScreenState extends State<RPSRevealScreen>
       setState(() => _count--);
       if (_count < 0) {
         t.cancel();
-        setState(() => _showReveal = true);
-        _popCtrl.forward();
-        Future.delayed(const Duration(milliseconds: 2200), _goResult);
+        _goResult();
       }
     });
   }
@@ -112,6 +116,9 @@ class _RPSRevealScreenState extends State<RPSRevealScreen>
         onChatUnlocked:       widget.onChatUnlocked,
         popCount:             widget.popCount,
         chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
+        matchId:              widget.matchId,
+        partnerUserId:        widget.partnerUserId,
+        partnerName:          widget.partnerName,
       ),
     ));
   }
@@ -119,12 +126,12 @@ class _RPSRevealScreenState extends State<RPSRevealScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: RPSTheme.bg,
+      backgroundColor: Colors.transparent,
       body: RPSBackground(
         child: SafeArea(
           child: Stack(
             children: [
-              const RPSGlowBlobs(),
+             // RPSGlowBlobs removed
               Padding(
                 padding: const EdgeInsets.fromLTRB(22, 24, 22, 32),
                 child: Column(
@@ -187,19 +194,19 @@ class _RPSRevealScreenState extends State<RPSRevealScreen>
                 height: 145,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    center: const Alignment(-0.2, -0.3),
+                  gradient: const RadialGradient(
+                    center: Alignment(-0.2, -0.3),
                     colors: [
                       RPSTheme.purple,
-                      const Color(0xFF4C1D95),
-                      const Color(0xFF1E0A50),
-                      const Color(0xFF0D0528),
+                      Color(0xFF4C1D95),
+                      Color(0xFF1E0A50),
+                      Color(0xFF0D0528),
                     ],
-                    stops: const [0.0, 0.44, 0.78, 1.0],
+                    stops: [0.0, 0.44, 0.78, 1.0],
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: RPSTheme.purple.withOpacity(0.44),
+                      color: RPSTheme.purple.withValues(alpha: 0.44),
                       blurRadius: 55,
                     ),
                   ],
@@ -213,7 +220,7 @@ class _RPSRevealScreenState extends State<RPSRevealScreen>
                       style: RPSTheme.font(88, fw: FontWeight.w700)
                           .copyWith(shadows: [
                         Shadow(
-                          color: const Color(0xFFDCB4FF).withOpacity(0.8),
+                          color: const Color(0xFFDCB4FF).withValues(alpha: 0.8),
                           blurRadius: 30,
                         ),
                       ]),

@@ -407,9 +407,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             padding:
                 const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: _purple.withOpacity(0.15),
+              color: _purple.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _purple.withOpacity(0.3)),
+              border: Border.all(color: _purple.withValues(alpha: 0.3)),
             ),
             child: const Text('Discovery',
                 style: TextStyle(
@@ -463,19 +463,19 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             decoration: BoxDecoration(
               color: selected
-                  ? meta.color.withOpacity(0.13)
+                  ? meta.color.withValues(alpha: 0.13)
                   : _card,
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: selected
-                    ? meta.color.withOpacity(0.65)
-                    : Colors.white.withOpacity(0.07),
+                    ? meta.color.withValues(alpha: 0.65)
+                    : Colors.white.withValues(alpha: 0.07),
                 width: selected ? 1.5 : 1,
               ),
               boxShadow: selected
                   ? [
                       BoxShadow(
-                          color: meta.color.withOpacity(0.18),
+                          color: meta.color.withValues(alpha: 0.18),
                           blurRadius: 14,
                           offset: const Offset(0, 4))
                     ]
@@ -487,7 +487,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: meta.color.withOpacity(selected ? 0.22 : 0.09),
+                    color: meta.color.withValues(alpha: selected ? 0.22 : 0.09),
                     borderRadius: BorderRadius.circular(9),
                   ),
                   child: Icon(meta.icon,
@@ -551,13 +551,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: selected
-                      ? meta.color.withOpacity(0.13)
+                      ? meta.color.withValues(alpha: 0.13)
                       : _card,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: selected
-                        ? meta.color.withOpacity(0.6)
-                        : Colors.white.withOpacity(0.07),
+                        ? meta.color.withValues(alpha: 0.6)
+                        : Colors.white.withValues(alpha: 0.07),
                     width: selected ? 1.5 : 1,
                   ),
                 ),
@@ -603,7 +603,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         decoration: BoxDecoration(
           color: _card,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _purple.withOpacity(0.2)),
+          border: Border.all(color: _purple.withValues(alpha: 0.2)),
         ),
         child: Row(
           children: [
@@ -611,7 +611,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: _purple.withOpacity(0.12),
+                color: _purple.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(11),
               ),
               child: const Icon(Icons.cake_outlined,
@@ -660,7 +660,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           decoration: BoxDecoration(
             color: _card,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.07)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
           ),
           child: Row(
             children: [
@@ -668,7 +668,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: _purple.withOpacity(0.12),
+                  color: _purple.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: Icon(icon, color: _purple, size: 19),
@@ -701,8 +701,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: _locationFocus.hasFocus
-                  ? _purple.withOpacity(0.5)
-                  : Colors.white.withOpacity(0.07),
+                  ? _purple.withValues(alpha: 0.5)
+                  : Colors.white.withValues(alpha: 0.07),
               width: _locationFocus.hasFocus ? 1.5 : 1,
             ),
           ),
@@ -712,7 +712,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withOpacity(0.12),
+                  color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.location_on_outlined,
@@ -766,10 +766,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             decoration: BoxDecoration(
               color: _card2,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _purple.withOpacity(0.25)),
+              border: Border.all(color: _purple.withValues(alpha: 0.25)),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.4),
+                    color: Colors.black.withValues(alpha: 0.4),
                     blurRadius: 16,
                     offset: const Offset(0, 6)),
               ],
@@ -793,7 +793,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                               height: 1,
                               thickness: 1,
                               color: Colors.white
-                                  .withOpacity(0.05)),
+                                  .withValues(alpha: 0.05)),
                         Padding(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 12),
@@ -804,7 +804,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                                 height: 32,
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF4CAF50)
-                                      .withOpacity(0.1),
+                                      .withValues(alpha: 0.1),
                                   borderRadius:
                                       BorderRadius.circular(8),
                                 ),
@@ -837,10 +837,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         if (_locationCtrl.text.isNotEmpty &&
             _locationSuggestions.isEmpty &&
             !_isSearchingLocation)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, left: 4),
+          const Padding(
+            padding: EdgeInsets.only(top: 8, left: 4),
             child: Row(
-              children: const [
+              children: [
                 Icon(Icons.info_outline_rounded,
                     color: Colors.white24, size: 13),
                 SizedBox(width: 6),
@@ -863,7 +863,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       decoration: BoxDecoration(
         color: _card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: Column(
         children: [
@@ -873,7 +873,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: _purple.withOpacity(0.12),
+                  color: _purple.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: const Icon(Icons.radar_rounded,
@@ -924,7 +924,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               activeTrackColor: _purple,
               inactiveTrackColor: Colors.white10,
               thumbColor: Colors.white,
-              overlayColor: _purple.withOpacity(0.15),
+              overlayColor: _purple.withValues(alpha: 0.15),
               thumbShape:
                   const RoundSliderThumbShape(enabledThumbRadius: 10),
               overlayShape:
@@ -942,11 +942,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
+              children: [
                 Text('1 km',
                     style: TextStyle(
                         color: Colors.white24, fontSize: 11)),
@@ -977,14 +977,14 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       decoration: BoxDecoration(
         gradient: _isSaving
             ? LinearGradient(colors: [
-                _purple.withOpacity(0.5),
-                _purple2.withOpacity(0.5)
+                _purple.withValues(alpha: 0.5),
+                _purple2.withValues(alpha: 0.5)
               ])
             : const LinearGradient(colors: [_purple, _purple2]),
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
-              color: _purple.withOpacity(0.4),
+              color: _purple.withValues(alpha: 0.4),
               blurRadius: 18,
               offset: const Offset(0, 6)),
         ],
@@ -1114,13 +1114,13 @@ class _PickerSheet extends StatelessWidget {
                     horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? _purple.withOpacity(0.15)
-                      : Colors.white.withOpacity(0.04),
+                      ? _purple.withValues(alpha: 0.15)
+                      : Colors.white.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: isSelected
-                        ? _purple.withOpacity(0.6)
-                        : Colors.white.withOpacity(0.07),
+                        ? _purple.withValues(alpha: 0.6)
+                        : Colors.white.withValues(alpha: 0.07),
                     width: isSelected ? 1.5 : 1,
                   ),
                 ),
@@ -1131,8 +1131,8 @@ class _PickerSheet extends StatelessWidget {
                       height: 36,
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? _purple.withOpacity(0.2)
-                            : Colors.white.withOpacity(0.06),
+                            ? _purple.withValues(alpha: 0.2)
+                            : Colors.white.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(opt.icon,

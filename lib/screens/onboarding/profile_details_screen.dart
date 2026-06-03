@@ -32,12 +32,15 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    if (_onboardingData.firstName != null)
+    if (_onboardingData.firstName != null) {
       _firstNameController.text = _onboardingData.firstName!;
-    if (_onboardingData.lastName != null)
+    }
+    if (_onboardingData.lastName != null) {
       _lastNameController.text = _onboardingData.lastName!;
-    if (_onboardingData.profileImage != null)
+    }
+    if (_onboardingData.profileImage != null) {
       _profileImage = _onboardingData.profileImage;
+    }
   }
 
   @override
@@ -126,7 +129,7 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
                             onPressed: () => Navigator.pop(context),
                             padding: EdgeInsets.zero,
                           ),
-                          Expanded(
+                          const Expanded(
                             child: OnboardingProgressDots(currentStep: 1),
                           ),
                           const SizedBox(width: 48),
@@ -153,7 +156,7 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
                         style: GoogleFonts.outfit(
                           fontSize: 16,
                           fontWeight: FontWeight.w300,
-                          color: Colors.white.withOpacity(0.50),
+                          color: Colors.white.withValues(alpha: 0.50),
                         ),
                       ),
 
@@ -172,8 +175,8 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
                                     ? null
                                     : LinearGradient(
                                         colors: [
-                                          _purple.withOpacity(0.3),
-                                          _purple2.withOpacity(0.15),
+                                          _purple.withValues(alpha: 0.3),
+                                          _purple2.withValues(alpha: 0.15),
                                         ],
                                         begin: Alignment.topLeft,
                                         end: Alignment.bottomRight,
@@ -249,7 +252,7 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
                                 : const LinearGradient(
                                     colors: [_purple, _purple2]),
                             color: _isSaving
-                                ? Colors.white.withOpacity(0.08)
+                                ? Colors.white.withValues(alpha: 0.08)
                                 : null,
                             borderRadius: BorderRadius.circular(50),
                           ),
@@ -299,8 +302,8 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),
@@ -316,16 +319,16 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(50),
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         border: Border.all(
-          color: _purple.withOpacity(0.42),
+          color: _purple.withValues(alpha: 0.42),
           width: 1.0,
         ),
       ),
       child: Row(
         children: [
           const SizedBox(width: 18),
-          Icon(icon, color: Colors.white.withOpacity(0.4), size: 18),
+          Icon(icon, color: Colors.white.withValues(alpha: 0.4), size: 18),
           Expanded(
             child: TextField(
               controller: controller,
@@ -337,7 +340,7 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
               decoration: InputDecoration(
                 hintText: hintText,
                 hintStyle: GoogleFonts.outfit(
-                    color: Colors.white.withOpacity(0.36),
+                    color: Colors.white.withValues(alpha: 0.36),
                     fontSize: 15,
                     fontWeight: FontWeight.w300),
                 border: InputBorder.none,

@@ -295,7 +295,7 @@ class _LoginScreenState extends State<LoginScreen>
                                             fontSize: 15,
                                             fontWeight: FontWeight.w300,
                                             color:
-                                                Colors.white.withOpacity(0.50),
+                                                Colors.white.withValues(alpha: 0.50),
                                             height: 1.55,
                                           ),
                                           textAlign: TextAlign.center,
@@ -321,7 +321,7 @@ class _LoginScreenState extends State<LoginScreen>
                             style: GoogleFonts.outfit(
                               fontSize: 12,
                               fontWeight: FontWeight.w300,
-                              color: Colors.white.withOpacity(0.50),
+                              color: Colors.white.withValues(alpha: 0.50),
                               height: 1.6,
                             ),
                           ),
@@ -349,7 +349,7 @@ class _LoginScreenState extends State<LoginScreen>
                           Row(children: [
                             Expanded(
                               child: Divider(
-                                  color: Colors.white.withOpacity(0.13),
+                                  color: Colors.white.withValues(alpha: 0.13),
                                   thickness: 1),
                             ),
                             Padding(
@@ -357,7 +357,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   const EdgeInsets.symmetric(horizontal: 12),
                               child: Text('OR',
                                   style: GoogleFonts.outfit(
-                                    color: Colors.white.withOpacity(0.68),
+                                    color: Colors.white.withValues(alpha: 0.68),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                     letterSpacing: 1.5,
@@ -365,7 +365,7 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                             Expanded(
                               child: Divider(
-                                  color: Colors.white.withOpacity(0.13),
+                                  color: Colors.white.withValues(alpha: 0.13),
                                   thickness: 1),
                             ),
                           ]),
@@ -389,7 +389,7 @@ class _LoginScreenState extends State<LoginScreen>
                           Text('Trouble signing in?',
                               style: GoogleFonts.outfit(
                                   fontSize: 13,
-                                  color: Colors.white.withOpacity(0.44))),
+                                  color: Colors.white.withValues(alpha: 0.44))),
 
                           const SizedBox(height: 8),
 
@@ -398,7 +398,7 @@ class _LoginScreenState extends State<LoginScreen>
                             text: TextSpan(
                               style: GoogleFonts.outfit(
                                 fontSize: 10.5,
-                                color: Colors.white.withOpacity(0.52),
+                                color: Colors.white.withValues(alpha: 0.52),
                                 height: 1.6,
                               ),
                               children: const [
@@ -453,9 +453,9 @@ class _LoginScreenState extends State<LoginScreen>
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
         decoration: BoxDecoration(
           border: Border.all(
-              color: const Color(0xFF6C3FE8).withOpacity(0.42), width: 1),
+              color: const Color(0xFF6C3FE8).withValues(alpha: 0.42), width: 1),
           borderRadius: BorderRadius.circular(50),
-          color: Colors.white.withOpacity(0.06),
+          color: Colors.white.withValues(alpha: 0.06),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -481,9 +481,9 @@ class _LoginScreenState extends State<LoginScreen>
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
         decoration: BoxDecoration(
           border: Border.all(
-              color: const Color(0xFF6C3FE8).withOpacity(0.42), width: 1),
+              color: const Color(0xFF6C3FE8).withValues(alpha: 0.42), width: 1),
           borderRadius: BorderRadius.circular(50),
-          color: Colors.white.withOpacity(0.06),
+          color: Colors.white.withValues(alpha: 0.06),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -528,8 +528,12 @@ class _VerifyScreenState extends State<VerifyScreen> {
 
   @override
   void dispose() {
-    for (var c in _otpControllers) c.dispose();
-    for (var n in _focusNodes) n.dispose();
+    for (var c in _otpControllers) {
+      c.dispose();
+    }
+    for (var n in _focusNodes) {
+      n.dispose();
+    }
     super.dispose();
   }
 
@@ -567,7 +571,9 @@ class _VerifyScreenState extends State<VerifyScreen> {
       }
     } else {
       _showMessage('Invalid OTP. Please try again.');
-      for (var c in _otpControllers) c.clear();
+      for (var c in _otpControllers) {
+        c.clear();
+      }
       _focusNodes[0].requestFocus();
     }
   }
@@ -625,7 +631,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
                           fontSize: 14,
-                          color: Colors.white.withOpacity(0.65),
+                          color: Colors.white.withValues(alpha: 0.65),
                           height: 1.5),
                     ),
                     const SizedBox(height: 48),
@@ -647,7 +653,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
                                         _focusNodes[index].hasFocus ? 2.0 : 1.5,
                                   ),
                                   borderRadius: BorderRadius.circular(12),
-                                  color: Colors.white.withOpacity(0.04),
+                                  color: Colors.white.withValues(alpha: 0.04),
                                 ),
                                 child: TextField(
                                   controller: _otpControllers[index],
@@ -667,12 +673,15 @@ class _VerifyScreenState extends State<VerifyScreen> {
                                       counterText: '',
                                       contentPadding: EdgeInsets.zero),
                                   onChanged: (value) {
-                                    if (value.length == 1 && index < 5)
+                                    if (value.length == 1 && index < 5) {
                                       _focusNodes[index + 1].requestFocus();
-                                    if (value.isEmpty && index > 0)
+                                    }
+                                    if (value.isEmpty && index > 0) {
                                       _focusNodes[index - 1].requestFocus();
-                                    if (index == 5 && value.length == 1)
+                                    }
+                                    if (index == 5 && value.length == 1) {
                                       _verifyOTP();
+                                    }
                                     setState(() {});
                                   },
                                 ),
@@ -693,7 +702,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
                           borderRadius: BorderRadius.circular(50),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF6C3FE8).withOpacity(0.4),
+                              color: const Color(0xFF6C3FE8).withValues(alpha: 0.4),
                               blurRadius: 20,
                               offset: const Offset(0, 4),
                             )
@@ -760,15 +769,15 @@ class _PhoneInputFieldState extends State<PhoneInputField> {
         border: Border.all(
           color: _isFocused
               ? const Color(0xFF6C3FE8)
-              : const Color(0xFF6C3FE8).withOpacity(0.42),
+              : const Color(0xFF6C3FE8).withValues(alpha: 0.42),
           width: _isFocused ? 2.0 : 1.0,
         ),
         borderRadius: BorderRadius.circular(50),
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         boxShadow: _isFocused
             ? [
                 BoxShadow(
-                  color: const Color(0xFF6C3FE8).withOpacity(0.25),
+                  color: const Color(0xFF6C3FE8).withValues(alpha: 0.25),
                   blurRadius: 14,
                   offset: const Offset(0, 4),
                 )
@@ -795,8 +804,8 @@ class _PhoneInputFieldState extends State<PhoneInputField> {
           width: 1,
           height: 24,
           color: _isFocused
-              ? const Color(0xFF6C3FE8).withOpacity(0.6)
-              : Colors.white.withOpacity(0.14),
+              ? const Color(0xFF6C3FE8).withValues(alpha: 0.6)
+              : Colors.white.withValues(alpha: 0.14),
         ),
         Expanded(
           child: TextField(
@@ -813,7 +822,7 @@ class _PhoneInputFieldState extends State<PhoneInputField> {
             decoration: InputDecoration(
               hintText: 'Enter phone number',
               hintStyle: GoogleFonts.outfit(
-                  color: Colors.white.withOpacity(0.36),
+                  color: Colors.white.withValues(alpha: 0.36),
                   fontSize: 14,
                   fontWeight: FontWeight.w300),
               border: InputBorder.none,

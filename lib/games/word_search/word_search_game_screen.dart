@@ -5,15 +5,16 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'word_search_data.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:confetti/confetti.dart';
 // ═══════════════════════════════════════════════════════════════
-// COLOURS — exact match to HTML demo
+// COLOURS AND TEXT STYLE
 // ═══════════════════════════════════════════════════════════════
 
-const _bg         = Color(0xFF050310);
-const _bgGrad1    = Color(0xFF2A1560);
-const _bgGrad2    = Color(0xFF120D2E);
-const _bgGrad3    = Color(0xFF07060F);
+const _bg         = Color(0xFF120D2E);
+const _bgGrad1    = Color(0xFF6E1D83);
+const _bgGrad2    = Color(0xFF2E0858);
+const _bgGrad3    = Color(0xFF0C0B11);
 const _purple     = Color(0xFFAB5CF5);
 const _purpleDark = Color(0xFF6930C3);
 const _purpleMid  = Color(0xFF8B5CF6);
@@ -52,8 +53,8 @@ class _Particle {
   _Particle({
     required this.x, required this.y, required this.vx, required this.vy,
     required this.w, required this.h, required this.rot, required this.rv,
-    required this.color, this.opacity = 1.0,
-  });
+    required this.color,
+  }) : opacity = 1.0;
 }
 
 class _ConfettiPainter extends CustomPainter {
@@ -64,7 +65,7 @@ class _ConfettiPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
     for (final p in particles) {
-      paint.color = p.color.withOpacity(p.opacity.clamp(0.0, 1.0));
+      paint.color = p.color.withValues(alpha: p.opacity.clamp(0.0, 1.0));
       canvas.save();
       canvas.translate(p.x, p.y);
       canvas.rotate(p.rot);
@@ -96,6 +97,8 @@ class WordSearchGameScreen extends StatefulWidget {
   final bool skipWelcome;
 
   final bool chatAlreadyUnlocked;
+  final String currentUserId;
+  final String partnerUserId;
 
   const WordSearchGameScreen({
     super.key,
@@ -103,6 +106,8 @@ class WordSearchGameScreen extends StatefulWidget {
     this.onGameEvent,
     this.skipWelcome = false,
     this.chatAlreadyUnlocked = false,
+    this.currentUserId = '',
+    this.partnerUserId = '',
   });
 
   @override
@@ -131,27 +136,52 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   late Animation<double> _shimAnim;
   late Animation<double> _shakeAnim;
   late Animation<double> _bounceAnim;
+  late AnimationController _titleFloatCtrl;
+  late Animation<double> _titleFloatAnim;
   late Animation<double> _p1Anim, _p2Anim, _p3Anim;
 
   // ── Skip timer ─────────────────────────────────────────────
   Timer? _skipTimer;
   bool _showSkip = false;
+  int _skipSeconds = 15;
 
   // ── Confetti ───────────────────────────────────────────────
-  List<_Particle> _particles = [];
-  Ticker? _confettiTicker;
+  late ConfettiController _confettiCtrl;
+
+  // ── Avatars ────────────────────────────────────────────────
+  String _myAvatarUrl = '';
+  String _partnerAvatarUrl = '';
 
   // ── Carousel ───────────────────────────────────────────────
-  double _carouselTargetOffset = 0;
+  final double _carouselTargetOffset = 0;
 
   // ─────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _initAnimations();
+    _fetchAvatars();
     if (widget.skipWelcome) {
       _me = _me.copyWith(step: WSStep.category);
     }
+  }
+
+  Future<void> _fetchAvatars() async {
+    if (widget.currentUserId.isEmpty || widget.partnerUserId.isEmpty) return;
+    try {
+      final rows = await Supabase.instance.client
+          .from('profiles')
+          .select('id, photos')
+          .inFilter('id', [widget.currentUserId, widget.partnerUserId]);
+      for (final row in (rows as List)) {
+        final id = row['id'] as String;
+        final photos = row['photos'];
+        final url = (photos is List && photos.isNotEmpty) ? photos[0] as String : '';
+        if (!mounted) return;
+        if (id == widget.currentUserId) setState(() => _myAvatarUrl = url);
+        if (id == widget.partnerUserId) setState(() => _partnerAvatarUrl = url);
+      }
+    } catch (_) {}
   }
 
   void _initAnimations() {
@@ -190,6 +220,13 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
     // Bounce-in for done emoji
     _bounceCtrl = AnimationController(duration: const Duration(milliseconds: 1200), vsync: this);
     _bounceAnim = CurvedAnimation(parent: _bounceCtrl, curve: Curves.elasticOut);
+
+    _titleFloatCtrl = AnimationController(duration: const Duration(milliseconds: 3000), vsync: this)
+      ..repeat(reverse: true);
+    _titleFloatAnim = Tween<double>(begin: 0, end: -10).animate(
+      CurvedAnimation(parent: _titleFloatCtrl, curve: Curves.easeInOut));
+
+    _confettiCtrl = ConfettiController(duration: const Duration(seconds: 1));
   }
 
   @override
@@ -197,8 +234,9 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
     _floatCtrl.dispose(); _shimCtrl.dispose();
     _p1.dispose(); _p2.dispose(); _p3.dispose();
     _shakeCtrl.dispose(); _bounceCtrl.dispose();
+    _titleFloatCtrl.dispose();
     _skipTimer?.cancel();
-    _confettiTicker?.dispose();
+    _confettiCtrl.dispose();
     _wordCtrl.dispose(); _wordFocus.dispose();
     super.dispose();
   }
@@ -211,18 +249,23 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   /// Pass [myWord] and [myCatIdx] so the wait/waitPartner/done screens can
   /// display the player's own submitted word correctly.
   /// Call this AFTER setPartnerData so the solve screen has the grid ready.
-  void resumeFrom(WSStep step, {String myWord = '', int myCatIdx = 0}) {
+  void resumeFrom(WSStep step, {String myWord = '', int myCatIdx = 0, bool mySolved = false, bool mySkipped = false, bool partnerSolved = false, bool partnerSkipped = false}) {
     final submitted = step == WSStep.wait ||
         step == WSStep.solve ||
         step == WSStep.waitPartner ||
         step == WSStep.done;
     setState(() {
       var s = _me.copyWith(step: step, submitted: submitted);
-      if (myWord.isNotEmpty) {
-        s = s.copyWith(word: myWord, catIdx: myCatIdx);
-      }
+      if (myWord.isNotEmpty) s = s.copyWith(word: myWord, catIdx: myCatIdx);
+      if (mySolved) s = s.copyWith(solved: true);
+      if (mySkipped) s = s.copyWith(skipped: true);
       _me = s;
+      if (partnerSolved) _partner = _partner.copyWith(solved: true);
+      if (partnerSkipped) _partner = _partner.copyWith(skipped: true);
     });
+    if (step == WSStep.done) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startDone());
+    }
   }
 
   void setPartnerData(List<List<String>> grid, String word, int catIdx) {
@@ -232,19 +275,31 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   }
 
   void setPartnerSolved() {
+    bool shouldStartDone = false;
     setState(() {
       _partner = _partner.copyWith(solved: true);
-      if (_me.step == WSStep.waitPartner) _me = _me.copyWith(step: WSStep.done);
+      if (_me.step == WSStep.waitPartner) {
+        _me = _me.copyWith(step: WSStep.done);
+        shouldStartDone = true;
+      } else if (_me.step == WSStep.done) {
+        shouldStartDone = true;
+      }
     });
-    if (_me.step == WSStep.done) _startDone();
+    if (shouldStartDone) _startDone();
   }
 
   void setPartnerSkipped() {
+    bool shouldStartDone = false;
     setState(() {
       _partner = _partner.copyWith(skipped: true);
-      if (_me.step == WSStep.waitPartner) _me = _me.copyWith(step: WSStep.done);
+      if (_me.step == WSStep.waitPartner) {
+        _me = _me.copyWith(step: WSStep.done);
+        shouldStartDone = true;
+      } else if (_me.step == WSStep.done) {
+        shouldStartDone = true;
+      }
     });
-    if (_me.step == WSStep.done) _startDone();
+    if (shouldStartDone) _startDone();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -356,47 +411,24 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   void _startSkipTimer() {
     _skipTimer?.cancel();
     _showSkip = false;
-    _skipTimer = Timer(const Duration(seconds: 15), () {
-      if (mounted && !_me.solved && !_me.skipped) setState(() => _showSkip = true);
+    _skipSeconds = 15;
+    _skipTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _me.solved || _me.skipped) { _skipTimer?.cancel(); return; }
+      setState(() {
+        _skipSeconds--;
+        if (_skipSeconds <= 0) { _skipSeconds = 0; _showSkip = true; _skipTimer?.cancel(); }
+      });
     });
   }
 
   void _startDone() {
     _bounceCtrl.forward(from: 0);
-    _startConfetti();
+    // Confetti only if I solved my puzzle
+    if (_me.solved && !_me.skipped) _startConfetti();
   }
 
   void _startConfetti() {
-    final rng = Random();
-    final colors = [_purple, _green, _amber, const Color(0xFF00E5FF),
-        const Color(0xFFFF2D78), const Color(0xFFa78bfa)];
-    _particles = List.generate(80, (_) => _Particle(
-      x: rng.nextDouble() * 400,
-      y: -18 - rng.nextDouble() * 110,
-      vx: (rng.nextDouble() - 0.5) * 4,
-      vy: 1.5 + rng.nextDouble() * 3.5,
-      w: 3 + rng.nextDouble() * 8,
-      h: 2 + rng.nextDouble() * 4,
-      rot: rng.nextDouble() * 2 * pi,
-      rv: (rng.nextDouble() - 0.5) * 0.15,
-      color: colors[rng.nextInt(colors.length)],
-    ));
-    int frame = 0;
-    _confettiTicker?.dispose();
-    _confettiTicker = createTicker((_) {
-      if (!mounted) return;
-      setState(() {
-        bool alive = false;
-        for (final p in _particles) {
-          p.x += p.vx; p.y += p.vy;
-          p.rot += p.rv; p.vy += 0.07;
-          if (frame > 90) p.opacity = (p.opacity - 0.016).clamp(0, 1);
-          if (p.y < 900 && p.opacity > 0) alive = true;
-        }
-        if (!alive) _confettiTicker?.stop();
-      });
-      frame++;
-    })..start();
+    _confettiCtrl.play();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -426,7 +458,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
               ? const LinearGradient(colors: [Color(0xFF2A1E48), Color(0xFF362856)])
               : const LinearGradient(colors: [_purpleDark, _purpleMid, Color(0xFFa78bfa), Color(0xFF7C3AED)]),
           boxShadow: disabled ? null : [
-            BoxShadow(color: _purpleDark.withOpacity(0.5), blurRadius: 24, offset: const Offset(0, 6)),
+            BoxShadow(color: _purpleDark.withValues(alpha: 0.5), blurRadius: 24, offset: const Offset(0, 6)),
           ],
         ),
         alignment: Alignment.center,
@@ -443,7 +475,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
         width: double.infinity, height: 50,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: _purple.withOpacity(0.4), width: 1.5),
+          border: Border.all(color: _purple.withValues(alpha: 0.4), width: 1.5),
         ),
         alignment: Alignment.center,
         child: Text(label, style: _fredoka(15, FontWeight.w500, const Color(0xFFC4A8FF))),
@@ -457,9 +489,9 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
       borderRadius: BorderRadius.circular(15),
       child: Container(
         decoration: BoxDecoration(
-          color: _cardBg.withOpacity(0.8),
+          color: _cardBg.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: _purple.withOpacity(0.18), width: 1.5),
+          border: Border.all(color: _purple.withValues(alpha: 0.18), width: 1.5),
         ),
         child: Stack(children: [
           Padding(padding: const EdgeInsets.all(14), child: child),
@@ -473,7 +505,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                 decoration: BoxDecoration(
                   gradient: LinearGradient(colors: [
                     Colors.transparent,
-                    _purple.withOpacity(0.05),
+                    _purple.withValues(alpha: 0.05),
                     Colors.transparent,
                   ]),
                 ),
@@ -520,7 +552,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
               begin: Alignment.topLeft, end: Alignment.bottomRight,
               colors: [Color(0xFF2A1560), Color(0xFF1A0D3E)],
             ),
-            border: Border.all(color: _purple.withOpacity(0.6), width: 2),
+            border: Border.all(color: _purple.withValues(alpha: 0.6), width: 2),
           ),
           child: Center(child: _floatWrap(
             const Text('🔍', style: TextStyle(fontSize: 26)), amplitude: 4)),
@@ -537,7 +569,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
         child: Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: _purple.withOpacity(0.5), width: 2),
+            border: Border.all(color: _purple.withValues(alpha: 0.5), width: 2),
           ),
         ),
       ),
@@ -562,12 +594,12 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
             width: size,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _cardBg2.withOpacity(0.65),
+              color: _cardBg2.withValues(alpha: 0.65),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: solver.solved ? _green : _purple.withOpacity(0.18), width: 2),
+                color: solver.solved ? _green : _purple.withValues(alpha: 0.18), width: 2),
               boxShadow: solver.solved
-                  ? [BoxShadow(color: _green.withOpacity(0.25), blurRadius: 28)]
+                  ? [BoxShadow(color: _green.withValues(alpha: 0.25), blurRadius: 28)]
                   : [const BoxShadow(color: Colors.black54, blurRadius: 20)],
             ),
             child: GridView.builder(
@@ -587,18 +619,18 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                 final isNext   = !solver.solved && last != null &&
                     WordSearchData.isAdjacent(last, [r, c]) && !isTapped;
 
-                Color bg = _cardBg.withOpacity(0.85);
-                Color border = _purple.withOpacity(0.14);
+                Color bg = _cardBg.withValues(alpha: 0.85);
+                Color border = _purple.withValues(alpha: 0.14);
                 Color col = _textMuted;
                 List<BoxShadow> sh = [];
 
                 if (isTapped || isFound) {
-                  bg = _green.withOpacity(0.18);
+                  bg = _green.withValues(alpha: 0.18);
                   border = _green;
                   col = _green;
-                  sh = [BoxShadow(color: _green.withOpacity(0.4), blurRadius: 12)];
+                  sh = [BoxShadow(color: _green.withValues(alpha: 0.4), blurRadius: 12)];
                 } else if (isNext) {
-                  border = _purple.withOpacity(0.6);
+                  border = _purple.withValues(alpha: 0.6);
                   col = const Color(0xFFC4A8FF);
                 }
 
@@ -643,7 +675,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
           padding: const EdgeInsets.only(bottom: 4),
           decoration: BoxDecoration(
             border: Border(bottom: BorderSide(
-              color: letter.isNotEmpty ? accent : _purple.withOpacity(0.3), width: 2.5)),
+              color: letter.isNotEmpty ? accent : _purple.withValues(alpha: 0.3), width: 2.5)),
           ),
           alignment: Alignment.center,
           child: Text(letter, style: _fredoka(fSz, FontWeight.w700, accent)),
@@ -655,41 +687,61 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   // ═══════════════════════════════════════════════════════════
   // SCREEN BUILDERS
   // ═══════════════════════════════════════════════════════════
-
-  // ── 1. WELCOME ─────────────────────────────────────────────
-  Widget _buildWelcome() {
+Widget _buildWelcome() {
     return Stack(children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
         child: Column(children: [
-          Text('WORD', style: _fredoka(58, FontWeight.w700, Colors.white, shadows: [
-            const Shadow(color: Colors.white, blurRadius: 24),
-            Shadow(color: const Color(0xFFDCBEFF).withOpacity(0.5), blurRadius: 48),
-          ])),
-          Text('SEARCH', style: _fredoka(58, FontWeight.w700, _amber, shadows: [
-            BoxShadow(color: _amber.withOpacity(0.5), blurRadius: 24) as dynamic,
-          ])),
-          const SizedBox(height: 4),
-          Expanded(child: Row(children: [
-            Expanded(child: Center(child: _floatWrap(const Text('🐾', style: TextStyle(fontSize: 52)), amplitude: 15))),
-            Expanded(child: Center(child: _floatWrap(const Text('🔍', style: TextStyle(fontSize: 60))))),
-            Expanded(child: Center(child: _floatWrap(const Text('⭐', style: TextStyle(fontSize: 52)), amplitude: 13))),
-          ])),
-          GestureDetector(
-            onTap: () => setState(() => _me = _me.copyWith(showTut: true)),
-            child: Text('View tutorial',
-                style: _fredoka(15, FontWeight.w500, const Color(0xFFC8AAFF))
-                    .copyWith(decoration: TextDecoration.underline,
-                    decorationColor: const Color(0xFFC8AAFF))),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).maybePop(),
+              child: const Icon(Icons.chevron_left_rounded,
+                  color: Color(0xFFC4B8E8), size: 28),
+            ),
           ),
-          const SizedBox(height: 18),
-          _primaryBtn('Play now', () => _go(WSStep.category)),
+          Transform.translate(
+            offset: const Offset(0, 8),
+            child:
+        Text('WORD', style: _fredoka(58, FontWeight.w700, Colors.white)), ),
+          Transform.translate(
+            offset: const Offset(0, -10),
+            child: Text('SEARCH', style: _fredoka(58, FontWeight.w700, _amber, shadows: [
+              BoxShadow(color: _amber.withValues(alpha: 0.5), blurRadius: 24) as dynamic,
+            ])),
+          ),
+          Expanded(
+            child: Transform.translate(
+              offset: const Offset(0, -50),
+              child: Row(children: [
+                Expanded(child: Center(child: _floatWrap(const Text('🐾', style: TextStyle(fontSize: 70)), amplitude: 15))),
+                Expanded(child: Center(child: _floatWrap(const Text('🔍', style: TextStyle(fontSize: 90))))),
+                Expanded(child: Center(child: _floatWrap(const Text('⭐', style: TextStyle(fontSize: 70)), amplitude: 13))),
+              ]),
+            ),
+          ),
+     Transform.translate(
+            offset: const Offset(0, -38),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              GestureDetector(
+                onTap: () => setState(() => _me = _me.copyWith(showTut: true)),
+                child: Text('View tutorial',
+                    style: _fredoka(18, FontWeight.w500, const Color(0xFFC8AAFF))
+                        .copyWith(decoration: TextDecoration.underline,
+                        decorationColor: const Color(0xFFC8AAFF))),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _primaryBtn('Play now', () => _go(WSStep.category)),
+              ),
+            ]),
+          ),
         ]),
       ),
       if (_me.showTut) _buildTutOverlay(),
     ]);
   }
-
   Widget _buildTutOverlay() {
     final steps = [
       ['#00E5FF', 'Choose a category and enter a word for your match to find'],
@@ -702,7 +754,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
     return GestureDetector(
       onTap: () => setState(() => _me = _me.copyWith(showTut: false)),
       child: Container(
-        color: const Color(0xFF050312).withOpacity(0.65),
+        color: const Color(0xFF050312).withValues(alpha: 0.65),
         child: BackdropFilter(
           filter: const ColorFilter.mode(Colors.transparent, BlendMode.srcOver),
           child: Align(
@@ -714,7 +766,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                   colors: [Color(0xFF1A0F3A), Color(0xFF0F0920)],
                 ),
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                border: Border.all(color: _purple.withOpacity(0.3), width: 1.5),
+                border: Border.all(color: _purple.withValues(alpha: 0.3), width: 1.5),
               ),
               child: GestureDetector(
                 onTap: () {},
@@ -723,12 +775,12 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                       margin: const EdgeInsets.only(top: 12),
                       width: 40, height: 4,
                       decoration: BoxDecoration(
-                          color: _purple.withOpacity(0.4),
+                          color: _purple.withValues(alpha: 0.4),
                           borderRadius: BorderRadius.circular(2))),
                   const SizedBox(height: 16),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Align(alignment: Alignment.centerLeft,
+                    child: Center(
                       child: Text('HOW TO PLAY', style: _fredoka(12, FontWeight.w700, _purple, letterSpacing: 2))),
                   ),
                   const SizedBox(height: 16),
@@ -744,7 +796,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(color: c, width: 2),
-                            boxShadow: [BoxShadow(color: c.withOpacity(0.27), blurRadius: 8)],
+                            boxShadow: [BoxShadow(color: c.withValues(alpha: 0.27), blurRadius: 8)],
                           ),
                           alignment: Alignment.center,
                           child: Text('${i + 1}', style: _fredoka(14, FontWeight.w700, c)),
@@ -773,7 +825,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
 
   // ── 2. CATEGORY ────────────────────────────────────────────
   Widget _buildCategory() {
-    final cats = WordSearchData.categories;
+    const cats = WordSearchData.categories;
     final cat  = cats[_me.catIdx];
 
     return Column(children: [
@@ -783,8 +835,8 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
             const Shadow(color: Colors.white, blurRadius: 24),
           ])),
       const SizedBox(height: 6),
-      Text('Swipe to pick', style: _fredoka(14, FontWeight.w500, _textMuted)),
-      const SizedBox(height: 50),
+      Text('Swipe to pick', style: _fredoka(14, FontWeight.w500, const Color.fromARGB(255, 255, 255, 255))),
+      const SizedBox(height: 120),
 
       // Carousel — fixed-height box so Column doesn't go unbounded
       LayoutBuilder(builder: (context, constraints) {
@@ -800,8 +852,9 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
             child: GestureDetector(
               onHorizontalDragEnd: (d) {
                 final vel = d.primaryVelocity ?? 0;
-                if (vel < -100 && _me.catIdx < 3) setState(() => _me = _me.copyWith(catIdx: _me.catIdx + 1));
-                else if (vel > 100 && _me.catIdx > 0) setState(() => _me = _me.copyWith(catIdx: _me.catIdx - 1));
+                if (vel < -100 && _me.catIdx < 3) {
+                  setState(() => _me = _me.copyWith(catIdx: _me.catIdx + 1));
+                } else if (vel > 100 && _me.catIdx > 0) setState(() => _me = _me.copyWith(catIdx: _me.catIdx - 1));
               },
               child: OverflowBox(
                 alignment: Alignment.centerLeft,
@@ -830,11 +883,11 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                               color: active ? c.bg : const Color(0xFF0F0D1E),
                               borderRadius: BorderRadius.circular(28),
                               border: Border.all(
-                                color: active ? c.accent.withOpacity(0.45) : Colors.white.withOpacity(0.06),
+                                color: active ? c.accent.withValues(alpha: 0.45) : Colors.white.withValues(alpha: 0.06),
                                 width: 1.5,
                               ),
                               boxShadow: active
-                                  ? [BoxShadow(color: c.accent.withOpacity(0.18), blurRadius: 40)]
+                                  ? [BoxShadow(color: c.accent.withValues(alpha: 0.18), blurRadius: 40)]
                                   : [],
                             ),
                             child: Opacity(
@@ -844,7 +897,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                                 const SizedBox(height: 16),
                                 Text(c.label, style: _fredoka(26, FontWeight.w700,
                                     active ? c.accent : _textDim,
-                                    shadows: active ? [Shadow(color: c.accent.withOpacity(0.5), blurRadius: 16)] : [])),
+                                    shadows: active ? [Shadow(color: c.accent.withValues(alpha: 0.5), blurRadius: 16)] : [])),
                               ]),
                             ),
                           ),
@@ -876,11 +929,13 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
           );
         }).toList(),
       ),
-
-      const Spacer(),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: _primaryBtn('Choose ${cat.label}', () => _go(WSStep.enterWord)),
+    const Spacer(),
+      Transform.translate(
+        offset: const Offset(0, -24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(50, 0, 50, 20),
+          child: _primaryBtn('Choose ${cat.label}', () => _go(WSStep.enterWord)),
+        ),
       ),
     ]);
   }
@@ -899,7 +954,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
       padding: const EdgeInsets.all(20),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Text(cat.label, style: _fredoka(22, FontWeight.w600, cat.accent,
-            shadows: [Shadow(color: cat.accent.withOpacity(0.4), blurRadius: 14)])),
+            shadows: [Shadow(color: cat.accent.withValues(alpha: 0.4), blurRadius: 14)])),
         const SizedBox(height: 16),
         // Text input
         TextField(
@@ -914,14 +969,14 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
             counterText: '',
             hintText: 'TYPE A WORD HERE',
             hintStyle: _fredoka(13, FontWeight.w500, _textDim),
-            filled: true, fillColor: _cardBg.withOpacity(0.8),
+            filled: true, fillColor: _cardBg.withValues(alpha: 0.8),
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: _purple.withOpacity(0.35), width: 2)),
+                borderSide: BorderSide(color: _purple.withValues(alpha: 0.35), width: 2)),
             enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide: BorderSide(
-                    color: invalid ? _red : valid ? cat.accent : _purple.withOpacity(0.35),
+                    color: invalid ? _red : valid ? cat.accent : _purple.withValues(alpha: 0.35),
                     width: 2)),
             focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -966,10 +1021,13 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
     return SingleChildScrollView(child: Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: Column(children: [
-        Text('Your puzzle is ready', style: _fredoka(16, FontWeight.w400, _textMuted)),
+        Transform.translate(
+          offset: const Offset(0, -35),
+          child: Text('Your puzzle is ready', style: _fredoka(20, FontWeight.w500, const Color.fromARGB(255, 178, 168, 200))),
+        ),
         const SizedBox(height: 8),
         Text(_me.word, style: _fredoka(30, FontWeight.w700, cat.accent, letterSpacing: 5,
-            shadows: [Shadow(color: cat.accent.withOpacity(0.5), blurRadius: 18)])),
+            shadows: [Shadow(color: cat.accent.withValues(alpha: 0.5), blurRadius: 18)])),
         const SizedBox(height: 20),
         // Preview grid — full width with generous padding
         LayoutBuilder(builder: (context, constraints) {
@@ -977,9 +1035,9 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
           return Container(
             width: gridSize, padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _cardBg2.withOpacity(0.6),
+              color: _cardBg2.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _purple.withOpacity(0.18), width: 1.5),
+              border: Border.all(color: _purple.withValues(alpha: 0.18), width: 1.5),
             ),
             child: GridView.builder(
               shrinkWrap: true,
@@ -992,11 +1050,11 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
                 final isW = wcSet.contains('$r,$c');
                 return Container(
                   decoration: BoxDecoration(
-                    color: isW ? cat.bg : _cardBg.withOpacity(0.8),
+                    color: isW ? cat.bg : _cardBg.withValues(alpha: 0.8),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: isW ? cat.accent.withOpacity(0.5) : _purple.withOpacity(0.12), width: 2),
-                    boxShadow: isW ? [BoxShadow(color: cat.accent.withOpacity(0.2), blurRadius: 10)] : [],
+                      color: isW ? cat.accent.withValues(alpha: 0.5) : _purple.withValues(alpha: 0.12), width: 2),
+                    boxShadow: isW ? [BoxShadow(color: cat.accent.withValues(alpha: 0.2), blurRadius: 10)] : [],
                   ),
                   alignment: Alignment.center,
                   child: Text(grid[r][c],
@@ -1022,7 +1080,8 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
     final partnerReady = _partner.submitted;
     return Padding(
       padding: const EdgeInsets.all(20),
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      child: Column(mainAxisAlignment: MainAxisAlignment.start, children: [
+        const SizedBox(height: 60),
         _pulseRings(),
         const SizedBox(height: 18),
         Text(
@@ -1035,23 +1094,29 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
           partnerReady ? 'Tap below when you\'re ready to solve' : 'They are setting up their puzzle',
           style: _fredoka(14, FontWeight.w400, _textMuted),
         ),
-        const SizedBox(height: 18),
-        _shimmerCard(Row(
+        const SizedBox(height: 100),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          child: _shimmerCard(Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('YOUR WORD', style: _fredoka(10, FontWeight.w700, _purple, letterSpacing: 1)),
+              Text('YOU SENT', style: _fredoka(10, FontWeight.w700, _purple, letterSpacing: 1)),
               const SizedBox(height: 5),
               Text(_me.word, style: _fredoka(22, FontWeight.w700, Colors.white, letterSpacing: 2)),
             ]),
-            Text('Sent ✓', style: _fredoka(13, FontWeight.w600, _amber)),
+            Text('Sent ✓', style: _fredoka(13, FontWeight.w600, const Color.fromARGB(255, 254, 254, 254))),
           ],
         )),
+        ),
         if (partnerReady) ...[
-          const SizedBox(height: 24),
-          _primaryBtn(
-            'Solve ${widget.partnerName}\'s Puzzle',
-            () => setState(() => _me = _me.copyWith(step: WSStep.solve)),
+          const SizedBox(height: 80),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _primaryBtn(
+              'Solve ${widget.partnerName}\'s Puzzle',
+              () => setState(() => _me = _me.copyWith(step: WSStep.solve)),
+            ),
           ),
         ],
       ]),
@@ -1079,10 +1144,21 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
           style: _fredoka(26, FontWeight.w700,
               solved ? _green : pCat.accent, letterSpacing: 1,
               shadows: [Shadow(
-                  color: solved ? _green.withOpacity(0.6) : pCat.accent.withOpacity(0.53),
+                  color: solved ? _green.withValues(alpha: 0.6) : pCat.accent.withValues(alpha: 0.53),
                   blurRadius: 16)]),
         )),
-        SizedBox(height: solved ? 24 : 28),
+        if (!solved && !_me.skipped && !_showSkip) ...[
+          const SizedBox(height: 18),
+          Text(
+            'You can skip after $_skipSeconds seconds',
+            style: _fredoka(18, FontWeight.w500,
+                _skipSeconds <= 5
+                    ? const Color.fromARGB(255, 204, 24, 24)
+                    : const Color(0xFF7B6AAA)),
+          ),
+        ],
+
+        SizedBox(height: solved ? 24 : 80),
         _buildGrid(),
         SizedBox(height: solved ? 16 : 28),
         _buildBlanks(_partner.word, pCat.accent),
@@ -1092,33 +1168,38 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
         ] else ...[
           if (_showSkip) ...[
             const SizedBox(height: 12),
-            Center(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: GestureDetector(
                 onTap: _doSkip,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 11),
+                  width: double.infinity, height: 46,
                   decoration: BoxDecoration(
-                    color: _red.withOpacity(0.08),
+                    color: _red.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: _red.withOpacity(0.35), width: 1.5),
+                    border: Border.all(color: _red.withValues(alpha: 0.35), width: 1.5),
                   ),
+                  alignment: Alignment.center,
                   child: Text('Skip This Time', style: _fredoka(14, FontWeight.w600, _redSoft)),
                 ),
               ),
             ),
           ],
           const SizedBox(height: 12),
-          GestureDetector(
-            onTap: _resetBoard,
-            child: Container(
-              width: double.infinity, height: 46,
-              decoration: BoxDecoration(
-                color: _purple.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: _purple.withOpacity(0.3), width: 1.5),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: GestureDetector(
+              onTap: _resetBoard,
+              child: Container(
+                width: double.infinity, height: 46,
+                decoration: BoxDecoration(
+                  color: _purple.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: _purple.withValues(alpha: 0.3), width: 1.5),
+                ),
+                alignment: Alignment.center,
+                child: Text('Reset Board', style: _fredoka(14, FontWeight.w600, const Color(0xFFC4A8FF))),
               ),
-              alignment: Alignment.center,
-              child: Text('Reset Board', style: _fredoka(14, FontWeight.w600, const Color(0xFFC4A8FF))),
             ),
           ),
           const SizedBox(height: 10),
@@ -1134,46 +1215,60 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
     final cat     = WordSearchData.categories[_me.catIdx.clamp(0, 3)];
     final skipped = _me.skipped;
 
-    return Padding(
+return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        _floatWrap(Text(
-          skipped ? 'You skipped' : 'You got it',
-          style: _fredoka(34, FontWeight.w700, skipped ? _redSoft : Colors.white),
-        )),
-        const Spacer(),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0D0825),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: cat.accent.withOpacity(0.25), width: 1.5),
-              boxShadow: [
-                BoxShadow(color: cat.accent.withOpacity(0.08), blurRadius: 30),
-              ],
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-              Text('YOUR WORD', style: _fredoka(13, FontWeight.w700, cat.accent, letterSpacing: 2.5)),
-              const SizedBox(height: 12),
-              Text(_me.word, style: _fredoka(44, FontWeight.w700, Colors.white, letterSpacing: 5)),
-            ]),
+        // ── Hourglass animation like EC waiting screen ──
+        _floatWrap(Container(
+          width: 100, height: 100,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _purple.withValues(alpha: 0.08),
+            border: Border.all(color: _purple.withValues(alpha: 0.35), width: 2),
+            boxShadow: [
+              BoxShadow(color: _purple.withValues(alpha: 0.25), blurRadius: 30, spreadRadius: 4),
+            ],
           ),
+          child: const Center(
+            child: Text('⏳', style: TextStyle(fontSize: 56)),
+          ),
+        )),
+        const SizedBox(height: 20),
+        Text(
+          skipped ? 'You skipped' : 'Waiting',
+          style: _fredoka(32, FontWeight.w700, skipped ? _redSoft : Colors.white),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 80),
+        // ── YOUR WORD box ──
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D0825),
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: _purple.withValues(alpha: 0.35), width: 1.5),
+            boxShadow: [
+              BoxShadow(color: _purple.withValues(alpha: 0.12), blurRadius: 30),
+            ],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            Text('YOU SENT', style: _fredoka(16, FontWeight.w700, const Color.fromARGB(255, 255, 255, 255), letterSpacing: 2.5)),
+            const SizedBox(height: 12),
+            Text(_me.word, style: _fredoka(44, FontWeight.w700, Colors.white, letterSpacing: 5)),
+          ]),
+        ),
+
+            const SizedBox(height: 24),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Text('${widget.partnerName} is still searching for your word',
-              style: _fredoka(14, FontWeight.w500, _textMuted)),
+          Text('${widget.partnerName} is still solving',
+              style: _fredoka(16, FontWeight.w500, _textMuted)),
           const SizedBox(width: 6),
-          _pulseDots(),
         ]),
-        const SizedBox(height: 28),
+        const SizedBox(height: 80),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Text('🔒', style: TextStyle(fontSize: 16)),
           const SizedBox(width: 6),
-          Text('Chat unlocks when ${widget.partnerName} finds your word',
+          Text('Game finishes when ${widget.partnerName} finds your word',
               style: _fredoka(13, FontWeight.w600, const Color(0xFFBB8DFF))),
           const SizedBox(width: 6),
           const Text('🔒', style: TextStyle(fontSize: 16)),
@@ -1183,87 +1278,291 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
     );
   }
 
+  
+  
   // ── 8. DONE ────────────────────────────────────────────────
   Widget _buildDone() {
-    final myCat  = WordSearchData.categories[_me.catIdx.clamp(0, 3)];
-    final pCat   = WordSearchData.categories[_partner.catIdx.clamp(0, 3)];
-    final both   = _me.solved && _partner.solved;
-    final fz     = WordSearchData.doneWordFontSize(_me.word, _partner.word);
-    final lsp    = fz >= 22 ? 1.5 : 0.0;
+    final myCat   = WordSearchData.categories[_me.catIdx.clamp(0, 3)];
+    final pCat    = WordSearchData.categories[_partner.catIdx.clamp(0, 3)];
+    final iSolved = _me.solved;
+    final pSolved = _partner.solved;
+    final both    = iSolved && pSolved;
+    final iWin    = iSolved && !pSolved;
+    final theyWin = pSolved && !iSolved;
+
+    final title = both
+        ? 'You Both Nailed It!'
+        : iWin
+            ? 'You Got It!'
+            : theyWin
+                ? '${widget.partnerName} Got It!'
+                : 'You Both Skipped!';
+
+    final subtitle = both
+        ? "You both found each other's hidden words"
+        : iWin
+            ? '${widget.partnerName} skipped this round.'
+            : theyWin
+                ? 'You skipped this round.'
+                : 'Maybe next time!';
 
     return Stack(children: [
-      // Confetti
-      if (_particles.isNotEmpty)
-        Positioned.fill(child: CustomPaint(painter: _ConfettiPainter(_particles))),
+      Align(
+        alignment: Alignment.topCenter,
+        child: ConfettiWidget(
+          confettiController: _confettiCtrl,
+          blastDirectionality: BlastDirectionality.explosive,
+          numberOfParticles: 60,
+          colors: const [
+            Colors.white,
+            Color(0xFFAB5CF5),
+            Color(0xFF7C3AED),
+            Color(0xFF4C1D95),
+            Color(0xFFDDD6FE),
+            Color(0xFF6930C3),
+          ],
+          child: const SizedBox.shrink(),
+        ),
+      ),
 
       SingleChildScrollView(child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
         child: Column(children: [
-          // Bouncing emoji
-          AnimatedBuilder(
-            animation: _bounceAnim,
-            builder: (_, __) => Transform.scale(
-              scale: _bounceAnim.value,
-              child: Text(both ? '🎉' : '🔓', style: const TextStyle(fontSize: 62)),
+          const SizedBox(height: 40),
+
+          // ── Floating gradient title + subtitle together ──
+          Transform.translate(
+            offset: const Offset(0, -40),
+            child: AnimatedBuilder(
+              animation: _titleFloatAnim,
+              builder: (_, child) => Transform.translate(
+                offset: Offset(0, _titleFloatAnim.value),
+                child: child,
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                ShaderMask(
+                  shaderCallback: (b) => LinearGradient(
+                    colors: (both || iWin)
+                        ? [const Color(0xFFFFD700), const Color(0xFFFFF0A0), const Color(0xFFFFD700)]
+                        : [const Color(0xFFC084FC), Colors.white, const Color(0xFFC084FC)],
+                  ).createShader(b),
+                  child: Text(title,
+                    textAlign: TextAlign.center,
+                    style: _fredoka(34, FontWeight.w800, Colors.white),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(subtitle,
+                  textAlign: TextAlign.center,
+                  style: _fredoka(15, FontWeight.w400, const Color.fromARGB(255, 222, 221, 224)),
+                ),
+              ]),
             ),
           ),
-          const SizedBox(height: 12),
-          // Gradient "Ice broken!" text
-          ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [Color(0xFFC084FC), Colors.white, Color(0xFFC084FC)],
-            ).createShader(bounds),
-            child: Text(both ? 'Ice broken!' : 'Game over',
-                style: _fredoka(30, FontWeight.w700, Colors.white)),
+
+          const SizedBox(height: 40),
+
+          // ── Avatars with crowns ──
+          Transform.translate(
+            offset: const Offset(0, -20),
+            child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _doneAvatar(
+                url: _myAvatarUrl,
+                label: 'You',
+                showCrown: both || iWin,
+                isWinner: both || iWin,
+                glowColor: const Color(0xFFAB5CF5),
+              ),
+              const SizedBox(width: 80),
+              _doneAvatar(
+                url: _partnerAvatarUrl,
+                label: widget.partnerName,
+                showCrown: both || theyWin,
+                isWinner: both || theyWin,
+                glowColor: const Color(0xFF00E5FF),
+              ),
+            ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(both ? "You both found each other's hidden words" : "Here's how it went",
-              style: _fredoka(13, FontWeight.w400, _textMuted), textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          // Two-column word result
+
+          const SizedBox(height: 20),
+
+          // ── VS word cards ──
+          Transform.translate(
+            offset: const Offset(0, -10),
+            child: SizedBox(
+            height: 180,
+            child: Stack(children: [
+              Positioned(
+                left: 0, top: 0, bottom: 0,
+                right: MediaQuery.of(context).size.width * 0.5 - 18,
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF2D0F60), Color(0xFF1A0838)],
+                    ),
+                    border: Border.all(color: const Color(0xFFAB5CF5).withValues(alpha: 0.6), width: 1.5),
+                    boxShadow: [BoxShadow(color: const Color(0xFFAB5CF5).withValues(alpha: 0.2), blurRadius: 16)],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(_partner.word,
+                          style: _fredoka(24, FontWeight.w700, Colors.white, letterSpacing: 2),
+                          maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                      const SizedBox(height: 8),
+                      Text(_me.skipped ? '(SKIPPED)' : '✓ SOLVED',
+                          style: _fredoka(10, FontWeight.w700, _me.skipped ? _redSoft : _green, letterSpacing: 0.5)),
+                    ],
+                  ),
+                ),
+              ),
+
+              Positioned(
+                right: 0, top: 0, bottom: 0,
+                left: MediaQuery.of(context).size.width * 0.5 - 18,
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                      colors: [Color(0xFF0F2060), Color(0xFF081838)],
+                    ),
+                    border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.6), width: 1.5),
+                    boxShadow: [BoxShadow(color: const Color(0xFF00E5FF).withValues(alpha: 0.2), blurRadius: 16)],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(_me.word,
+                          style: _fredoka(24, FontWeight.w700, Colors.white, letterSpacing: 2),
+                          maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                      const SizedBox(height: 8),
+                      Text(_partner.skipped ? '(SKIPPED)' : '✓ SOLVED',
+                          style: _fredoka(10, FontWeight.w700, _partner.skipped ? _redSoft : _green, letterSpacing: 0.5)),
+                    ],
+                  ),
+                ),
+              ),
+
+              Center(
+                child: Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF1A0838),
+                    border: Border.all(color: const Color(0xFFAB5CF5).withValues(alpha: 0.8), width: 1.5),
+                    boxShadow: [BoxShadow(color: const Color(0xFFAB5CF5).withValues(alpha: 0.4), blurRadius: 12)],
+                  ),
+                  child: Center(child: Text('VS', style: _fredoka(11, FontWeight.w800, const Color(0xFFAB5CF5)))),
+                ),
+              ),
+            ]),
+          ),
+          ), // Transform.translate
+
+          const SizedBox(height: 120),
+
+          // ── Buttons ──
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-            child: IntrinsicHeight(child: Row(children: [
-              Expanded(child: Column(children: [
-                Text('YOUR WORD', style: _fredoka(10, FontWeight.w700, myCat.accent, letterSpacing: 0.8)),
-                const SizedBox(height: 8),
-                Text(_me.word, style: _fredoka(fz, FontWeight.w700, Colors.white, letterSpacing: lsp),
-                    maxLines: 1, overflow: TextOverflow.clip),
-                const SizedBox(height: 6),
-                Text(_me.skipped ? '⏭ You skipped' : '✅ Solved',
-                    style: _fredoka(11, FontWeight.w600, _me.skipped ? _redSoft : _green)),
-              ])),
-              VerticalDivider(color: Colors.white.withOpacity(0.1), width: 16),
-              Expanded(child: Column(children: [
-                Text('${widget.partnerName.toUpperCase()}\'S WORD',
-                    style: _fredoka(10, FontWeight.w700, pCat.accent, letterSpacing: 0.8)),
-                const SizedBox(height: 8),
-                Text(_partner.word, style: _fredoka(fz, FontWeight.w700, Colors.white, letterSpacing: lsp),
-                    maxLines: 1, overflow: TextOverflow.clip),
-                const SizedBox(height: 6),
-                Text(_partner.skipped ? '⏭ ${widget.partnerName} skipped' : '✅ Solved',
-                    style: _fredoka(11, FontWeight.w600, _partner.skipped ? _redSoft : _green)),
-              ])),
-            ])),
-          ),
-          const SizedBox(height: 12),
-          Column(children: [
-            const Text('🔓', style: TextStyle(fontSize: 28)),
-            const SizedBox(height: 6),
-            Text('Chat unlocked', style: _fredoka(17, FontWeight.w700, _green)),
-            const SizedBox(height: 3),
-            Text(both ? 'Both words found' : 'Game complete',
-                style: _fredoka(12, FontWeight.w400, _green.withOpacity(0.55))),
-          ]),
-          const SizedBox(height: 16),
-          _primaryBtn(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _primaryBtn(
               widget.chatAlreadyUnlocked ? 'Continue Chatting' : 'Start Chatting',
-              () => widget.onGameEvent?.call({'event': 'chatPressed'})),
+              () => widget.onGameEvent?.call({'event': 'chatPressed'}),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _outlineBtn('Play Again',
+              () => widget.onGameEvent?.call({'event': 'playAgain'})),
+          ),
+          const SizedBox(height: 26),
         ]),
       )),
     ]);
   }
 
+  Widget _doneAvatar({
+    required String url,
+    required String label,
+    required bool showCrown,
+    required bool isWinner,
+    required Color glowColor,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            if (showCrown)
+              const Positioned(
+                top: -24,
+                child: Text('👑', style: TextStyle(fontSize: 28)),
+              ),
+            SizedBox(
+              width: 88, height: 88,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 88, height: 88,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: isWinner ? [
+                        BoxShadow(color: glowColor.withValues(alpha: 0.6), blurRadius: 20, spreadRadius: 4),
+                        BoxShadow(color: glowColor.withValues(alpha: 0.3), blurRadius: 40, spreadRadius: 8),
+                      ] : null,
+                      border: Border.all(
+                        color: isWinner ? glowColor.withValues(alpha: 0.9) : glowColor.withValues(alpha: 0.3),
+                        width: 2.5,
+                      ),
+                    ),
+                  ),
+                  ClipOval(
+                    child: Container(
+                      width: 80, height: 80,
+                      color: const Color(0xFF2A1A4E),
+                      child: url.isNotEmpty
+                          ? Image.network(url, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Center(
+                                child: Text(label.isNotEmpty ? label[0].toUpperCase() : '?',
+                                    style: _fredoka(28, FontWeight.w700, Colors.white))))
+                          : Center(
+                              child: Text(label.isNotEmpty ? label[0].toUpperCase() : '?',
+                                  style: _fredoka(28, FontWeight.w700, Colors.white))),
+                    ),
+                  ),
+                  if (!isWinner)
+                    Container(
+                      width: 80, height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withValues(alpha: 0.45),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(label, style: TextStyle(
+          fontSize: 13, fontWeight: FontWeight.w600,
+          color: isWinner ? Colors.white : Colors.white38,
+        )),
+      ],
+    );
+  }
   // ═══════════════════════════════════════════════════════════
   // MAIN BUILD
   // ═══════════════════════════════════════════════════════════
@@ -1273,21 +1572,47 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: _bg,
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(0, -1.1),
-              radius: 1.8,
-              colors: [_bgGrad1, _bgGrad2, _bgGrad3],
-              stops: [0.0, 0.4, 1.0],
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                  stops: [0.0, 0.18, 0.38, 0.60, 0.82, 1.0],
+                  colors: [
+                    Color.fromARGB(255, 110, 29, 131),
+                    Color(0xFF2E0858),
+                    Color(0xFF180430),
+                    Color(0xFF0F0B1E),
+                    Color(0xFF0D0B14),
+                    Color(0xFF0C0B11),
+                  ],
+                ),
+              ),
             ),
-          ),
-          child: SafeArea(
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  stops: [0.0, 0.12, 0.22, 0.30],
+                  colors: [
+                    Color(0xCC0C0A12),
+                    Color(0x550C0A12),
+                    Color(0x110C0A12),
+                    Color(0x000C0A12),
+                  ],
+                ),
+              ),
+            ),
+          SafeArea(
             child: Column(children: [
               // Top bar
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
                 child: Row(children: [
                   GestureDetector(
                     onTap: _showBack ? _goBack : null,
@@ -1327,6 +1652,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
               ),
             ]),
           ),
+        ],
         ),
       ),
     );

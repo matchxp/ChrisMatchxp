@@ -206,8 +206,8 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
                     children: [
                       Container(
                         padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
                             colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
                           ),
                           shape: BoxShape.circle,
@@ -591,8 +591,8 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
                           ),
                           Container(
                             padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
                                 colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
                               ),
                               shape: BoxShape.circle,

@@ -89,14 +89,14 @@ class _BiometricsScreenState extends State<BiometricsScreen>
                             shape: BoxShape.circle,
                             gradient: LinearGradient(
                               colors: [
-                                _purple.withOpacity(0.3),
-                                _purple2.withOpacity(0.15),
+                                _purple.withValues(alpha: 0.3),
+                                _purple2.withValues(alpha: 0.15),
                               ],
                             ),
                             border: Border.all(
                               color: _isScanning
                                   ? _purple
-                                  : _purple.withOpacity(0.4),
+                                  : _purple.withValues(alpha: 0.4),
                               width: 2,
                             ),
                           ),
@@ -169,13 +169,13 @@ class _BiometricsScreenState extends State<BiometricsScreen>
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: Colors.white10),
                     ),
-                    child: Row(
+                    child: const Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.info_outline_rounded,
+                        Icon(Icons.info_outline_rounded,
                             color: Colors.white38, size: 18),
-                        const SizedBox(width: 10),
-                        const Expanded(
+                        SizedBox(width: 10),
+                        Expanded(
                           child: Text(
                             'Biometric data is stored securely on your device and is never shared with MatchXP servers.',
                             style: TextStyle(
@@ -232,7 +232,7 @@ class _BiometricsScreenState extends State<BiometricsScreen>
           color: _card,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: enabled ? _purple.withOpacity(0.4) : Colors.white12,
+            color: enabled ? _purple.withValues(alpha: 0.4) : Colors.white12,
             width: enabled ? 1.5 : 1,
           ),
         ),
@@ -243,7 +243,7 @@ class _BiometricsScreenState extends State<BiometricsScreen>
               height: 44,
               decoration: BoxDecoration(
                 color: enabled
-                    ? _purple.withOpacity(0.15)
+                    ? _purple.withValues(alpha: 0.15)
                     : Colors.white10,
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -270,7 +270,7 @@ class _BiometricsScreenState extends State<BiometricsScreen>
             Switch(
               value: enabled,
               onChanged: onToggle,
-              activeColor: Colors.white,
+              activeThumbColor: Colors.white,
               activeTrackColor: _purple,
               inactiveThumbColor: Colors.white38,
               inactiveTrackColor: Colors.white12,

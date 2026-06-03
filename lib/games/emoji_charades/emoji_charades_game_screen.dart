@@ -13,6 +13,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:matchx_auth/games/game_hub_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:confetti/confetti.dart';
 import 'emoji_charades_data.dart';
@@ -124,6 +125,7 @@ class _State extends State<EmojiCharadesGameScreen>
   int _catIdx = 0;
   int _phraseIdx = 0;
   String _myEmojis = '';
+   String _myPhrase = ''; 
   final _emojiCtrl = TextEditingController();
   final _emojiFocus = FocusNode();
 
@@ -177,6 +179,15 @@ class _State extends State<EmojiCharadesGameScreen>
 
   // ── Getters ───────────────────────────────────────────────
   EcCategory get _cat => kEcCategories[_catIdx];
+  String _singular(String label) {
+    const map = {
+      'Movies': 'Movie',
+      'Activities': 'Activity',
+      'Songs': 'Song',
+      'Personalities': 'Personality',
+    };
+    return map[label] ?? label;
+  }
   List<String> get _phrases => kEcPhrases[_cat.key]!;
   String get _phrase => _phrases[_phraseIdx];
   String get _partnerEmojis => _partnerRow?['emojis'] as String? ?? '';
@@ -199,13 +210,17 @@ class _State extends State<EmojiCharadesGameScreen>
     return _Outcome.bothSkipped;
   }
 
+  // Avatars
+   String _myAvatarUrl = '';
+   String _partnerAvatarUrl = '';
   // ============================================================
   //  INIT & DISPOSE
   // ============================================================
   @override
   void initState() {
     super.initState();
-    _confetti = ConfettiController(duration: const Duration(seconds: 5));
+    _fetchAvatars();
+    _confetti = ConfettiController(duration: const Duration(seconds: 1));
 
     _floatL = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2400))
@@ -251,6 +266,25 @@ class _State extends State<EmojiCharadesGameScreen>
     }
     _subscribeRealtime();
     _loadMyRecord();
+  }
+  
+  Future<void> _fetchAvatars() async {
+    try {
+      final rows = await _db
+          .from('profiles')
+          .select('id, photos')
+          .inFilter('id', [widget.currentUserId, widget.partnerUserId]);
+      for (final row in (rows as List)) {
+        final id = row['id'] as String;
+        final photos = row['photos'];
+        final url = (photos is List && photos.isNotEmpty)
+            ? photos[0] as String
+            : '';
+        if (!mounted) return;
+        if (id == widget.currentUserId) setState(() => _myAvatarUrl = url);
+        if (id == widget.partnerUserId) setState(() => _partnerAvatarUrl = url);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -320,9 +354,9 @@ class _State extends State<EmojiCharadesGameScreen>
         final progress = (p.elapsed / p.duration).clamp(0.0, 1.0);
         p.y -= dt * 0.12;
         p.x += p.tx * dt * 0.015;
-        if (progress < 0.10)
+        if (progress < 0.10) {
           p.opacity = (progress / 0.10).clamp(0, 1);
-        else if (progress > 0.70)
+        } else if (progress > 0.70)
           p.opacity = (1 - (progress - 0.70) / 0.30).clamp(0, 1);
         else
           p.opacity = 1.0;
@@ -397,6 +431,7 @@ class _State extends State<EmojiCharadesGameScreen>
 
       setState(() {
         _myEmojis = emojis;
+        _myPhrase = (res['phrase'] as String?) ?? '';
         if (submitted) {
           if (solved)   _iSolved = true;
           if (skipped)  _skipped = true;
@@ -405,7 +440,24 @@ class _State extends State<EmojiCharadesGameScreen>
 
       // When rejoining (skipIntro=true), restore the phase from DB state so
       // the user lands where they left off instead of the category picker.
-      if (widget.skipIntro && _phase != _Phase.done) {
+     
+if (widget.skipIntro && _phase != _Phase.done) {
+        // Check if session is already completed — jump straight to done screen
+        if (widget.sessionId != null) {
+          final sessionRow = await _db
+              .from('game_sessions')
+              .select('status')
+              .eq('id', widget.sessionId!)
+              .maybeSingle();
+          if (sessionRow?['status'] == 'completed') {
+            _goTo(_Phase.done);
+            if (_outcome == _Outcome.bothSolved || _outcome == _Outcome.iSolvedTheySkipped) {
+              _confetti.play();
+            }
+            if (mounted) setState(() => _checking = false);
+            return;
+          }
+        }
         if (submitted) {
           if (solved || skipped) {
             // Finished solving — waiting for partner to finish.
@@ -425,7 +477,6 @@ class _State extends State<EmojiCharadesGameScreen>
           _goTo(_Phase.intro);
         }
       }
-
       _checkCompletionOnLoad();
       // Phase restored — reveal the UI now.
       if (_checking) setState(() => _checking = false);
@@ -450,8 +501,7 @@ class _State extends State<EmojiCharadesGameScreen>
     final myDone = _iSolved || _skipped;
     if (!myDone || !_partnerFinished || _phase == _Phase.done) return;
     _goTo(_Phase.done);
-    if (_outcome == _Outcome.bothSolved) _confetti.play();
-    _recordEcScore();
+   if (_outcome == _Outcome.bothSolved || _outcome == _Outcome.iSolvedTheySkipped) _confetti.play();
     _sendCompletion();
   }
 
@@ -512,54 +562,43 @@ class _State extends State<EmojiCharadesGameScreen>
   /// We must NOT call recordWinner for wins/losses — complete_game_session
   /// (SECURITY DEFINER) already inserts a game_scores row, so a client-side
   /// call here would double-count every win.
-  void _recordEcScore() {
-    switch (_outcome) {
-      case _Outcome.iSolvedTheySkipped:
-      case _Outcome.iSkippedTheySolved:
-        // complete_game_session handles the score for competitive outcomes.
-        break;
-      case _Outcome.bothSolved:
-        // Both guessed correctly → award current player +1.
-        // Partner's device does the same for themselves.
-        WordSearchService().recordWinner(
-          matchId: widget.matchId,
-          winnerId: widget.currentUserId,
-          loserId: widget.partnerUserId,
-        );
-        break;
-      case _Outcome.bothSkipped:
-        // Both skipped — no points.
-        break;
-    }
-  }
 
-  void _sendCompletion() {
+ Future<void> _sendCompletion() async {
+    debugPrint('[EmojiCharades] sendCompletion called, sessionId=${widget.sessionId}, sent=$_completionSent');
     if (_completionSent || widget.sessionId == null) return;
     _completionSent = true;
-    // Both players call this — the DB's atomic idempotency guard ensures
-    // complete_game_session only executes once (first writer wins).
     final String? winnerId = switch (_outcome) {
       _Outcome.iSolvedTheySkipped => widget.currentUserId,
       _Outcome.iSkippedTheySolved => widget.partnerUserId,
       _ => null,
     };
-    _db.rpc('complete_game_session', params: {
-      'p_session_id': widget.sessionId,
-      'p_winner_id': winnerId,
-      'p_result_label': 'completed',
-    }).catchError((e) {
+    final String resultLabel = switch (_outcome) {
+      _Outcome.bothSolved         => 'both_solved',
+      _Outcome.bothSkipped        => 'both_skipped',
+      _Outcome.iSolvedTheySkipped => 'completed',
+      _Outcome.iSkippedTheySolved => 'completed',
+    };
+    try {
+      await _db.rpc('complete_game_session', params: {
+        'p_session_id': widget.sessionId,
+        'p_winner_id': winnerId,
+        'p_result_label': resultLabel,
+      });
+      debugPrint('[EmojiCharades] complete_game_session done');
+    } catch (e) {
       debugPrint('[EmojiCharades] complete_game_session error: $e');
-    });
+    }
   }
 
   void _onPartnerUpdate() {
+    debugPrint('[PARTNER-UPDATE] phase=$_phase partnerFinished=$_partnerFinished partnerSolved=$_partnerSolved partnerSkipped=$_partnerSkipped');
     if (_phase == _Phase.waiting && _partnerSubmitted) {
       setState(() {});
     }
     if (_phase == _Phase.waitSolve && _partnerFinished) {
+      debugPrint('[PARTNER-UPDATE] going to done');
       _goTo(_Phase.done);
-      if (_outcome == _Outcome.bothSolved) _confetti.play();
-      _recordEcScore();
+      if (_outcome == _Outcome.bothSolved || _outcome == _Outcome.iSolvedTheySkipped) _confetti.play();
       _sendCompletion();
     }
   }
@@ -627,14 +666,36 @@ class _State extends State<EmojiCharadesGameScreen>
         backgroundColor: Colors.transparent,
         body: Container(
           decoration: const BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(0.0, -0.4), // 50% x, 30% y
-              radius: 1.1,
-              colors: [Color(0xFF3D1172), Color(0xFF0A0818)],
-              stops: [0.0, 0.65],
-            ),
+  gradient: LinearGradient(
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+            stops: [0.0, 0.18, 0.38, 0.60, 0.82, 1.0],
+            colors: [
+              Color.fromARGB(255, 110, 29, 131),
+              Color(0xFF2E0858),
+              Color(0xFF180430),
+              Color(0xFF0F0B1E),
+              Color(0xFF0D0B14),
+              Color(0xFF0C0B11),
+            ],
           ),
+        ),
           child: Stack(children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  stops: [0.0, 0.12, 0.22, 0.30],
+                  colors: [
+                    Color(0xCC0C0A12),
+                    Color(0x550C0A12),
+                    Color(0x110C0A12),
+                    Color(0x000C0A12),
+                  ],
+                ),
+              ),
+            ),
             // SafeArea(top: false) pads only the bottom so phase content
             // (buttons, "Start Chatting", etc.) clears the system nav bar
             // on Samsung devices.  The top SafeArea is handled per-phase
@@ -644,20 +705,22 @@ class _State extends State<EmojiCharadesGameScreen>
             IgnorePointer(
               child: Align(
                 alignment: Alignment.topCenter,
-                child: ConfettiWidget(
+            child: ConfettiWidget(
                   confettiController: _confetti,
-                  blastDirection: pi / 2,
-                  numberOfParticles: 30,
+                  blastDirectionality: BlastDirectionality.explosive,
+                  numberOfParticles: 60,
                   gravity: 0.3,
-                  colors: const [
-                    _kPurple,
-                    _kPurpleL,
-                    _kAmber,
-                    _kGreen,
-                    _kCyan,
-                    _kPink,
-                    Colors.white
-                  ],
+                  maxBlastForce: 20,
+                  minBlastForce: 10,
+                  emissionFrequency: 0.01,
+                colors: const [
+                      Colors.white,
+                      Color(0xFFAB5CF5),
+                      Color(0xFF7C3AED),
+                      Color(0xFF4C1D95),
+                      Color(0xFFDDD6FE),
+                      Color(0xFF6930C3),
+                    ],
                 ),
               ),
             ),
@@ -779,55 +842,66 @@ class _State extends State<EmojiCharadesGameScreen>
   //  SCREEN: INTRO
   // ============================================================
   Widget _buildIntro() {
-    final size = MediaQuery.of(context).size;
-    return Stack(children: [
-      ...(_particles.map((p) => Positioned(
-            left: p.x * size.width - p.size / 2,
-            top: p.y * size.height,
-            child: Opacity(
-                opacity: p.opacity.clamp(0, 1),
-                child: Text(p.emoji, style: TextStyle(fontSize: p.size))),
-          ))),
-      Column(children: [
-        // Back button — pops EmojiCharadesGameScreen and returns to GameHub.
-        // Other phases already have _topBar() with internal navigation that
-        // chains back here, so this single addition closes the escape route.
-        _topBar(onBack: () => Navigator.of(context).pop()),
-        const SizedBox(height: 24),
-
-        Text('EMOJI', style: _f(62, fw: FontWeight.w700)),
-        Text('CHARADES', style: _f(62, fw: FontWeight.w700, c: _kAmber)),
-        const SizedBox(height: 4),
-
-        Expanded(
-            child: Center(
-                child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _introEmojiSlot(0, _floatLAnim, rotDeg: -4),
-            _introEmojiSlot(1, _floatMAnim, scl: 1.1),
-            _introEmojiSlot(2, _floatRAnim, rotDeg: 6),
-          ],
+  final size = MediaQuery.of(context).size;
+  return Stack(children: [
+    ...(_particles.map((p) => Positioned(
+          left: p.x * size.width - p.size / 2,
+          top: p.y * size.height,
+          child: Opacity(
+              opacity: p.opacity.clamp(0, 1),
+              child: Text(p.emoji, style: TextStyle(fontSize: p.size))),
         ))),
-
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 40),
-          child: Column(children: [
-            GestureDetector(
-              onTap: () => setState(() => _showTut = true),
-              child: Text('View tutorial',
-                  style: _f(15, fw: FontWeight.w500, c: const Color(0xFFC8AAFF))
-                      .copyWith(
-                          decoration: TextDecoration.underline,
-                          decorationColor: const Color(0xFFC8AAFF))),
+    Column(children: [
+      SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: const Icon(Icons.chevron_left_rounded,
+                  color: Color(0xFFC4B8E8), size: 28),
             ),
-            const SizedBox(height: 16),
-            _primaryBtn('Play now', () => _goTo(_Phase.category)),
-          ]),
+          ),
         ),
-      ]),
-    ]);
-  }
+      ),
+      const SizedBox(height: 28),
+      Text('EMOJI', style: _f(56, fw: FontWeight.w700)),
+      const SizedBox(height: 4),
+      Text('CHARADES', style: _f(56, fw: FontWeight.w700, c: _kAmber)),
+      const SizedBox(height: 6),
+      Expanded(
+          child: Center(
+              child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _introEmojiSlot(0, _floatLAnim, rotDeg: -4),
+          _introEmojiSlot(1, _floatMAnim, scl: 1.1),
+          _introEmojiSlot(2, _floatRAnim, rotDeg: 6),
+        ],
+      ))),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 50),
+        child: Column(children: [
+          GestureDetector(
+            onTap: () => setState(() => _showTut = true),
+            child: Text('View tutorial',
+                style: _f(18, fw: FontWeight.w500, c: const Color(0xFFC8AAFF))
+                    .copyWith(
+                        decoration: TextDecoration.underline,
+                        decorationColor: const Color(0xFFC8AAFF))),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _primaryBtn('Play now', () => _goTo(_Phase.category)),
+          ),
+        ]),
+      ),
+    ]),
+  ]);
+}
 
   Widget _introEmojiSlot(int idx, Animation<double> floatAnim,
       {double rotDeg = 0, double scl = 1.0}) {
@@ -897,9 +971,10 @@ class _State extends State<EmojiCharadesGameScreen>
                                 color: const Color(0x66AB5CF5),
                                 borderRadius: BorderRadius.circular(2)))),
                     const SizedBox(height: 18),
-                    Text('HOW TO PLAY',
-                        style:
-                            _f(13, fw: FontWeight.w700, c: _kPurple, ls: 2.0)),
+                                      Center(
+                    child: Text('HOW TO PLAY',
+                        style: _f(13, fw: FontWeight.w700, c: _kPurple, ls: 2.0)),
+                  ),
                     const SizedBox(height: 18),
                     _tutStep('1', 'Pick a category and a random phrase',
                         const Color(0xFF00E5FF)),
@@ -930,7 +1005,7 @@ class _State extends State<EmojiCharadesGameScreen>
                   shape: BoxShape.circle,
                   border: Border.all(color: c, width: 2),
                   boxShadow: [
-                    BoxShadow(color: c.withOpacity(0.3), blurRadius: 10)
+                    BoxShadow(color: c.withValues(alpha: 0.3), blurRadius: 10)
                   ]),
               child: Center(
                   child: Text(num, style: _f(16, fw: FontWeight.w700, c: c)))),
@@ -955,35 +1030,15 @@ class _State extends State<EmojiCharadesGameScreen>
       const SizedBox(height: 24),
       Text('CHOOSE A',
           style:
-              _f(16, fw: FontWeight.w600, c: const Color(0xFFC084FC), ls: 2.5)),
+              _f(18, fw: FontWeight.w600, c: const Color(0xFFC084FC), ls: 2.5)),
       const SizedBox(height: 6),
-      _GlowText(text: 'Category', style: _f(58, fw: FontWeight.w700)),
-      const SizedBox(height: 8),
+      _GlowText(text: 'Category', style: _f(50, fw: FontWeight.w700)),
+      const SizedBox(height: 12),
       Text('Swipe to explore',
           style: _f(16, fw: FontWeight.w500, c: const Color(0xFFC084FC))),
-      const SizedBox(height: 24),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 22),
-        child: Row(children: [
-          Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                      colors: [Color(0xFF7B2FBE), Color(0xFFAB5CF5)])),
-              child: Center(
-                  child: Text(widget.partnerName[0].toUpperCase(),
-                      style: _f(16, fw: FontWeight.w700)))),
-          const SizedBox(width: 12),
-          Expanded(
-              child: Text('${widget.partnerName} is also picking...',
-                  style:
-                      _f(15, fw: FontWeight.w500, c: const Color(0xFFC4B8E8)))),
-          _pulseDots(),
-        ]),
-      ),
-      const SizedBox(height: 24),
+     const SizedBox(height: 24),
+    
+      const SizedBox(height: 60),
       SizedBox(
           height: 260,
           child: PageView.builder(
@@ -1013,13 +1068,13 @@ class _State extends State<EmojiCharadesGameScreen>
                       color: active ? null : const Color(0xFF0F0D1E),
                       border: Border.all(
                         color:
-                            active ? cat.neon : Colors.white.withOpacity(0.06),
+                            active ? cat.neon : Colors.white.withValues(alpha: 0.06),
                         width: 2,
                       ),
                       boxShadow: active
                           ? [
                               BoxShadow(
-                                  color: cat.neon.withOpacity(0.35),
+                                  color: cat.neon.withValues(alpha: 0.35),
                                   blurRadius: 32)
                             ]
                           : [],
@@ -1034,7 +1089,7 @@ class _State extends State<EmojiCharadesGameScreen>
                                   fw: FontWeight.w700,
                                   c: active
                                       ? cat.neon
-                                      : cat.neon.withOpacity(0.2))),
+                                      : cat.neon.withValues(alpha: 0.2))),
                         ]),
                   ),
                 ),
@@ -1060,15 +1115,14 @@ class _State extends State<EmojiCharadesGameScreen>
                   ))),
       const Spacer(),
       Padding(
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
-        child: _primaryBtn('Select ${_cat.label}', () {
-          setState(() => _phraseIdx = _rng.nextInt(_phrases.length));
-          _goTo(_Phase.phrase);
-        }),
-      ),
-    ]);
-  }
-
+      padding: const EdgeInsets.fromLTRB(34, 12, 34, 40),
+      child: _primaryBtn('Select ${_cat.label}', () {
+        setState(() => _phraseIdx = _rng.nextInt(_phrases.length));
+        _goTo(_Phase.phrase);
+      }),
+    ),
+        ]);
+      }
   // ============================================================
   //  SCREEN: PHRASE
   // ============================================================
@@ -1076,11 +1130,13 @@ class _State extends State<EmojiCharadesGameScreen>
     return Column(children: [
       _topBar(onBack: () => _goTo(_Phase.category)),
       const SizedBox(height: 32),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text(_cat.icon, style: const TextStyle(fontSize: 30)),
-        const SizedBox(width: 10),
-        Text(_cat.label, style: _f(26, fw: FontWeight.w600, c: _cat.neon)),
-      ]),
+      _FloatingText(
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text(_cat.icon, style: const TextStyle(fontSize: 30)),
+          const SizedBox(width: 10),
+          Text(_cat.label, style: _f(26, fw: FontWeight.w600, c: _cat.neon)),
+        ]),
+      ),
       Expanded(
           child: Center(
         child: Padding(
@@ -1110,85 +1166,75 @@ class _State extends State<EmojiCharadesGameScreen>
   // ============================================================
   //  SCREEN: CREATE EMOJI
   // ============================================================
-  Widget _buildCreate() {
-    final hasEmojis = _myEmojis.trim().isNotEmpty;
-    return Column(children: [
-      _topBar(onBack: () => _goTo(_Phase.phrase)),
-      Expanded(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-          ),
-          child: Column(children: [
-            const SizedBox(height: 32),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(children: [
-                Text(_phrase,
-                    textAlign: TextAlign.center,
-                    style: _f(40, fw: FontWeight.w700)),
-                const SizedBox(height: 10),
-                Text('Turn it into emojis 👇', style: _f(17, c: _kSub)),
-              ]),
+ Widget _buildCreate() {
+  final hasEmojis = _myEmojis.trim().isNotEmpty;
+  return Column(children: [
+    _topBar(onBack: () => _goTo(_Phase.phrase)),
+    Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      child: Column(children: [
+        Text(_phrase,
+            textAlign: TextAlign.center,
+            style: _f(40, fw: FontWeight.w700)),
+        const SizedBox(height: 10),
+        Text('Turn it into emojis 👇', style: _f(17, c: _kSub)),
+      ]),
+    ),
+    Expanded(
+      child: Align(
+        alignment: const Alignment(0, -0.3),
+        child: GestureDetector(
+          onTap: () => FocusScope.of(context).requestFocus(_emojiFocus),
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.86,
+            height: 160,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              color: _kCard,
+              border: Border.all(
+                  color: hasEmojis
+                      ? _kPurple.withValues(alpha: 0.8)
+                      : _kPurple.withValues(alpha: 0.35),
+                  width: 2),
+              boxShadow: hasEmojis
+                  ? [BoxShadow(
+                      color: _kPurple.withValues(alpha: 0.28), blurRadius: 24)]
+                  : [],
             ),
-
-            const SizedBox(height: 32),
-
-            // Emoji input box
-            GestureDetector(
-              onTap: () => FocusScope.of(context).requestFocus(_emojiFocus),
-              child: Container(
-                width: MediaQuery.of(context).size.width * 0.86,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  color: _kCard,
-                  border: Border.all(
-                      color: hasEmojis
-                          ? _kPurple.withOpacity(0.8)
-                          : _kPurple.withOpacity(0.35),
-                      width: 2),
-                  boxShadow: hasEmojis
-                      ? [
-                          BoxShadow(
-                              color: _kPurple.withOpacity(0.28), blurRadius: 24)
-                        ]
-                      : [],
-                ),
+            child: Stack(alignment: Alignment.center, children: [
+              if (!hasEmojis)
+                Text('Tap to open emoji keyboard',
+                    style: _f(15, c: const Color(0xFF4E3D72))),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: TextField(
                   controller: _emojiCtrl,
                   focusNode: _emojiFocus,
                   onChanged: (v) => setState(() => _myEmojis = v),
-                  textAlign: TextAlign.left,
-                  style: TextStyle(
-                    fontSize: hasEmojis ? 42.0 : 15.0,
-                    letterSpacing: hasEmojis ? 4.0 : 0.0,
-                  ),
+                  textAlign: TextAlign.center,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: const TextStyle(fontSize: 36, letterSpacing: 4),
                   maxLines: 2,
                   inputFormatters: [_EmojiOnlyFormatter()],
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     border: InputBorder.none,
-                    hintText: 'Tap to open emoji keyboard',
-                    hintStyle: _f(15, c: const Color(0xFF4E3D72)),
+                    hintText: '',
+                    contentPadding: EdgeInsets.symmetric(vertical: 40),
+                    isCollapsed: true,
                   ),
                 ),
               ),
-            ),
-
-            const SizedBox(height: 32),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: _primaryBtn('Send Puzzle', hasEmojis ? _sendPuzzle : null),
-            ),
-
-            const SizedBox(height: 16),
-          ]),
+            ]),
+          ),
         ),
       ),
-    ]);
-  }
+    ),
+    Padding(
+      padding: const EdgeInsets.fromLTRB(34, 0, 34, 48),
+      child: _primaryBtn('Send Puzzle', hasEmojis ? _sendPuzzle : null),
+    ),
+  ]);
+}
 
   Future<void> _sendPuzzle() async {
     FocusScope.of(context).unfocus(); // dismiss keyboard before transitioning
@@ -1214,10 +1260,10 @@ class _State extends State<EmojiCharadesGameScreen>
 
     return Column(children: [
       _topBar(onBack: () => Navigator.of(context).pop()),
-      const SizedBox(height: 36),
-      _PulsingRings(child: const Text('⏳', style: TextStyle(fontSize: 32))),
       const SizedBox(height: 20),
-      Text('Puzzle Sent!', style: _f(34, fw: FontWeight.w700)),
+      const _PulsingRings(child: Text('⏳', style: TextStyle(fontSize: 32))),
+      const SizedBox(height: 20),
+      Text('Puzzle Sent', style: _f(34, fw: FontWeight.w700)),
       const SizedBox(height: 10),
       Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -1244,18 +1290,18 @@ class _State extends State<EmojiCharadesGameScreen>
                         const TextSpan(text: ' to create their puzzle...')
                       ],
               ))),
-      const SizedBox(height: 28),
+      const SizedBox(height: 50),
       Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22),
           child: Column(children: [
             Text('YOUR PUZZLE',
                 style: _f(13,
                     fw: FontWeight.w600, c: const Color(0xFF6B5A90), ls: 1.0)),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             _card(
                 child: Column(children: [
               Text(_myEmojis,
-                  style: const TextStyle(fontSize: 36, letterSpacing: 4),
+                  style: const TextStyle(fontSize: 64, letterSpacing: 4),
                   textAlign: TextAlign.center),
               const SizedBox(height: 8),
               Text(
@@ -1265,7 +1311,7 @@ class _State extends State<EmojiCharadesGameScreen>
                   style: _f(14, c: const Color(0xFF6B5A90))),
             ])),
           ])),
-      const SizedBox(height: 28),
+      const SizedBox(height: 50),
       Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1273,10 +1319,10 @@ class _State extends State<EmojiCharadesGameScreen>
             _statusAvatar('Y', true, true),
             const SizedBox(width: 12),
             Container(
-                width: 40,
+                width: 90,
                 height: 2,
                 margin: const EdgeInsets.only(top: 30),
-                color: _kPurple.withOpacity(0.4)),
+                color: _kPurple.withValues(alpha: 0.4)),
             const SizedBox(width: 12),
             _statusAvatar(theirInit, ps, false),
           ]),
@@ -1286,11 +1332,14 @@ class _State extends State<EmojiCharadesGameScreen>
           const Text('🔔', style: TextStyle(fontSize: 18)),
           const SizedBox(width: 8),
           Text("${widget.partnerName}'s puzzle is ready!",
-              style: _f(15, fw: FontWeight.w500, c: _kAmber)),
+              style: _f(15, fw: FontWeight.w500, c: const Color.fromARGB(255, 251, 251, 251))),
         ]),
         const SizedBox(height: 14),
-        _slimBtn(
+          Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 34),
+          child: _primaryBtn(
             "Solve ${widget.partnerName}'s Puzzle", () => _goTo(_Phase.solve)),
+        ),
       ],
       const Spacer(),
     ]);
@@ -1310,12 +1359,12 @@ class _State extends State<EmojiCharadesGameScreen>
                     : null,
                 color: isMe ? null : _kCard,
                 border: Border.all(
-                    color: done ? _kGreen : _kPurple.withOpacity(0.3),
+                    color: done ? const Color.fromARGB(255, 192, 83, 239) : _kPurple.withValues(alpha: 0.3),
                     width: 3),
                 boxShadow: done
                     ? [
                         BoxShadow(
-                            color: _kGreen.withOpacity(0.5), blurRadius: 16)
+                            color: const Color.fromARGB(255, 177, 51, 232).withValues(alpha: 0.5), blurRadius: 16)
                       ]
                     : [],
               ),
@@ -1338,7 +1387,7 @@ class _State extends State<EmojiCharadesGameScreen>
                 colors: [_kPurpleD, _kPurple, _kPurpleL, Color(0xFF7C3AED)]),
             borderRadius: BorderRadius.circular(999),
             boxShadow: [
-              BoxShadow(color: _kPurpleD.withOpacity(0.4), blurRadius: 12)
+              BoxShadow(color: _kPurpleD.withValues(alpha: 0.4), blurRadius: 12)
             ],
           ),
           child: Center(child: Text(label, style: _f(13, fw: FontWeight.w500))),
@@ -1358,12 +1407,12 @@ class _State extends State<EmojiCharadesGameScreen>
       // ── Category + sub-label ─────────────────────────────────
       const SizedBox(height: 20),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text(_partnerCat.icon, style: const TextStyle(fontSize: 26)),
-        const SizedBox(width: 10),
+      
         Text(_partnerCat.label,
-            style: _f(20, fw: FontWeight.w600, c: _partnerCat.neon)),
+            style: _f(30, fw: FontWeight.w600, c: _partnerCat.neon)),
+            
       ]),
-      const SizedBox(height: 8),
+      const SizedBox(height: 14),
       RichText(
           text: TextSpan(
         style: _f(16, c: _kSub),
@@ -1376,8 +1425,19 @@ class _State extends State<EmojiCharadesGameScreen>
         ],
       )),
 
+         // ── Timer ─────────────────────────────────────────────────
+      if (showTimer) ...[
+        const SizedBox(height: 20),
+       Text(
+        'Skip After $_timerVal seconds',
+        style: _f(16, c: _timerVal <= 5
+            ? const Color(0xFFFF6B6B)
+            : const Color.fromARGB(255, 184, 160, 192)),
+      ),
+      ],
+
       // ── Emoji display ─────────────────────────────────────────
-      const SizedBox(height: 40),
+      const SizedBox(height: 110),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: FittedBox(
@@ -1387,16 +1447,7 @@ class _State extends State<EmojiCharadesGameScreen>
         ),
       ),
 
-      // ── Timer ─────────────────────────────────────────────────
-      if (showTimer) ...[
-        const SizedBox(height: 16),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          _TimerCircle(value: _timerVal, urgent: _timerVal <= 5),
-          const SizedBox(width: 6),
-          Text('seconds', style: _f(14, c: const Color(0xFF4E3D72))),
-        ]),
-      ],
-      const SizedBox(height: 16),
+      const SizedBox(height: 36),
 
       // ── Scrollable: answer area + skip + submit ───────────────
       // Replaces the old Spacer/Spacer layout which collapsed when
@@ -1411,54 +1462,11 @@ class _State extends State<EmojiCharadesGameScreen>
           child: Column(children: [
 
             // ── Answer area ─────────────────────────────────────
-            if (_skipped) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                decoration: BoxDecoration(
-                  color: _kCard,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _kBorder.withOpacity(0.7), width: 1.5),
-                ),
-                child: Column(children: [
-                  Text('The answer was',
-                      style: _f(14, fw: FontWeight.w600, c: _kRed, ls: 0.8)),
-                  const SizedBox(height: 12),
-                  Text(_partnerPhrase,
-                      style: _f(28, fw: FontWeight.w700),
-                      textAlign: TextAlign.center),
-                ]),
-              ),
-              const SizedBox(height: 10),
-              Text('Better luck next time!', style: _f(15, c: _kSub)),
-            ] else if (_ansCorrect) ...[
-              TextField(
-                controller: _ansCtrl,
-                readOnly: true,
-                textAlign: TextAlign.center,
-                style: _f(19, fw: FontWeight.w500, c: _kGreen),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: _kGreen.withOpacity(0.1),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: _kGreen, width: 2)),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: _kGreen, width: 2)),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: _kGreen, width: 2)),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text('✅ You got it!', style: _f(16, c: _kGreen)),
-            ] else ...[
-              _ShakeWidget(
-                shake: _ansWrong,
-                child: TextField(
+                Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _ShakeWidget(
+                  shake: _ansWrong,
+                  child: TextField(
                   controller: _ansCtrl,
                   onChanged: (v) => setState(() {
                     _ansInput = v;
@@ -1468,20 +1476,20 @@ class _State extends State<EmojiCharadesGameScreen>
                   textAlign: TextAlign.center,
                   style: _f(19,
                       fw: FontWeight.w500,
-                      c: _ansWrong ? const Color(0xFFFF6B6B) : _kText),
+                      c: _ansWrong ? const Color.fromARGB(255, 112, 13, 13) : _kText),
                   decoration: InputDecoration(
-                    hintText: 'Type your guess...',
-                    hintStyle: _f(19, c: const Color(0xFF4E3D72)),
+                    hintText: 'What ${_singular(_partnerCat.label)} is this? Type your guess...',
+                    hintStyle: _f(15, c: const Color(0xFF4E3D72)),
                     filled: true,
                     fillColor: _kCard,
                     contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide(
                             color: _ansWrong
                                 ? const Color(0xFFFF6B6B)
-                                : _kPurple.withOpacity(0.35),
+                                : _kPurple.withValues(alpha: 0.35),
                             width: 2)),
                     focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -1491,8 +1499,8 @@ class _State extends State<EmojiCharadesGameScreen>
                         borderSide: BorderSide(
                             color: _ansWrong
                                 ? const Color(0xFFFF6B6B)
-                                : _kPurple.withOpacity(0.35),
-                            width: 2)),
+                                : _kPurple.withValues(alpha: 0.35),
+                            width: 2))),
                   ),
                 ),
               ),
@@ -1511,20 +1519,37 @@ class _State extends State<EmojiCharadesGameScreen>
               else
                 Text('Press Enter or tap Submit',
                     style: _f(15, c: const Color(0xFF4E3D72))),
-            ],
 
             // ── Skip button ─────────────────────────────────────
             if (_timerDone && !_ansCorrect && !_skipped) ...[
               const SizedBox(height: 16),
-              _SlimOutlineBtn('Skip', () => _skipAnswer()),
+              Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton(
+                  onPressed: _skipAnswer,
+                  style: OutlinedButton.styleFrom(
+                    shape: const StadiumBorder(),
+                    side: const BorderSide(
+                        color: Color(0xFFFF6B6B), width: 1.5),
+                  ),
+                  child: Text('Skip',
+                      style: _f(18, fw: FontWeight.w600,
+                          c: const Color(0xFFFF9999))),
+                ),
+              ),
+            ),
             ],
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 200),
 
             // ── Submit / Continue button ─────────────────────────
-            _ansCorrect || _skipped
-                ? _primaryBtn('Continue', _afterSolve)
-                : _primaryBtn('Submit Answer', _submitAnswer),
+                    Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+         child: _primaryBtn('Submit Answer', _submitAnswer),
+          ),
           ]),
         ),
       ),
@@ -1548,17 +1573,19 @@ class _State extends State<EmojiCharadesGameScreen>
     });
   }
 
-  void _submitAnswer() {
+  Future<void> _submitAnswer() async {
     final correct =
         _ansInput.trim().toLowerCase() == _partnerPhrase.trim().toLowerCase();
-    if (correct) {
-      _timer?.cancel();
-      setState(() {
-        _ansCorrect = true;
-        _iSolved = true;
-      });
-      _upsertMyRecord({'solved': true});
-    } else {
+if (correct) {
+  _timer?.cancel();
+  setState(() {
+    _ansCorrect = true;
+    _iSolved = true;
+  });
+ await _upsertMyRecord({'solved': true});
+await Future.delayed(const Duration(milliseconds: 300));
+await _afterSolve();
+} else {
       setState(() => _ansWrong = true);
       _hintTimer?.cancel();
       _hintTimer = Timer(const Duration(seconds: 5), () {
@@ -1567,21 +1594,22 @@ class _State extends State<EmojiCharadesGameScreen>
     }
   }
 
-  void _skipAnswer() {
-    _timer?.cancel();
-    setState(() => _skipped = true);
-    _upsertMyRecord({'skipped': true});
-  }
-
+  Future<void> _skipAnswer() async {
+  _timer?.cancel();
+  setState(() => _skipped = true);
+  await _upsertMyRecord({'skipped': true});
+await Future.delayed(const Duration(milliseconds: 300));
+await _afterSolve();
+}
   Future<void> _afterSolve() async {
     await _upsertMyRecord({
       if (_iSolved) 'solved': true,
       if (_skipped) 'skipped': true,
     });
+    debugPrint('[AFTERSOLVE] _partnerFinished=$_partnerFinished _partnerRow=$_partnerRow');
     if (_partnerFinished) {
       _goTo(_Phase.done);
       if (_outcome == _Outcome.bothSolved) _confetti.play();
-      _recordEcScore();
       _sendCompletion();
     } else {
       _goTo(_Phase.waitSolve);
@@ -1596,161 +1624,546 @@ class _State extends State<EmojiCharadesGameScreen>
   // ============================================================
   //  SCREEN: WAIT SOLVE
   // ============================================================
-  Widget _buildWaitSolve() {
-    final theirInit = widget.partnerName[0].toUpperCase();
+Widget _buildWaitSolve() {
+  final theirInit = widget.partnerName[0].toUpperCase();
 
-    return Column(children: [
-      _topBar(onBack: () => Navigator.of(context).pop()),
-      const SizedBox(height: 22),
-      _PulsingRings(child: const Text('🎯', style: TextStyle(fontSize: 22))),
-      const SizedBox(height: 10),
-      Text(_skipped ? 'Round done!' : 'You got it!',
-          style: _f(22, fw: FontWeight.w700, c: _skipped ? _kText : _kGreen)),
-      const SizedBox(height: 5),
-      Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: RichText(
-              textAlign: TextAlign.center,
-              text: TextSpan(
-                style: _f(13, c: _kSub, lh: 1.5),
-                children: _partnerFinished
-                    ? [
-                        TextSpan(
-                            text: widget.partnerName,
-                            style: _f(13,
-                                fw: FontWeight.w600,
-                                c: const Color(0xFFC4A8FF))),
-                        const TextSpan(
-                            text: ' is done too — loading results...')
-                      ]
-                    : [
-                        const TextSpan(text: 'Waiting for '),
-                        TextSpan(
-                            text: widget.partnerName,
-                            style: _f(13,
-                                fw: FontWeight.w600,
-                                c: const Color(0xFFC4A8FF))),
-                        const TextSpan(text: ' to finish...')
-                      ],
-              ))),
-      const SizedBox(height: 14),
-      Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: Column(children: [
-            _phraseRevealCard(
-                'YOUR PHRASE', _phrase, _myEmojis, const Color(0xFFAB5CF5)),
-            const SizedBox(height: 9),
-            _phraseRevealCard(
-                "${widget.partnerName}'s PHRASE ${_skipped ? '(skipped)' : '(you guessed ✓)'}",
-                _partnerPhrase,
-                _partnerEmojis,
-                _skipped ? _kRed : const Color(0xFF00E5FF)),
-          ])),
-      const SizedBox(height: 14),
-      Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+  return Column(children: [
+    _topBar(onBack: () => Navigator.of(context).pop()),
+    const SizedBox(height: 32),
+    const _PulsingRings(child: Text('🎯', style: TextStyle(fontSize: 22))),
+    const SizedBox(height: 16),
+    Text(_skipped ? 'Round done!' : 'You got it!',
+        style: _f(26, fw: FontWeight.w700, c: _skipped ? _kText : _kGreen)),
+    const SizedBox(height: 8),
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: RichText(
+        textAlign: TextAlign.center,
+        text: TextSpan(
+          style: _f(13, c: _kSub, lh: 1.5),
+          children: _partnerFinished
+              ? [
+                  TextSpan(text: widget.partnerName,
+                      style: _f(13, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
+                  const TextSpan(text: ' is done too — loading results...')
+                ]
+              : [
+                  const TextSpan(text: 'Waiting for '),
+                  TextSpan(text: widget.partnerName,
+                      style: _f(13, fw: FontWeight.w600, c: const Color(0xFFC4A8FF))),
+                  const TextSpan(text: ' to finish...')
+                ],
+        ),
+      ),
+    ),
+    const SizedBox(height: 70),
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: IntrinsicHeight(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _statusAvatar('Y', true, true),
-            const SizedBox(width: 8),
+            // YOU SENT PARTNER
+            Expanded(
+              child: Column(children: [
+                Text('You sent ${widget.partnerName}',
+                    textAlign: TextAlign.center,
+                    style: _f(16, fw: FontWeight.w700,
+                        c: const Color(0xFFAB5CF5), ls: 0)),
+                const SizedBox(height: 12),
+                Text(_phrase,
+                    textAlign: TextAlign.center,
+                    style: _f(20, fw: FontWeight.w700)),
+                if (_myEmojis.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(_myEmojis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 20, letterSpacing: 2)),
+                ],
+                const SizedBox(height: 8),
+                Text(_partnerFinished ? '✅ Done' : '⏳ Still playing...',
+                    style: _f(14, fw: FontWeight.w600,
+                        c: _partnerFinished ? _kGreen : _kSub)),
+              ]),
+            ),
+            // Divider
             Container(
-                width: 26,
-                height: 1.5,
-                margin: const EdgeInsets.only(top: 16),
-                color: _kPurple.withOpacity(0.4)),
-            const SizedBox(width: 8),
-            _statusAvatar(theirInit, false, false),
-          ]),
-      const Spacer(),
-    ]);
-  }
-
-  Widget _phraseRevealCard(
-          String label, String phrase, String emojis, Color labelColor) =>
-      _card(
-          child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(label,
-              textAlign: TextAlign.center,
-              style: _f(10, fw: FontWeight.w600, c: labelColor, ls: 0.8)),
-          const SizedBox(height: 4),
-          Text(phrase,
-              textAlign: TextAlign.center, style: _f(16, fw: FontWeight.w600)),
-          if (emojis.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(emojis,
-                style: const TextStyle(fontSize: 18, letterSpacing: 2)),
+                width: 1,
+                color: _kPurple.withValues(alpha: 0.3),
+                margin: const EdgeInsets.symmetric(horizontal: 8)),
+                
+            // PARTNER SENT YOU
+            Expanded(
+              child: Column(children: [
+                Text('${widget.partnerName} sent you',
+                    textAlign: TextAlign.center,
+                    style: _f(16, fw: FontWeight.w700,
+                        c: const Color(0xFFAB5CF5), ls: 0)),
+                const SizedBox(height: 12),
+                Text(_skipped ? '???' : _partnerPhrase,
+                textAlign: TextAlign.center,
+                style: _f(18, fw: FontWeight.w700)),
+                if (_partnerEmojis.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(_partnerEmojis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 20, letterSpacing: 2)),
+                ],
+                const SizedBox(height: 8),
+                Text(_skipped ? '⏭ Skipped' : '✅ Guessed',
+                    style: _f(14, fw: FontWeight.w600,
+                        c: _skipped ? _kRed : _kGreen)),
+              ]),
+            ),
           ],
-        ],
-      ));
-
+        ),
+      ),
+    ),
+    const SizedBox(height: 100),
+    Padding(
+  padding: const EdgeInsets.symmetric(horizontal:70),
+  child: Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _statusAvatar('Y', true, true),
+      Expanded(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 31, left: 8, right: 8),
+          child: _DottedLine(color: _kPurple.withValues(alpha: 0.5)),
+        ),
+      ),
+      _statusAvatar(theirInit, false, false),
+    ],
+  ),
+),
+    const Spacer(),
+  ]);
+}
   // ============================================================
   //  SCREEN: DONE (4 outcomes)
   // ============================================================
-  Widget _buildDone() {
-    final String bigEmoji, title, subtitle;
-    switch (_outcome) {
-      case _Outcome.bothSolved:
-        bigEmoji = '🎉';
-        title = 'Ice Broken!';
-        subtitle = 'You both nailed it!';
-      case _Outcome.iSolvedTheySkipped:
-        bigEmoji = '🎯';
-        title = 'You got it!';
-        subtitle = 'But ${widget.partnerName} skipped this round.';
-      case _Outcome.iSkippedTheySolved:
-        bigEmoji = '😅';
-        title = '${widget.partnerName} got it!';
-        subtitle = 'You skipped this round.';
-      case _Outcome.bothSkipped:
-        bigEmoji = '🤝';
-        title = 'You both skipped!';
-        subtitle = 'Maybe next time!';
-    }
+ 
+Widget _buildDone() {
+  final String title, subtitle;
+  final bool showCrownMe, showCrownThem;
+  final int starCount;
 
-    final myLabelColor = _skipped ? _kRed : const Color(0xFFAB5CF5);
-    final theirLabelColor = _partnerSkipped ? _kRed : const Color(0xFF00E5FF);
-    final myStatus = _skipped ? '(skipped)' : '✓';
-    final theirStatus = _partnerSkipped ? '(skipped)' : '✓';
-
-    return Column(children: [
-      _topBar(), // no back arrow on the done/reveal screen
-      Expanded(
-          child: Column(children: [
-        const SizedBox(height: 20),
-        _BounceIn(child: Text(bigEmoji, style: const TextStyle(fontSize: 68))),
-        const SizedBox(height: 8),
-        ShaderMask(
-          shaderCallback: (b) => const LinearGradient(
-            colors: [Color(0xFFC084FC), Colors.white, Color(0xFFC084FC)],
-          ).createShader(b),
-          child: Text(title, style: _f(36, fw: FontWeight.w700)),
-        ),
-        const SizedBox(height: 4),
-        Text(subtitle, textAlign: TextAlign.center, style: _f(14, c: _kSub)),
-        const SizedBox(height: 16),
-        Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: Column(children: [
-              _revealCard(
-                  "Your phrase $myStatus", _phrase, _myEmojis, myLabelColor),
-              const SizedBox(height: 9),
-              _revealCard("${widget.partnerName}'s phrase $theirStatus",
-                  _partnerPhrase, _partnerEmojis, theirLabelColor),
-            ])),
-        const Spacer(),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
-          child: Column(children: [
-            _primaryBtn(widget.chatAlreadyUnlocked ? 'Continue Chatting' : 'Start Chatting', () {
-              widget.onChatUnlocked?.call();
-            }),
-          ]),
-        ),
-      ])),
-    ]);
+  switch (_outcome) {
+    case _Outcome.bothSolved:
+      title      = 'You Both Nailed It!';
+      subtitle   = '';
+      showCrownMe  = true;
+      showCrownThem = true;
+      starCount  = 3;
+    case _Outcome.iSolvedTheySkipped:
+      title      = 'You got it!';
+      subtitle   = '${widget.partnerName} skipped this round.';
+      showCrownMe  = true;
+      showCrownThem = false;
+      starCount  = 1;
+    case _Outcome.iSkippedTheySolved:
+      title      = '${widget.partnerName} got it!';
+      subtitle   = 'You skipped this round.';
+      showCrownMe  = false;
+      showCrownThem = true;
+      starCount  = 0;
+    case _Outcome.bothSkipped:
+      title      = 'You both skipped!';
+      subtitle   = 'Maybe next time!';
+      showCrownMe  = false;
+      showCrownThem = false;
+      starCount  = 0;
   }
+
+  return Column(children: [
+    _topBar(),
+    Expanded(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+        child: Column(children: [
+
+          const SizedBox(height: 16),
+
+          // ── Floating animated title ───────────────────────────
+          _FloatingText(
+            child: ShaderMask(
+              shaderCallback: (b) => LinearGradient(
+                colors: (showCrownMe || showCrownThem)
+                    ? [const Color(0xFFFFD700), const Color(0xFFFFF0A0), const Color(0xFFFFD700)]
+                    : [const Color(0xFFC084FC), Colors.white, const Color(0xFFC084FC)],
+              ).createShader(b),
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                style: _f(34, fw: FontWeight.w800),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: _f(16, c: const Color.fromARGB(255, 219, 217, 224)),
+          ),
+
+          const SizedBox(height: 60),
+
+          // ── Avatars centered with crowns ──────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildAvatarWithCrown(
+                url: _myAvatarUrl,
+                label: 'You',
+                showCrown: showCrownMe,
+                skipped: _skipped,
+                glowColor: const Color(0xFFAB5CF5),
+              ),
+              const SizedBox(width: 32),
+              _buildAvatarWithCrown(
+                url: _partnerAvatarUrl,
+                label: widget.partnerName,
+                showCrown: showCrownThem,
+                skipped: _partnerSkipped,
+                glowColor: const Color(0xFF00E5FF),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 32),
+
+          // ── VS phrase cards ───────────────────────────────────
+          _buildVsCards(),
+
+          const SizedBox(height: 120),
+
+          // ── CTA Button ────────────────────────────────────────
+          Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30),
+          child: _primaryBtn(
+            widget.chatAlreadyUnlocked
+                ? 'Continue Chatting'
+                : 'Start Chatting',
+            () async {
+              debugPrint('[EC-BTN] tapped. sessionId=${widget.sessionId}, completionSent=$_completionSent, iSolved=$_iSolved, skipped=$_skipped, outcome=$_outcome');
+              await _sendCompletion();
+              debugPrint('[EC-BTN] sendCompletion finished');
+              widget.onChatUnlocked?.call();
+            },
+          ),
+         ),
+         const SizedBox(height: 14),
+Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 30),
+  child: _ghostBtn('Play Again', () {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => GameHubScreen(
+          matchId: widget.matchId,
+          currentUserId: widget.currentUserId,
+          partnerUserId: widget.partnerUserId,
+          partnerName: widget.partnerName,
+          chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
+          onChatUnlocked: widget.onChatUnlocked ?? () {},
+        ),
+      ),
+    );
+  }),
+),
+        ]),
+      ),
+    ),
+  ]);
+}
+
+Widget _buildAvatarWithCrown({
+  required String url,
+  required String label,
+  required bool showCrown,
+  required bool skipped,
+  required Color glowColor,
+}) {
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          // Crown above avatar
+          if (showCrown)
+            const Positioned(
+              top: -22,
+              child: Text('👑', style: TextStyle(fontSize: 28)),
+            ),
+          // Glow ring
+          // Glow ring + avatar centered together
+          SizedBox(
+            width: 88,
+            height: 88,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (!skipped)
+                  Container(
+                    width: 88,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: glowColor.withValues(alpha: 0.6),
+                          blurRadius: 20,
+                          spreadRadius: 4,
+                        ),
+                        BoxShadow(
+                          color: glowColor.withValues(alpha: 0.3),
+                          blurRadius: 40,
+                          spreadRadius: 8,
+                        ),
+                      ],
+                      border: Border.all(
+                        color: glowColor.withValues(alpha: 0.9),
+                        width: 2.5,
+                      ),
+                    ),
+                  ),
+                ClipOval(
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    color: const Color(0xFF2A1A4E),
+                    child: url.isNotEmpty
+                        ? Image.network(url, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _avatarInitial(label))
+                        : _avatarInitial(label),
+                  ),
+                ),
+                if (skipped)
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withValues(alpha: 0.45),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 10),
+      Text(
+        label,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: skipped ? Colors.white38 : Colors.white,
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _avatarInitial(String name) => Center(
+  child: Text(
+    name.isNotEmpty ? name[0].toUpperCase() : '?',
+    style: const TextStyle(
+      color: Colors.white,
+      fontWeight: FontWeight.w700,
+      fontSize: 28,
+    ),
+  ),
+);
+
+Widget _buildVsCards() {
+// Left card = (You) — what PARTNER sent you + did YOU solve it?
+final myStatus         = _skipped ? '(SKIPPED)' : '✓ SOLVED';
+final myStatusColor    = _skipped ? _kRed : _kGreen;
+
+// Right card = (Partner) — what YOU sent them + did THEY solve it?
+final theirStatus      = _partnerSkipped ? '(SKIPPED)' : '✓ SOLVED';
+final theirStatusColor = _partnerSkipped ? _kRed : _kGreen;
+  return SizedBox(
+    height: 200,
+    child: Stack(
+      children: [
+        // ── Left card (You) ─────────────────────────────────────
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          right: MediaQuery.of(context).size.width * 0.5 - 18,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF2D0F60), Color(0xFF1A0838)],
+              ),
+              border: Border.all(
+                color: const Color(0xFFAB5CF5).withValues(alpha: 0.6),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFAB5CF5).withValues(alpha: 0.2),
+                  blurRadius: 16,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+  _partnerEmojis.isNotEmpty ? _partnerEmojis : '❓',
+                  style: const TextStyle(fontSize: 32, letterSpacing: 2),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                  _partnerPhrase,
+                  textAlign: TextAlign.center,
+                    style: _f(13, fw: FontWeight.w600),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  myStatus,
+                  style: _f(10, fw: FontWeight.w700, c: myStatusColor, ls: 0.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Right card (Partner) ────────────────────────────────
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          left: MediaQuery.of(context).size.width * 0.5 - 18,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: const LinearGradient(
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+                colors: [Color(0xFF0F2060), Color(0xFF081838)],
+              ),
+              border: Border.all(
+                color: const Color(0xFF00E5FF).withValues(alpha: 0.6),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                  blurRadius: 16,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                _myEmojis.isNotEmpty ? _myEmojis : '❓',
+                  style: const TextStyle(fontSize: 32, letterSpacing: 2),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    _myPhrase.isNotEmpty ? _myPhrase : _phrase,
+                    textAlign: TextAlign.center,
+                    style: _f(13, fw: FontWeight.w600),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  theirStatus,
+                  style: _f(10, fw: FontWeight.w700, c: theirStatusColor, ls: 0.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // ── VS divider in the middle ────────────────────────────
+        Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 2,
+                height: 60,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      const Color(0xFFAB5CF5).withValues(alpha: 0.8),
+                    ],
+                  ),
+                ),
+              ),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF1A0838),
+                  border: Border.all(
+                    color: const Color(0xFFAB5CF5).withValues(alpha: 0.8),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFAB5CF5).withValues(alpha: 0.4),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    'VS',
+                    style: _f(11, fw: FontWeight.w800, c: const Color(0xFFAB5CF5)),
+                  ),
+                ),
+              ),
+              Container(
+                width: 2,
+                height: 60,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      const Color(0xFFAB5CF5).withValues(alpha: 0.8),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _revealCard(String label, String phrase, String emojis, Color lc) =>
       _card(
@@ -1770,7 +2183,7 @@ class _State extends State<EmojiCharadesGameScreen>
           ],
         ],
       ));
-
+    }
 
   // ============================================================
   //  SHARED: Card
@@ -1781,16 +2194,254 @@ class _State extends State<EmojiCharadesGameScreen>
         decoration: BoxDecoration(
           color: _kCard,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _kBorder.withOpacity(0.7), width: 1.5),
+          border: Border.all(color: _kBorder.withValues(alpha: 0.7), width: 1.5),
         ),
         child: child,
       );
+
+// Starrow 
+class _StarRow extends StatefulWidget {
+  final int count;
+  const _StarRow({required this.count});
+  @override
+  State<_StarRow> createState() => _StarRowState();
 }
 
+class _StarRowState extends State<_StarRow> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stars = widget.count;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(stars, (i) {
+        final delay = i * 0.25;
+        return AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, __) {
+            final t = Curves.elasticOut.transform(
+              ((_ctrl.value - delay) / (1 - delay)).clamp(0.0, 1.0),
+            );
+            return Transform.scale(
+              scale: t,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                    horizontal: stars == 1 ? 0 : 4),
+                child: Text(
+                  '⭐',
+                  style: TextStyle(
+                    fontSize: i == 1 ? 42 : 32,
+                    shadows: const [
+                      Shadow(color: Color(0xFFFFD700), blurRadius: 16)
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      }),
+    );
+  }
+}
+
+
+class _AvatarRow extends StatelessWidget {
+  final String myAvatarUrl;
+  final String partnerAvatarUrl;
+  final String partnerName;
+  final bool myGlowing;
+  final bool theirGlowing;
+  final bool showCrown;
+  final bool mySkipped;
+  final bool theirSkipped;
+
+  const _AvatarRow({
+    required this.myAvatarUrl,
+    required this.partnerAvatarUrl,
+    required this.partnerName,
+    required this.myGlowing,
+    required this.theirGlowing,
+    required this.showCrown,
+    required this.mySkipped,
+    required this.theirSkipped,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.topCenter,
+      children: [
+        if (showCrown)
+          const Positioned(
+            top: -18,
+            child: Text('👑', style: TextStyle(fontSize: 36)),
+          ),
+        Padding(
+          padding: EdgeInsets.only(top: showCrown ? 18 : 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildAvatar(
+                url: myAvatarUrl,
+                label: 'You',
+                glowing: myGlowing,
+                skipped: mySkipped,
+                glowColor: const Color(0xFFAB5CF5),
+              ),
+              const SizedBox(width: 24),
+              _buildAvatar(
+                url: partnerAvatarUrl,
+                label: partnerName,
+                glowing: theirGlowing,
+                skipped: theirSkipped,
+                glowColor: const Color(0xFF00E5FF),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAvatar({
+    required String url,
+    required String label,
+    required bool glowing,
+    required bool skipped,
+    required Color glowColor,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            if (glowing)
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: glowColor.withValues(alpha: 0.55),
+                      blurRadius: 20,
+                      spreadRadius: 4,
+                    ),
+                    BoxShadow(
+                      color: glowColor.withValues(alpha: 0.25),
+                      blurRadius: 40,
+                      spreadRadius: 8,
+                    ),
+                  ],
+                  border: Border.all(
+                    color: glowColor.withValues(alpha: 0.8),
+                    width: 2.5,
+                  ),
+                ),
+              ),
+            ClipOval(
+              child: Container(
+                width: 80,
+                height: 80,
+                color: const Color(0xFF2A1A4E),
+                child: url.isNotEmpty
+                    ? Image.network(
+                        url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _initial(label),
+                      )
+                    : _initial(label),
+              ),
+            ),
+            if (skipped)
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.black.withValues(alpha: 0.55),
+                ),
+                child: const Center(
+                  child: Text('❌', style: TextStyle(fontSize: 28)),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: skipped
+                ? Colors.white38
+                : glowing
+                    ? Colors.white
+                    : Colors.white54,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _initial(String name) => Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 28,
+          ),
+        ),
+      );
+}
+  
 // ============================================================
 //  HELPER WIDGETS
 // ============================================================
+class _DottedLine extends StatelessWidget {
+  const _DottedLine({required this.color});
+  final Color color;
 
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (_, c) {
+          const dot = 3.0;
+          const gap = 6.0;
+          final count = (c.maxWidth / (dot + gap)).floor().clamp(1, 200);
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(
+              count,
+              (_) => Container(
+                width: dot,
+                height: dot,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+              ),
+            ),
+          );
+        },
+      );
+}
 class _PulseDot extends StatefulWidget {
   final Duration delay;
   const _PulseDot({required this.delay});
@@ -1826,7 +2477,7 @@ class _PulseDotState extends State<_PulseDot>
           margin: const EdgeInsets.symmetric(horizontal: 1.5),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: const Color(0xFFAB5CF5).withOpacity(0.2 + 0.8 * _c.value),
+            color: const Color(0xFFAB5CF5).withValues(alpha: 0.2 + 0.8 * _c.value),
           ),
         ),
       );
@@ -1911,7 +2562,7 @@ class _PulsingRingsState extends State<_PulsingRings>
                         decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                                color: const Color(0xFFAB5CF5).withOpacity(0.6),
+                                color: const Color(0xFFAB5CF5).withValues(alpha: 0.6),
                                 width: 2)),
                       ),
                     );
@@ -1946,9 +2597,9 @@ class _TimerCircle extends StatelessWidget {
       height: 36,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: c.withOpacity(0.6), width: 2),
+        border: Border.all(color: c.withValues(alpha: 0.6), width: 2),
         boxShadow: urgent
-            ? [BoxShadow(color: c.withOpacity(0.4), blurRadius: 12)]
+            ? [BoxShadow(color: c.withValues(alpha: 0.4), blurRadius: 12)]
             : [],
       ),
       child: Center(
@@ -1992,7 +2643,7 @@ class _GlowTextState extends State<_GlowText>
         animation: _g,
         builder: (_, __) => Text(widget.text,
             style: widget.style.copyWith(shadows: [
-              Shadow(blurRadius: _g.value, color: Colors.white.withOpacity(0.6))
+              Shadow(blurRadius: _g.value, color: Colors.white.withValues(alpha: 0.6))
             ])),
       );
 }
@@ -2131,7 +2782,7 @@ class _SlimOutlineBtn extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-                color: const Color(0xFFFF6B6B).withOpacity(0.5), width: 1.5),
+                color: const Color(0xFFFF6B6B).withValues(alpha: 0.5), width: 1.5),
           ),
           child: Text(label,
               style: GoogleFonts.fredoka(

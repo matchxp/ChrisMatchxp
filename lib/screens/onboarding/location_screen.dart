@@ -73,7 +73,7 @@ class _LocationScreenState extends State<LocationScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text('Error: ${e.toString()}'),
-              backgroundColor: Color.fromARGB(236, 187, 86, 214)),
+              backgroundColor: const Color.fromARGB(236, 187, 86, 214)),
         );
       }
     } finally {
@@ -113,7 +113,7 @@ class _LocationScreenState extends State<LocationScreen> {
                                 ),
                                 padding: EdgeInsets.zero,
                               ),
-                              Expanded(
+                              const Expanded(
                                 child: OnboardingProgressDots(currentStep: 11),
                               ),
                               const SizedBox(width: 10),
@@ -141,7 +141,7 @@ class _LocationScreenState extends State<LocationScreen> {
                             style: GoogleFonts.outfit(
                               fontSize: 14,
                               fontWeight: FontWeight.w300,
-                              color: Colors.white.withOpacity(0.80),
+                              color: Colors.white.withValues(alpha: 0.80),
                               height: 1.5,
                             ),
                           ),
@@ -153,7 +153,7 @@ class _LocationScreenState extends State<LocationScreen> {
                             alignment: Alignment.centerLeft,
                             child: Text('Current Location',
                                 style: GoogleFonts.outfit(
-                                  color: Colors.white.withOpacity(0.50),
+                                  color: Colors.white.withValues(alpha: 0.50),
                                   fontSize: 13,
                                   fontWeight: FontWeight.w400,
                                 )),
@@ -165,13 +165,13 @@ class _LocationScreenState extends State<LocationScreen> {
                                 horizontal: 20, vertical: 16),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(50),
-                              color: Colors.white.withOpacity(0.05),
+                              color: Colors.white.withValues(alpha: 0.05),
                               border: Border.all(
-                                  color: _purple.withOpacity(0.42), width: 1.0),
+                                  color: _purple.withValues(alpha: 0.42), width: 1.0),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.location_on_rounded,
+                                const Icon(Icons.location_on_rounded,
                                     color: _purple, size: 20),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -182,7 +182,7 @@ class _LocationScreenState extends State<LocationScreen> {
                                         fontWeight: FontWeight.w500,
                                       )),
                                 ),
-                                Icon(Icons.my_location_rounded,
+                                const Icon(Icons.my_location_rounded,
                                     color: _purple, size: 18),
                               ],
                             ),
@@ -197,14 +197,14 @@ class _LocationScreenState extends State<LocationScreen> {
                                 horizontal: 20, vertical: 4),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(50),
-                              color: Colors.white.withOpacity(0.05),
+                              color: Colors.white.withValues(alpha: 0.05),
                               border: Border.all(
-                                  color: _purple.withOpacity(0.42), width: 1.0),
+                                  color: _purple.withValues(alpha: 0.42), width: 1.0),
                             ),
                             child: Row(
                               children: [
                                 Icon(Icons.search_rounded,
-                                    color: Colors.white.withOpacity(0.40),
+                                    color: Colors.white.withValues(alpha: 0.40),
                                     size: 20),
                                 const SizedBox(width: 10),
                                 Expanded(
@@ -216,7 +216,7 @@ class _LocationScreenState extends State<LocationScreen> {
                                     decoration: InputDecoration(
                                       hintText: 'Search your location',
                                       hintStyle: GoogleFonts.outfit(
-                                        color: Colors.white.withOpacity(0.36),
+                                        color: Colors.white.withValues(alpha: 0.36),
                                         fontSize: 15,
                                         fontWeight: FontWeight.w300,
                                       ),
@@ -239,12 +239,12 @@ class _LocationScreenState extends State<LocationScreen> {
                             children: [
                               Text('powered by ',
                                   style: GoogleFonts.outfit(
-                                    color: Colors.white.withOpacity(0.35),
+                                    color: Colors.white.withValues(alpha: 0.35),
                                     fontSize: 12,
                                   )),
                               Text('Google',
                                   style: GoogleFonts.outfit(
-                                    color: Colors.white.withOpacity(0.70),
+                                    color: Colors.white.withValues(alpha: 0.70),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
                                   )),
@@ -266,7 +266,7 @@ class _LocationScreenState extends State<LocationScreen> {
                                     : const LinearGradient(
                                         colors: [_purple, _purple2]),
                                 color: _isSaving
-                                    ? Colors.white.withOpacity(0.08)
+                                    ? Colors.white.withValues(alpha: 0.08)
                                     : null,
                                 borderRadius: BorderRadius.circular(50),
                               ),
@@ -317,8 +317,8 @@ class _LocationScreenState extends State<LocationScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),

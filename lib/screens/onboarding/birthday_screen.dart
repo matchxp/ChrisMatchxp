@@ -103,7 +103,9 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
     final now = DateTime.now();
     var age = now.year - birthday.year;
     if (now.month < birthday.month ||
-        (now.month == birthday.month && now.day < birthday.day)) age--;
+        (now.month == birthday.month && now.day < birthday.day)) {
+      age--;
+    }
 
     if (age < 18) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -160,7 +162,7 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                     ),
-                    Expanded(
+                    const Expanded(
                       child: OnboardingProgressDots(currentStep: 3),
                     ),
                     const SizedBox(width: 48),
@@ -188,7 +190,7 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
                   style: GoogleFonts.outfit(
                     fontSize: 14,
                     fontWeight: FontWeight.w300,
-                    color: Colors.white.withOpacity(0.50),
+                    color: Colors.white.withValues(alpha: 0.50),
                   ),
                 ),
 
@@ -206,10 +208,10 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
                           height: _itemH,
                           margin: const EdgeInsets.symmetric(horizontal: 8),
                           decoration: BoxDecoration(
-                            color: _purple.withOpacity(0.22),
+                            color: _purple.withValues(alpha: 0.22),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                                color: _purple.withOpacity(0.55), width: 1.5),
+                                color: _purple.withValues(alpha: 0.55), width: 1.5),
                           ),
                         ),
                       ),
@@ -264,7 +266,7 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
                                 colors: [
-                                  const Color(0xFF0C0B11).withOpacity(0.0),
+                                  const Color(0xFF0C0B11).withValues(alpha: 0.0),
                                   Colors.transparent,
                                 ],
                               ),
@@ -285,7 +287,7 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
                                 begin: Alignment.bottomCenter,
                                 end: Alignment.topCenter,
                                 colors: [
-                                  const Color(0xFF0C0B11).withOpacity(0.0),
+                                  const Color(0xFF0C0B11).withValues(alpha: 0.0),
                                   Colors.transparent,
                                 ],
                               ),
@@ -309,7 +311,7 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
                       gradient: _isSaving
                           ? null
                           : const LinearGradient(colors: [_purple, _purple2]),
-                      color: _isSaving ? Colors.white.withOpacity(0.08) : null,
+                      color: _isSaving ? Colors.white.withValues(alpha: 0.08) : null,
                       borderRadius: BorderRadius.circular(50),
                     ),
                     child: Center(
@@ -353,8 +355,8 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),
@@ -387,7 +389,7 @@ class _BirthdayScreenState extends State<BirthdayScreen> {
                 fontSize: isSelected ? 20 : 16,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                 color:
-                    isSelected ? Colors.white : Colors.white.withOpacity(0.35),
+                    isSelected ? Colors.white : Colors.white.withValues(alpha: 0.35),
               ),
             ),
           );

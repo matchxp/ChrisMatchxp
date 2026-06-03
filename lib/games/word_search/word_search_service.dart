@@ -291,20 +291,21 @@ class WordSearchService {
   }
 
   /// Return {myWins, partnerWins} for a match.
-  Future<Map<String, int>> getScores({
+ Future<Map<String, int>> getScores({
     required String matchId,
     required String myUserId,
     required String partnerUserId,
   }) async {
     final rows =
         await _db.from(_scores).select('winner_id').eq('match_id', matchId);
-
+    debugPrint('[SCORES] rows=${rows.length} myId=$myUserId partnerIds=$partnerUserId rows=$rows');
     int myWins = 0, partnerWins = 0;
     for (final row in rows) {
       if (row['winner_id'] == myUserId)
         myWins++;
       else if (row['winner_id'] == partnerUserId) partnerWins++;
     }
+    debugPrint('[SCORES] result myWins=$myWins partnerWins=$partnerWins');
     return {'myWins': myWins, 'partnerWins': partnerWins};
   }
 

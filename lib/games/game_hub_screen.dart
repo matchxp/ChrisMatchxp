@@ -119,8 +119,8 @@ class _GameHubScreenState extends State<GameHubScreen> {
             backgroundColor: const Color(0xFF160C2A),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Text('Game in progress',
-                style: const TextStyle(color: _tx, fontFamily: 'Fredoka One')),
+            title: const Text('Game in progress',
+                style: TextStyle(color: _tx, fontFamily: 'Fredoka One')),
             content: Text(
               'A $gameLabel game is already in progress! Check your chat to continue.',
               style: const TextStyle(
@@ -129,7 +129,7 @@ class _GameHubScreenState extends State<GameHubScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text('OK',
+                child: const Text('OK',
                     style: TextStyle(color: _pu, fontFamily: 'Fredoka One')),
               ),
             ],
@@ -292,6 +292,9 @@ class _GameHubScreenState extends State<GameHubScreen> {
                         popCount: 2,
                         onChatUnlocked: onChatUnlocked,
                         chatAlreadyUnlocked: widget.chatAlreadyUnlocked,
+                        matchId: matchId,
+                        partnerUserId: partnerUserId,
+                        partnerName: partnerName,
                       ),
                     ));
               } else if (gameType == 'word_search') {
@@ -635,7 +638,7 @@ class _GameHubScreenState extends State<GameHubScreen> {
         bottom: PreferredSize(
             preferredSize: const Size.fromHeight(1),
             child: Container(
-                height: 1, color: const Color(0xFF6C3FE8).withOpacity(0.15))),
+                height: 1, color: const Color(0xFF6C3FE8).withValues(alpha: 0.15))),
       );
 
   Widget _pillNavBar(BuildContext context) => Container(
@@ -643,7 +646,7 @@ class _GameHubScreenState extends State<GameHubScreen> {
           gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [_bg.withOpacity(0.0), _bg]),
+              colors: [_bg.withValues(alpha: 0.0), _bg]),
         ),
         child: SafeArea(
           child: Container(
@@ -652,14 +655,14 @@ class _GameHubScreenState extends State<GameHubScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFF160C2A),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: _pu.withOpacity(0.25), width: 1.5),
+              border: Border.all(color: _pu.withValues(alpha: 0.25), width: 1.5),
               boxShadow: [
                 BoxShadow(
-                    color: _pu.withOpacity(0.12),
+                    color: _pu.withValues(alpha: 0.12),
                     blurRadius: 24,
                     offset: const Offset(0, 8)),
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.5),
+                    color: Colors.black.withValues(alpha: 0.5),
                     blurRadius: 16,
                     offset: const Offset(0, 4)),
               ],
@@ -701,7 +704,7 @@ class _GameHubScreenState extends State<GameHubScreen> {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                      color: _pu.withOpacity(0.4),
+                      color: _pu.withValues(alpha: 0.4),
                       blurRadius: 16,
                       offset: const Offset(0, 4))
                 ]
@@ -709,7 +712,7 @@ class _GameHubScreenState extends State<GameHubScreen> {
         ),
         child: Icon(
           isSelected ? activeIcon : icon,
-          color: isSelected ? Colors.white : _pu.withOpacity(0.6),
+          color: isSelected ? Colors.white : _pu.withValues(alpha: 0.6),
           size: 20,
         ),
       ),

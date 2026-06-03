@@ -296,7 +296,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         final now = DateTime.now();
         age = now.year - _birthday!.year;
         if (now.month < _birthday!.month ||
-            (now.month == _birthday!.month && now.day < _birthday!.day)) age--;
+            (now.month == _birthday!.month && now.day < _birthday!.day)) {
+          age--;
+        }
       }
       final payload = <String, dynamic>{
         'first_name': firstName, 'last_name': _lastNameCtrl.text.trim(),
@@ -435,7 +437,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(colors: [_purple, _purple2]),
                     borderRadius: BorderRadius.circular(22),
-                    boxShadow: [BoxShadow(color: _purple.withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 3))],
+                    boxShadow: [BoxShadow(color: _purple.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))],
                   ),
                   child: const Text('Save', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
                 ),
@@ -480,10 +482,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Row(children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.white24, size: 13),
-          const SizedBox(width: 5),
-          const Text('First photo is your main profile photo · max 6',
+        const Row(children: [
+          Icon(Icons.info_outline_rounded, color: Colors.white24, size: 13),
+          SizedBox(width: 5),
+          Text('First photo is your main profile photo · max 6',
               style: TextStyle(color: Colors.white24, fontSize: 11)),
         ]),
       ],
@@ -500,7 +502,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: _card,
-          border: Border.all(color: isMain ? _purple : Colors.white.withOpacity(0.07), width: isMain ? 2 : 1),
+          border: Border.all(color: isMain ? _purple : Colors.white.withValues(alpha: 0.07), width: isMain ? 2 : 1),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(14),
@@ -510,10 +512,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   loadingBuilder: (_, child, progress) {
                     if (progress == null) return child;
                     return Center(child: SizedBox(width: 20, height: 20,
-                        child: CircularProgressIndicator(color: _purple.withOpacity(0.6), strokeWidth: 2)));
+                        child: CircularProgressIndicator(color: _purple.withValues(alpha: 0.6), strokeWidth: 2)));
                   },
                   errorBuilder: (_, __, ___) => Center(
-                      child: Icon(Icons.broken_image_rounded, color: Colors.white.withOpacity(0.2), size: 28))),
+                      child: Icon(Icons.broken_image_rounded, color: Colors.white.withValues(alpha: 0.2), size: 28))),
         ),
       ),
       Positioned(top: 6, right: 16,
@@ -521,7 +523,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           onTap: () => _removePhoto(index),
           child: Container(
             width: 22, height: 22,
-            decoration: BoxDecoration(color: Colors.black.withOpacity(0.7), shape: BoxShape.circle),
+            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), shape: BoxShape.circle),
             child: const Icon(Icons.close, color: Colors.white, size: 12),
           ),
         ),
@@ -544,17 +546,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     child: Container(
       width: 105, height: 130,
       decoration: BoxDecoration(
-        color: _purple.withOpacity(0.06),
+        color: _purple.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _purple.withOpacity(0.3), width: 1.5),
+        border: Border.all(color: _purple.withValues(alpha: 0.3), width: 1.5),
       ),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Container(width: 40, height: 40,
-          decoration: BoxDecoration(color: _purple.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
-          child: Icon(Icons.add_rounded, color: _purple.withOpacity(0.9), size: 24),
+          decoration: BoxDecoration(color: _purple.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+          child: Icon(Icons.add_rounded, color: _purple.withValues(alpha: 0.9), size: 24),
         ),
         const SizedBox(height: 8),
-        Text('Add photo', style: TextStyle(color: _purple.withOpacity(0.8), fontSize: 11, fontWeight: FontWeight.w600)),
+        Text('Add photo', style: TextStyle(color: _purple.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.w600)),
       ]),
     ),
   );
@@ -580,14 +582,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       decoration: BoxDecoration(
         color: _card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: Row(crossAxisAlignment: maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         children: [
           Padding(
             padding: EdgeInsets.only(top: maxLines > 1 ? 10 : 0),
             child: Container(width: 36, height: 36,
-              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
               child: Icon(icon, color: color, size: 17),
             ),
           ),
@@ -627,29 +629,29 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
             decoration: BoxDecoration(
-              color: isSelected ? _purple.withOpacity(0.13) : _card,
+              color: isSelected ? _purple.withValues(alpha: 0.13) : _card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isSelected ? _purple.withOpacity(0.65) : Colors.white.withOpacity(0.07),
+                color: isSelected ? _purple.withValues(alpha: 0.65) : Colors.white.withValues(alpha: 0.07),
                 width: isSelected ? 1.5 : 1,
               ),
               boxShadow: isSelected
-                  ? [BoxShadow(color: _purple.withOpacity(0.22), blurRadius: 12, offset: const Offset(0, 4))]
+                  ? [BoxShadow(color: _purple.withValues(alpha: 0.22), blurRadius: 12, offset: const Offset(0, 4))]
                   : [],
             ),
             child: Row(children: [
               Container(width: 30, height: 30,
                 decoration: BoxDecoration(
-                  color: isSelected ? _purple.withOpacity(0.25) : Colors.white.withOpacity(0.08),
+                  color: isSelected ? _purple.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(meta.icon, color: isSelected ? Colors.white : Colors.white.withOpacity(0.55), size: 15),
+                child: Icon(meta.icon, color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.55), size: 15),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(meta.label, maxLines: 2,
                     style: TextStyle(
-                        color: Colors.white.withOpacity(isSelected ? 1.0 : 0.75),
+                        color: Colors.white.withValues(alpha: isSelected ? 1.0 : 0.75),
                         fontSize: 11.5,
                         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                         height: 1.3)),
@@ -673,11 +675,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
         color: _card, borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: Row(children: [
         Container(width: 40, height: 40,
-          decoration: BoxDecoration(color: const Color(0xFFFF9800).withOpacity(0.12), borderRadius: BorderRadius.circular(11)),
+          decoration: BoxDecoration(color: const Color(0xFFFF9800).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(11)),
           child: const Icon(Icons.cake_outlined, color: Color(0xFFFF9800), size: 19),
         ),
         const SizedBox(width: 14),
@@ -710,8 +712,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
           colorScheme: const ColorScheme.dark(primary: _purple, onPrimary: Colors.white,
-              surface: Color(0xFF1E1A2E), onSurface: Colors.white),
-          dialogBackgroundColor: const Color(0xFF1A1A1A),
+              surface: Color(0xFF1E1A2E), onSurface: Colors.white), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF1A1A1A)),
         ),
         child: child!,
       ),
@@ -727,12 +728,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
       decoration: BoxDecoration(
         color: _card, borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: Column(children: [
         Row(children: [
           Container(width: 40, height: 40,
-            decoration: BoxDecoration(color: _purple.withOpacity(0.12), borderRadius: BorderRadius.circular(11)),
+            decoration: BoxDecoration(color: _purple.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(11)),
             child: const Icon(Icons.straighten_rounded, color: _purple, size: 19),
           ),
           const SizedBox(width: 14),
@@ -747,17 +748,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         const SizedBox(height: 12),
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
-            activeTrackColor: _purple, inactiveTrackColor: _purple.withOpacity(0.15),
-            thumbColor: _purple, overlayColor: _purple.withOpacity(0.15), trackHeight: 4,
+            activeTrackColor: _purple, inactiveTrackColor: _purple.withValues(alpha: 0.15),
+            thumbColor: _purple, overlayColor: _purple.withValues(alpha: 0.15), trackHeight: 4,
           ),
           child: Slider(value: _heightCm.toDouble(), min: 140, max: 220, divisions: 80,
               onChanged: (v) => setState(() => _heightCm = v.toInt())),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('140 cm', style: TextStyle(color: Colors.white24, fontSize: 11)),
-            const Text('220 cm', style: TextStyle(color: Colors.white24, fontSize: 11)),
+            Text('140 cm', style: TextStyle(color: Colors.white24, fontSize: 11)),
+            Text('220 cm', style: TextStyle(color: Colors.white24, fontSize: 11)),
           ]),
         ),
       ]),
@@ -772,13 +773,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         decoration: BoxDecoration(
           color: _card, borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: _locationFocus.hasFocus ? _purple.withOpacity(0.5) : Colors.white.withOpacity(0.07),
+            color: _locationFocus.hasFocus ? _purple.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.07),
             width: _locationFocus.hasFocus ? 1.5 : 1,
           ),
         ),
         child: Row(children: [
           Container(width: 38, height: 38,
-            decoration: BoxDecoration(color: _green.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(color: _green.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
             child: const Icon(Icons.location_on_outlined, color: _green, size: 18),
           ),
           const SizedBox(width: 12),
@@ -809,8 +810,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           margin: const EdgeInsets.only(top: 4),
           decoration: BoxDecoration(
             color: _card2, borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _purple.withOpacity(0.25)),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6))],
+            border: Border.all(color: _purple.withValues(alpha: 0.25)),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 16, offset: const Offset(0, 6))],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
@@ -821,12 +822,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   onTap: () => _selectLocation(r),
                   behavior: HitTestBehavior.opaque,
                   child: Column(children: [
-                    if (e.key > 0) Divider(height: 1, color: Colors.white.withOpacity(0.05)),
+                    if (e.key > 0) Divider(height: 1, color: Colors.white.withValues(alpha: 0.05)),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       child: Row(children: [
                         Container(width: 30, height: 30,
-                          decoration: BoxDecoration(color: _green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                          decoration: BoxDecoration(color: _green.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
                           child: const Icon(Icons.location_on_outlined, color: _green, size: 15),
                         ),
                         const SizedBox(width: 12),
@@ -841,9 +842,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
       if (_locationCtrl.text.isNotEmpty && _locationSuggestions.isEmpty && !_isSearchingLocation)
-        Padding(
-          padding: const EdgeInsets.only(top: 8, left: 4),
-          child: Row(children: const [
+        const Padding(
+          padding: EdgeInsets.only(top: 8, left: 4),
+          child: Row(children: [
             Icon(Icons.info_outline_rounded, color: Colors.white24, size: 13),
             SizedBox(width: 6),
             Text('Searching Australian locations only', style: TextStyle(color: Colors.white24, fontSize: 11)),
@@ -872,23 +873,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
             decoration: BoxDecoration(
-              color: isSelected ? _purple.withOpacity(0.13) : _card,
+              color: isSelected ? _purple.withValues(alpha: 0.13) : _card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isSelected ? _purple.withOpacity(0.65) : Colors.white.withOpacity(0.07),
+                color: isSelected ? _purple.withValues(alpha: 0.65) : Colors.white.withValues(alpha: 0.07),
                 width: isSelected ? 1.5 : 1,
               ),
               boxShadow: isSelected
-                  ? [BoxShadow(color: _purple.withOpacity(0.22), blurRadius: 12, offset: const Offset(0, 4))]
+                  ? [BoxShadow(color: _purple.withValues(alpha: 0.22), blurRadius: 12, offset: const Offset(0, 4))]
                   : [],
             ),
             child: Row(children: [
               Container(width: 30, height: 30,
                 decoration: BoxDecoration(
-                  color: isSelected ? _purple.withOpacity(0.25) : Colors.white.withOpacity(0.08),
+                  color: isSelected ? _purple.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(meta.icon, color: isSelected ? Colors.white : Colors.white.withOpacity(0.55), size: 15),
+                child: Icon(meta.icon, color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.55), size: 15),
               ),
               const SizedBox(width: 8),
               Expanded(child: Text(meta.label, maxLines: 2,
@@ -920,7 +921,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         gradient: _isSaving ? null : const LinearGradient(colors: [_purple, _purple2]),
         color: _isSaving ? _card : null,
         borderRadius: BorderRadius.circular(30),
-        boxShadow: _isSaving ? [] : [BoxShadow(color: _purple.withOpacity(0.45), blurRadius: 20, offset: const Offset(0, 6))],
+        boxShadow: _isSaving ? [] : [BoxShadow(color: _purple.withValues(alpha: 0.45), blurRadius: 20, offset: const Offset(0, 6))],
       ),
       child: Center(
         child: _isSaving

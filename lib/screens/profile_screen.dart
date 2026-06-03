@@ -48,11 +48,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     final profile = await _profileService.getUserProfile(userId);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _profile = profile;
         _isLoading = false;
       });
+    }
   }
 
   double _calcCompletion(Map<String, dynamic> p) {
@@ -66,7 +67,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if ((p['location'] as String?)?.isNotEmpty == true) done++;
     if (p['drinking_habit'] != null ||
         p['smoking_habit'] != null ||
-        p['workout_habit'] != null) done++;
+        p['workout_habit'] != null) {
+      done++;
+    }
     final i = p['interests'];
     if (i is List && i.isNotEmpty) done++;
     final ph = p['photos'];
@@ -121,7 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(children: const [
+            const Row(children: [
               Text('MATCH',
                   style: TextStyle(
                       fontSize: 22,
@@ -146,7 +149,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 decoration: BoxDecoration(
                   color: _card,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _purple.withOpacity(0.3)),
+                  border: Border.all(color: _purple.withValues(alpha: 0.3)),
                 ),
                 child: const Icon(Icons.settings_outlined,
                     color: Colors.white, size: 20),
@@ -212,7 +215,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     border: Border.all(color: _bg, width: 2),
                     boxShadow: [
                       BoxShadow(
-                          color: _purple.withOpacity(0.5),
+                          color: _purple.withValues(alpha: 0.5),
                           blurRadius: 10,
                           spreadRadius: 1),
                     ],
@@ -241,7 +244,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.location_on, color: Colors.white54, size: 14),
+                const Icon(Icons.location_on, color: Colors.white54, size: 14),
                 const SizedBox(width: 3),
                 Text(location,
                     style:
@@ -257,7 +260,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: BoxDecoration(
               color: _card,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _purple.withOpacity(0.4)),
+              border: Border.all(color: _purple.withValues(alpha: 0.4)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -353,7 +356,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // FIX BUG-03 (mirror of _calcCompletion): trim() so whitespace-only
     // strings are treated the same as empty/null and the step stays visible.
-    if ((p['first_name'] as String?)?.trim().isEmpty != false)
+    if ((p['first_name'] as String?)?.trim().isEmpty != false) {
       steps.add(_CompletionStep(
         label: 'Add your name',
         icon: Icons.person_outline_rounded,
@@ -361,8 +364,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const ProfileDetailsScreen())),
       ));
+    }
 
-    if ((p['gender'] as String?)?.trim().isEmpty != false)
+    if ((p['gender'] as String?)?.trim().isEmpty != false) {
       steps.add(_CompletionStep(
         label: 'Select your gender',
         icon: Icons.wc_rounded,
@@ -370,8 +374,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(
             context, MaterialPageRoute(builder: (_) => const GenderScreen())),
       ));
+    }
 
-    if (p['birthday'] == null)
+    if (p['birthday'] == null) {
       steps.add(_CompletionStep(
         label: 'Add your birthday',
         icon: Icons.cake_outlined,
@@ -379,8 +384,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(
             context, MaterialPageRoute(builder: (_) => const BirthdayScreen())),
       ));
+    }
 
-    if (p['height_cm'] == null)
+    if (p['height_cm'] == null) {
       steps.add(_CompletionStep(
         label: 'Add your height',
         icon: Icons.straighten_rounded,
@@ -388,8 +394,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(
             context, MaterialPageRoute(builder: (_) => const HeightScreen())),
       ));
+    }
 
-    if ((p['location'] as String?)?.isEmpty != false)
+    if ((p['location'] as String?)?.isEmpty != false) {
       steps.add(_CompletionStep(
         label: 'Set your location',
         icon: Icons.location_on_outlined,
@@ -397,10 +404,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(
             context, MaterialPageRoute(builder: (_) => const LocationScreen())),
       ));
+    }
 
     if (p['drinking_habit'] == null &&
         p['smoking_habit'] == null &&
-        p['workout_habit'] == null)
+        p['workout_habit'] == null) {
       steps.add(_CompletionStep(
         label: 'Share your lifestyle',
         icon: Icons.self_improvement_rounded,
@@ -408,9 +416,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const AboutYourselfScreen())),
       ));
+    }
 
     final interests = p['interests'];
-    if (interests is! List || (interests).isEmpty)
+    if (interests is! List || (interests).isEmpty) {
       steps.add(_CompletionStep(
         label: 'Pick your interests',
         icon: Icons.favorite_border_rounded,
@@ -421,9 +430,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const SizedBox.shrink())),
       ));
+    }
 
     final photos = p['photos'];
-    if (photos is! List || (photos as List).length < 2)
+    if (photos is! List || (photos).length < 2) {
       steps.add(_CompletionStep(
         label: 'Add more photos',
         icon: Icons.add_photo_alternate_outlined,
@@ -431,6 +441,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const AddPhotosScreen())),
       ));
+    }
 
     return steps;
   }
@@ -455,10 +466,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         decoration: BoxDecoration(
           color: _card,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _purple.withOpacity(0.25), width: 1.5),
+          border: Border.all(color: _purple.withValues(alpha: 0.25), width: 1.5),
           boxShadow: [
             BoxShadow(
-              color: _purple.withOpacity(0.12),
+              color: _purple.withValues(alpha: 0.12),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -541,10 +552,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.04),
+                          color: Colors.white.withValues(alpha: 0.04),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                              color: step.color.withOpacity(0.25), width: 1),
+                              color: step.color.withValues(alpha: 0.25), width: 1),
                         ),
                         child: Row(
                           children: [
@@ -552,7 +563,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: step.color.withOpacity(0.12),
+                                color: step.color.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child:
@@ -569,7 +580,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                               ),
                             ),
-                            Icon(Icons.chevron_right,
+                            const Icon(Icons.chevron_right,
                                 color: Colors.white30, size: 20),
                           ],
                         ),
@@ -592,7 +603,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           _featureCard(
             icon: Icons.bolt_rounded,
-            iconBg: Colors.white.withOpacity(0.12),
+            iconBg: Colors.white.withValues(alpha: 0.12),
             title: 'Boost',
             subtitle: 'Get seen by 4x more people',
             onTap: () => _snack('Boost coming soon!'),
@@ -600,7 +611,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 12),
           _featureCard(
             icon: Icons.auto_awesome_rounded,
-            iconBg: Colors.white.withOpacity(0.12),
+            iconBg: Colors.white.withValues(alpha: 0.12),
             title: 'XP',
             subtitle: '2x as likely to lead to a date',
             onTap: () => _snack('XP feature coming soon!'),
@@ -627,8 +638,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              _purple.withOpacity(0.9),
-              _purple2.withOpacity(0.85),
+              _purple.withValues(alpha: 0.9),
+              _purple2.withValues(alpha: 0.85),
             ],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
@@ -636,7 +647,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: _purple.withOpacity(0.25),
+                color: _purple.withValues(alpha: 0.25),
                 blurRadius: 12,
                 offset: const Offset(0, 4)),
           ],
@@ -663,12 +674,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 3),
                   Text(subtitle,
                       style: TextStyle(
-                          color: Colors.white.withOpacity(0.75), fontSize: 13)),
+                          color: Colors.white.withValues(alpha: 0.75), fontSize: 13)),
                 ],
               ),
             ),
             Icon(Icons.chevron_right,
-                color: Colors.white.withOpacity(0.5), size: 22),
+                color: Colors.white.withValues(alpha: 0.5), size: 22),
           ],
         ),
       ),
@@ -688,7 +699,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           border: Border.all(color: Colors.transparent),
           boxShadow: [
             BoxShadow(
-                color: _purple.withOpacity(0.2),
+                color: _purple.withValues(alpha: 0.2),
                 blurRadius: 24,
                 offset: const Offset(0, 6)),
           ],
@@ -698,14 +709,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             borderRadius: BorderRadius.circular(24),
             gradient: LinearGradient(
               colors: [
-                _purple.withOpacity(0.08),
-                _purple2.withOpacity(0.04),
+                _purple.withValues(alpha: 0.08),
+                _purple2.withValues(alpha: 0.04),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             border: Border.all(
-              color: _purple.withOpacity(0.3),
+              color: _purple.withValues(alpha: 0.3),
               width: 1.5,
             ),
           ),
@@ -811,7 +822,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       borderRadius: BorderRadius.circular(30),
                       boxShadow: [
                         BoxShadow(
-                            color: _purple.withOpacity(0.45),
+                            color: _purple.withValues(alpha: 0.45),
                             blurRadius: 20,
                             offset: const Offset(0, 6)),
                       ],
@@ -847,7 +858,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
+            color: color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, color: color, size: 16),
@@ -870,9 +881,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       width: 42,
       height: 42,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.35)),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Icon(icon, color: color, size: 20),
     );
