@@ -25,6 +25,7 @@ class OnboardingData {
   String? smokingHabit;
   String? workoutHabit;
   List<String> pets = [];
+  String? bio;
 
   //Lookign for//
   String? lookingFor;
@@ -66,6 +67,7 @@ class OnboardingData {
     smokingHabit = null;
     workoutHabit = null;
     pets.clear();
+    bio = null;
     lookingFor = null;
     connectWith.clear();
     interests.clear();

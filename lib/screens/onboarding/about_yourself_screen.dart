@@ -64,6 +64,7 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
       _onboardingData.drinkingHabit = _drinkingHabit;
       _onboardingData.smokingHabit = _smokingHabit;
       _onboardingData.workoutHabit = _workoutHabit;
+      _onboardingData.bio = _bioController.text.trim();
       // Convert text answer to list
       final petsText = _petsController.text.trim();
       _onboardingData.pets = petsText.isNotEmpty ? [petsText] : [];
