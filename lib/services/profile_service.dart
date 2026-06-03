@@ -227,6 +227,7 @@ class ProfileService {
     String? smokingHabit,
     String? workoutHabit,
     List<String>? pets,
+    String? bio,
   }) async {
     try {
       print('\n🚀 ========== SAVING LIFESTYLE ==========');
@@ -235,16 +236,20 @@ class ProfileService {
       print('📋 Smoking: $smokingHabit');
       print('📋 Workout: $workoutHabit');
       print('📋 Pets: $pets');
+      print('📋 Bio: $bio');
+
+      final payload = <String, dynamic>{
+        'drinking_habit': drinkingHabit,
+        'smoking_habit':  smokingHabit,
+        'workout_habit':  workoutHabit,
+        'pets':           pets,
+        'updated_at':     DateTime.now().toIso8601String(),
+      };
+      if (bio != null && bio.isNotEmpty) payload['bio'] = bio;
 
       final response = await _supabase
           .from('profiles')
-          .update({
-            'drinking_habit': drinkingHabit,
-            'smoking_habit': smokingHabit,
-            'workout_habit': workoutHabit,
-            'pets': pets,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
+          .update(payload)
           .eq('id', userId)
           .select()
           .single();

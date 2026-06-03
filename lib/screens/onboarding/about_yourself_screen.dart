@@ -76,6 +76,7 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
           smokingHabit: _smokingHabit,
           workoutHabit: _workoutHabit,
           pets: _onboardingData.pets,
+          bio: _bioController.text.trim(),
         );
         if (!result['success']) throw Exception(result['error']);
       }

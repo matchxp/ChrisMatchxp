@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../main.dart' show appThemeMode;
+import '../widgets/matchxp_background.dart';
 import 'preferences_screen.dart';
 import 'two_factor_screen.dart';
 import 'biometrics_screen.dart';
@@ -10,7 +10,7 @@ import 'connected_accounts_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'terms_of_service_screen.dart';
 import 'help_centre_screen.dart';
-import 'login_screen.dart';
+import 'login_screen.dart' hide MatchXPBackground;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -23,18 +23,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _supabase = Supabase.instance.client;
   bool _isSaving = false;
 
-  // ── App colour tokens ─────────────────────────────────────────────────────
-  static const _bg     = Color(0xFF0A0A0A);
-  static const _card   = Color(0xFF1A1A1A);
-  static const _purple = Color(0xFF6C3FE8);
+  // ── Colour tokens — match onboarding / preferences ────────────────────────
+  static const _bg      = Color(0xFF0C0B11);
+  static const _purple  = Color(0xFF6C3FE8);
   static const _purple2 = Color(0xFF9D50BB);
 
-  // ── State ─────────────────────────────────────────────────────────────────
-  bool get _darkMode => appThemeMode.value == ThemeMode.dark;
-  bool _notifyPush       = true;
-  bool _notifyMatches    = true;
-  bool _notifyMessages   = true;
-  bool _notifyPromotions = true;
+  // ── Notification state ────────────────────────────────────────────────────
+  bool _notifyPush     = true;
+  bool _notifyMatches  = true;
+  bool _notifyMessages = true;
 
   @override
   void initState() {
@@ -48,17 +45,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final p = await _supabase
           .from('profiles')
-          .select('notif_push, notif_matches, notif_messages, notif_promotions')
+          .select('notif_push, notif_matches, notif_messages')
           .eq('id', uid)
           .maybeSingle();
       if (p == null || !mounted) return;
       setState(() {
-        _notifyPush       = (p['notif_push']        as bool?) ?? true;
-        _notifyMatches    = (p['notif_matches']      as bool?) ?? true;
-        _notifyMessages   = (p['notif_messages']     as bool?) ?? true;
-        _notifyPromotions = (p['notif_promotions']   as bool?) ?? true;
+        _notifyPush     = (p['notif_push']    as bool?) ?? true;
+        _notifyMatches  = (p['notif_matches'] as bool?) ?? true;
+        _notifyMessages = (p['notif_messages'] as bool?) ?? true;
       });
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Could not load settings: $e', style: GoogleFonts.outfit()),
+          backgroundColor: const Color(0xFFFF3B60),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    }
   }
 
   Future<void> _saveSettings() async {
@@ -67,30 +72,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isSaving = true);
     try {
       await _supabase.from('profiles').update({
-        'notif_push':       _notifyPush,
-        'notif_matches':    _notifyMatches,
-        'notif_messages':   _notifyMessages,
-        'notif_promotions': _notifyPromotions,
-        'updated_at':       DateTime.now().toIso8601String(),
+        'notif_push':     _notifyPush,
+        'notif_matches':  _notifyMatches,
+        'notif_messages': _notifyMessages,
+        'updated_at':     DateTime.now().toIso8601String(),
       }).eq('id', uid);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Changes saved!'),
-          backgroundColor: _purple,
+          content: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [_purple, _purple2],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(100),
+              boxShadow: [
+                BoxShadow(
+                  color: _purple.withOpacity(0.45),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.check_rounded, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text('Changes saved!',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.1,
+                    )),
+              ],
+            ),
+          ),
+          backgroundColor: Colors.transparent,
           behavior: SnackBarBehavior.floating,
+          width: 220,
+          padding: EdgeInsets.zero,
+          elevation: 0,
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+              borderRadius: BorderRadius.circular(100)),
+          dismissDirection: DismissDirection.horizontal,
         ));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Could not save: $e'),
+          content: Text('Could not save: $e', style: GoogleFonts.outfit()),
           backgroundColor: const Color(0xFFFF3B60),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ));
       }
     } finally {
@@ -104,238 +143,256 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _topBar(),
-            Expanded(
-              child: ListView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                children: [
-                  _section('Appearance', [
-                    _toggleRow(
-                      icon: _darkMode
-                          ? Icons.dark_mode_outlined
-                          : Icons.light_mode_outlined,
-                      label: _darkMode ? 'Dark Mode' : 'Light Mode',
-                      value: _darkMode,
-                      onChanged: (v) async {
-                        appThemeMode.value =
-                            v ? ThemeMode.dark : ThemeMode.light;
-                        setState(() {}); // refresh icon/label
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setBool('dark_mode', v);
+      body: MatchXPBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              _topBar(),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+                  children: [
+                    _buildHeader(),
+                    const SizedBox(height: 28),
+
+                    _section('NOTIFICATIONS', [
+                      _toggleRow(
+                        icon: Icons.notifications_outlined,
+                        label: 'Push Notifications',
+                        value: _notifyPush,
+                        onChanged: (v) => setState(() => _notifyPush = v),
+                      ),
+                      _toggleRow(
+                        icon: Icons.favorite_outline,
+                        label: 'New Matches',
+                        value: _notifyMatches,
+                        onChanged: (v) => setState(() => _notifyMatches = v),
+                      ),
+                      _toggleRow(
+                        icon: Icons.chat_bubble_outline_rounded,
+                        label: 'New Messages',
+                        value: _notifyMessages,
+                        onChanged: (v) => setState(() => _notifyMessages = v),
+                      ),
+                    ]),
+                    _gap(),
+
+                    _section('ACCOUNT', [
+                      _navRow(Icons.security_outlined,
+                          'Two Factor Verification', () {
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const TwoFactorScreen()));
+                      }),
+                      _navRow(Icons.fingerprint, 'Add Biometrics', () {
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const BiometricsScreen()));
+                      }),
+                      _navRow(Icons.link_rounded, 'Connected Accounts', () {
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ConnectedAccountsScreen()));
+                      }),
+                    ]),
+                    _gap(),
+
+                    _section('DISCOVERY', [
+                      _navRow(Icons.tune_rounded, 'Preferences', () {
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PreferencesScreen()));
+                      }),
+                    ]),
+                    _gap(),
+
+                    _section('LEGAL', [
+                      _navRow(Icons.shield_outlined, 'Privacy Policy', () {
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PrivacyPolicyScreen()));
+                      }),
+                      _navRow(Icons.description_outlined, 'Terms of Service', () {
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const TermsOfServiceScreen()));
+                      }),
+                    ]),
+                    _gap(),
+
+                    _section('SUPPORT', [
+                      _navRow(Icons.help_outline_rounded, 'Help Centre', () {
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const HelpCentreScreen()));
+                      }),
+                    ]),
+                    const SizedBox(height: 32),
+
+                    // Sign Out
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        _signOut();
                       },
-                    ),
-                  ]),
-                  _gap(),
-
-                  _section('Notifications', [
-                    _toggleRow(
-                      icon: Icons.notifications_outlined,
-                      label: 'Push Notifications',
-                      value: _notifyPush,
-                      onChanged: (v) => setState(() => _notifyPush = v),
-                    ),
-                    _divider(),
-                    _toggleRow(
-                      icon: Icons.favorite_outline,
-                      label: 'New Matches',
-                      value: _notifyMatches,
-                      onChanged: (v) => setState(() => _notifyMatches = v),
-                    ),
-                    _divider(),
-                    _toggleRow(
-                      icon: Icons.chat_bubble_outline_rounded,
-                      label: 'New Messages',
-                      value: _notifyMessages,
-                      onChanged: (v) => setState(() => _notifyMessages = v),
-                    ),
-                    _divider(),
-                    _toggleRow(
-                      icon: Icons.local_offer_outlined,
-                      label: 'Promotions',
-                      value: _notifyPromotions,
-                      onChanged: (v) =>
-                          setState(() => _notifyPromotions = v),
-                    ),
-                  ]),
-                  _gap(),
-
-                  _section('Account Settings', [
-                    _navRow(Icons.security_outlined,
-                        'Two Factor Verification', () {
-                      HapticFeedback.lightImpact();
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const TwoFactorScreen()));
-                    }),
-                    _divider(),
-                    _navRow(Icons.fingerprint, 'Add Biometrics', () {
-                      HapticFeedback.lightImpact();
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const BiometricsScreen()));
-                    }),
-                    _divider(),
-                    _navRow(Icons.link_rounded, 'Connected Accounts', () {
-                      HapticFeedback.lightImpact();
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ConnectedAccountsScreen()));
-                    }),
-                  ]),
-                  _gap(),
-
-                  _section('Discovery', [
-                    _navRow(Icons.tune_rounded, 'Preferences', () {
-                      HapticFeedback.lightImpact();
-                      Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const PreferencesScreen()));
-                    }),
-                  ]),
-                  _gap(),
-
-                  _section('Legal', [
-                    _navRow(Icons.shield_outlined, 'Privacy Policy', () {
-                      HapticFeedback.lightImpact();
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PrivacyPolicyScreen()));
-                    }),
-                    _divider(),
-                    _navRow(Icons.description_outlined, 'Terms of Service', () {
-                      HapticFeedback.lightImpact();
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const TermsOfServiceScreen()));
-                    }),
-                  ]),
-                  _gap(),
-
-                  _section('Contact and Support', [
-                    _navRow(Icons.help_outline_rounded, 'Help Centre', () {
-                      HapticFeedback.lightImpact();
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const HelpCentreScreen()));
-                    }),
-                  ]),
-                  const SizedBox(height: 28),
-
-                  // Sign Out
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.mediumImpact();
-                      _signOut();
-                    },
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF3B60).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(30),
-                        border: Border.all(
-                            color: const Color(0xFFFF3B60).withValues(alpha: 0.5)),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.logout_rounded,
-                              color: Color(0xFFFF3B60), size: 20),
-                          SizedBox(width: 10),
-                          Text('Sign Out',
-                              style: TextStyle(
-                                  color: Color(0xFFFF3B60),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.3)),
-                        ],
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF3B60).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(50),
+                          border: Border.all(
+                              color: const Color(0xFFFF3B60).withOpacity(0.45)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.logout_rounded,
+                                color: Color(0xFFFF3B60), size: 18),
+                            const SizedBox(width: 10),
+                            Text('Sign Out',
+                                style: GoogleFonts.outfit(
+                                    color: const Color(0xFFFF3B60),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-                  // Save Changes
-                  _saveButton(),
-                  const SizedBox(height: 40),
-                ],
+                    // Save Changes
+                    _saveButton(),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── Widgets ───────────────────────────────────────────────────────────────
+  // ── Top bar — matches preferences/onboarding style ────────────────────────
+  Widget _topBar() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+    child: Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        const Spacer(),
+        if (_isSaving)
+          const Padding(
+            padding: EdgeInsets.only(right: 16),
+            child: SizedBox(
+              width: 22, height: 22,
+              child: CircularProgressIndicator(color: _purple, strokeWidth: 2.5),
+            ),
+          )
+        else
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              _saveSettings();
+            },
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [_purple, _purple2]),
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(
+                    color: _purple.withOpacity(0.4),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Text(
+                'Save',
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
 
-  Widget _topBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new,
-                color: Colors.white, size: 20),
-            onPressed: () => Navigator.pop(context),
-          ),
-          const Expanded(
-            child: Text('Settings',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800)),
-          ),
-          const SizedBox(width: 48), // balance back button
-        ],
+  // ── Page header — matches onboarding/preferences header ───────────────────
+  Widget _buildHeader() => Column(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      Text(
+        'Settings',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.outfit(
+          fontSize: 30,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          letterSpacing: -0.5,
+        ),
       ),
-    );
-  }
+      const SizedBox(height: 4),
+      Text(
+        'Manage your account and preferences',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.outfit(
+          fontSize: 14,
+          fontWeight: FontWeight.w300,
+          color: Colors.white.withOpacity(0.50),
+        ),
+      ),
+    ],
+  );
 
+  // ── Section — label + individual pill cards per row ──────────────────────
   Widget _section(String title, List<Widget> rows) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          padding: const EdgeInsets.only(left: 2, bottom: 12),
           child: Text(title,
-              style: const TextStyle(
-                  color: _purple,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8)),
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              )),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: _card,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _purple.withValues(alpha: 0.12)),
-          ),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Column(children: rows),
-        ),
+        ...rows.map((row) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: row,
+        )),
       ],
     );
   }
 
+  // ── Toggle row — individual pill card ─────────────────────────────────────
   Widget _toggleRow({
     required IconData icon,
     required String label,
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(color: _purple.withOpacity(0.42), width: 1.0),
+      ),
       child: Row(
         children: [
-          Icon(icon, color: Colors.white60, size: 20),
-          const SizedBox(width: 12),
+          Icon(icon, color: Colors.white54, size: 19),
+          const SizedBox(width: 14),
           Expanded(
-              child: Text(label,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500))),
+            child: Text(label,
+                style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400)),
+          ),
           Switch(
             value: value,
             onChanged: (v) {
@@ -352,37 +409,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ── Nav row — individual pill card ────────────────────────────────────────
   Widget _navRow(IconData icon, String label, VoidCallback onTap) {
     return GestureDetector(
       onTap: () { HapticFeedback.lightImpact(); onTap(); },
       behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(50),
+          border: Border.all(color: _purple.withOpacity(0.42), width: 1.0),
+        ),
         child: Row(
           children: [
-            Icon(icon, color: Colors.white60, size: 20),
-            const SizedBox(width: 12),
+            Icon(icon, color: Colors.white54, size: 19),
+            const SizedBox(width: 14),
             Expanded(
-                child: Text(label,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500))),
-            const Icon(Icons.chevron_right,
-                color: Colors.white30, size: 20),
+              child: Text(label,
+                  style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400)),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white30, size: 20),
           ],
         ),
       ),
     );
   }
 
-  Widget _divider() => Divider(
-      height: 1,
-      thickness: 1,
-      color: Colors.white.withValues(alpha: 0.06));
-
   Widget _gap() => const SizedBox(height: 20);
 
+  // ── Save button — matches preferences apply button ────────────────────────
   Widget _saveButton() {
     return GestureDetector(
       onTap: _isSaving ? null : () {
@@ -392,34 +451,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(vertical: 17),
         decoration: BoxDecoration(
           gradient: _isSaving
               ? LinearGradient(colors: [
-                  _purple.withValues(alpha: 0.5),
-                  _purple2.withValues(alpha: 0.5)
+                  _purple.withOpacity(0.5),
+                  _purple2.withOpacity(0.5),
                 ])
               : const LinearGradient(colors: [_purple, _purple2]),
           borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-                color: _purple.withValues(alpha: 0.35),
-                blurRadius: 16,
-                offset: const Offset(0, 6)),
-          ],
+          boxShadow: _isSaving
+              ? []
+              : [
+                  BoxShadow(
+                      color: _purple.withOpacity(0.4),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6)),
+                ],
         ),
         child: _isSaving
             ? const Center(
                 child: SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 20, height: 20,
                   child: CircularProgressIndicator(
                       color: Colors.white, strokeWidth: 2),
                 ),
               )
-            : const Text('Save Changes',
+            : Text('Save Changes',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: GoogleFonts.outfit(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -428,27 +488,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ── Sign out ──────────────────────────────────────────────────────────────
   Future<void> _signOut() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: _card,
+        backgroundColor: const Color(0xFF1A1228),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Sign Out',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        content: const Text('Are you sure you want to sign out?',
-            style: TextStyle(color: Colors.white70)),
+        title: Text('Sign Out',
+            style: GoogleFonts.outfit(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+        content: Text('Are you sure you want to sign out?',
+            style: GoogleFonts.outfit(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white54)),
+            child: Text('Cancel',
+                style: GoogleFonts.outfit(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sign Out',
-                style: TextStyle(
-                    color: Color(0xFFFF3B60), fontWeight: FontWeight.w700)),
+            child: Text('Sign Out',
+                style: GoogleFonts.outfit(
+                    color: const Color(0xFFFF3B60),
+                    fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -462,15 +525,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
         (_) => false,
       );
     }
-  }
-
-  void _soon(String f) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('$f coming soon!'),
-      backgroundColor: _card,
-      behavior: SnackBarBehavior.floating,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
   }
 }

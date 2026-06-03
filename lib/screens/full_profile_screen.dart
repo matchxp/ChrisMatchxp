@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../widgets/matchxp_background.dart';
 
 // ── Theme constants ───────────────────────────────────────────────────────────
 const kBgColor      = Color(0xFF0D0618);
@@ -35,13 +37,6 @@ const Map<String, IconData> _kInterestIcons = {
   'Foodie'      : Icons.fastfood_rounded,
 };
 
-const Map<String, String> _kLookingForEmojis = {
-  'Long Term Relationship' : '💛',
-  'Make New Friends'       : '👋',
-  'Something Casual'       : '🌊',
-  'Not Sure Yet'           : '🤷',
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FullProfileScreen extends StatefulWidget {
@@ -49,6 +44,8 @@ class FullProfileScreen extends StatefulWidget {
   final VoidCallback? onLike;
   final VoidCallback? onPass;
   final VoidCallback? onSuperLike;
+  /// When true: hides superlike, flag, swipe; shows preview banner; ✕ replaces ←.
+  final bool isPreview;
 
   const FullProfileScreen({
     super.key,
@@ -56,6 +53,7 @@ class FullProfileScreen extends StatefulWidget {
     this.onLike,
     this.onPass,
     this.onSuperLike,
+    this.isPreview = false,
   });
 
   @override
@@ -64,9 +62,14 @@ class FullProfileScreen extends StatefulWidget {
 
 class _FullProfileScreenState extends State<FullProfileScreen>
     with SingleTickerProviderStateMixin {
-  // ── Photo pager ───────────────────────────────────────────────────────────────
-  final PageController _pageCtrl = PageController();
+  // ── Hero photo index + PageController ────────────────────────────────────────
   int _photoIdx = 0;
+  late final PageController _photoPageCtrl = PageController();
+
+  // ── Hero photo area tracking (for gesture routing) ───────────────────────────
+  final _heroKey             = GlobalKey();
+  bool   _dragStartedInPhoto = false;
+  double _photoDragDx        = 0.0;
 
   // ── Swipe state (mirrors home screen) ────────────────────────────────────────
   late final AnimationController _swipeCtrl = AnimationController(
@@ -103,36 +106,111 @@ class _FullProfileScreenState extends State<FullProfileScreen>
   String get _gender           => _s('gender');
   String get _height           => _s('height');
   String get _zodiac           => _s('zodiac');
-  String get _religion         => _s('religion');
   String get _drink            => _s('drinking_habit');
   String get _smoke            => _s('smoking_habit');
   String get _workout          => _s('workout_habit');
   String get _pets             => _s('pets');
   List<String> get _interests     => _l('interests');
   List<String> get _lookingFor   => _l('looking_for');
-  List<String> get _photoCaptions => _l('photo_captions');
+  List<String> get _photoCaptions   => _l('photo_captions');
+  String get _featuredPhoto         => _s('featured_photo');
+  String get _featuredCaption       => _s('featured_caption');
 
   @override
   void dispose() {
-    _pageCtrl.dispose();
+    _photoPageCtrl.dispose();
     _swipeCtrl.dispose();
     super.dispose();
   }
 
+  // ── Hero photo bottom edge (global Y) ────────────────────────────────────────
+
+  double? _heroPhotoBottom() {
+    final box = _heroKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    return box.localToGlobal(Offset(0, box.size.height)).dy;
+  }
+
+  // ── Photo navigation helper ───────────────────────────────────────────────────
+
+  void _navigatePhoto(double dx) {
+    final imgs = _images;
+    if (imgs.length <= 1) return;
+    final newIdx = (dx < 0 ? _photoIdx + 1 : _photoIdx - 1)
+        .clamp(0, imgs.length - 1);
+    if (newIdx == _photoIdx) return;
+    setState(() => _photoIdx = newIdx);
+    _photoPageCtrl.animateToPage(
+      newIdx,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  // Completes or snaps back a live photo drag based on how far the user dragged.
+  void _completePhotoDrag() {
+    if (!_photoPageCtrl.hasClients) {
+      _photoDragDx = 0;
+      _dragStartedInPhoto = false;
+      return;
+    }
+    final imgs = _images;
+    final page = _photoPageCtrl.page ?? _photoIdx.toDouble();
+    int targetIdx;
+    if (page > _photoIdx + 0.3) {
+      targetIdx = (_photoIdx + 1).clamp(0, imgs.length - 1);
+    } else if (page < _photoIdx - 0.3) {
+      targetIdx = (_photoIdx - 1).clamp(0, imgs.length - 1);
+    } else {
+      targetIdx = _photoIdx;
+    }
+    setState(() => _photoIdx = targetIdx);
+    _photoPageCtrl.animateToPage(
+      targetIdx,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+    _photoDragDx = 0;
+    _dragStartedInPhoto = false;
+  }
+
   // ── Swipe gesture handlers ────────────────────────────────────────────────────
 
-  void _onHorizDragStart(DragStartDetails _) {
+  void _onHorizDragStart(DragStartDetails d) {
     if (_isAnimating) return;
-    setState(() => _isDragging = true);
+    // Route to photo navigation if drag starts within the hero photo area.
+    final photoBottom = _heroPhotoBottom();
+    _dragStartedInPhoto =
+        photoBottom != null && d.globalPosition.dy < photoBottom;
+    _photoDragDx = 0.0;
+    if (!_dragStartedInPhoto) {
+      setState(() => _isDragging = true);
+    }
   }
 
   void _onHorizDragUpdate(DragUpdateDetails d) {
     if (_isAnimating) return;
+    if (_dragStartedInPhoto) {
+      _photoDragDx += d.delta.dx;
+      // Follow the finger in real time — swipe left increases page position.
+      if (_photoPageCtrl.hasClients) {
+        final sw = MediaQuery.of(context).size.width;
+        final newPos = (_photoPageCtrl.position.pixels - d.delta.dx)
+            .clamp(0.0, (_images.length - 1) * sw);
+        _photoPageCtrl.jumpTo(newPos);
+      }
+      return;
+    }
     setState(() => _dragPosition += Offset(d.delta.dx, 0));
   }
 
   void _onHorizDragEnd(DragEndDetails _) {
     if (_isAnimating) return;
+    if (_dragStartedInPhoto) {
+      _completePhotoDrag();
+      return;
+    }
+    // Original card-swipe logic.
     final sw = MediaQuery.of(context).size.width;
     if (_dragPosition.dx.abs() > sw * 0.25) {
       final isLike = _dragPosition.dx > 0;
@@ -235,43 +313,349 @@ class _FullProfileScreenState extends State<FullProfileScreen>
     _animateSuperLike();
   }
 
+  // ── Flag sheet ────────────────────────────────────────────────────────────────
+
+  void _showFlagSheet(BuildContext context) {
+    HapticFeedback.lightImpact();
+    final displayName = _name.isNotEmpty ? _name : 'this user';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF130D1F),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _flagOption(
+              emoji: '🚫',
+              label: 'Block $displayName',
+              sublabel: 'They won\'t appear in your deck again',
+              color: const Color(0xFFFF3B60),
+              onTap: () { Navigator.pop(context); _blockUser(); },
+            ),
+            const SizedBox(height: 10),
+            _flagOption(
+              emoji: '🚩',
+              label: 'Report $displayName',
+              sublabel: 'Let us know what\'s wrong',
+              color: const Color(0xFFFF9500),
+              onTap: () { Navigator.pop(context); _showReportSheet(); },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _flagOption({
+    required String emoji,
+    required String label,
+    required String sublabel,
+    required Color color,
+    required VoidCallback onTap,
+  }) =>
+      GestureDetector(
+        onTap: () { HapticFeedback.selectionClick(); onTap(); },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.3)),
+          ),
+          child: Row(children: [
+            Text(emoji, style: const TextStyle(fontSize: 22)),
+            const SizedBox(width: 14),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: GoogleFonts.outfit(
+                    color: color, fontSize: 15, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(sublabel, style: GoogleFonts.outfit(
+                    color: Colors.white38, fontSize: 12)),
+              ],
+            )),
+            Icon(Icons.chevron_right, color: color.withOpacity(0.5), size: 20),
+          ]),
+        ),
+      );
+
+  // ── Block ─────────────────────────────────────────────────────────────────────
+
+  Future<void> _blockUser() async {
+    HapticFeedback.mediumImpact();
+    final currentId   = Supabase.instance.client.auth.currentUser?.id;
+    final blockedId   = widget.profile['id'] as String?;
+    final displayName = _name.isNotEmpty ? _name : 'User';
+
+    // Persist block in the background — don't await so dismissal is instant
+    if (currentId != null && blockedId != null) {
+      Supabase.instance.client.from('blocks').upsert({
+        'blocker_id': currentId,
+        'blocked_id': blockedId,
+        'created_at': DateTime.now().toIso8601String(),
+      }).catchError((_) {});
+    }
+
+    if (!mounted) return;
+
+    // Show snack on the previous screen after pop
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('$displayName has been blocked.',
+          style: GoogleFonts.outfit()),
+      backgroundColor: const Color(0xFF1A1228),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+
+    // Trigger pass callback so deck removes the card, then animate away
+    widget.onPass?.call();
+    _animateSwipe(false);
+  }
+
+  // ── Report ────────────────────────────────────────────────────────────────────
+
+  void _showReportSheet() {
+    final displayName = _name.isNotEmpty ? _name : 'this user';
+    String? _selectedReason;
+
+    const reasons = [
+      'Inappropriate photos',
+      'Fake profile',
+      'Harassment or abuse',
+      'Spam or scam',
+      'Underage user',
+      'Other',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF0C0B11),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: EdgeInsets.fromLTRB(
+              24, 16, 24, MediaQuery.of(ctx).viewInsets.bottom + 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Handle
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Title
+              Text('Report $displayName',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5)),
+              const SizedBox(height: 6),
+              Text('What\'s going on?',
+                  style: GoogleFonts.outfit(
+                      color: Colors.white.withOpacity(0.50),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w300)),
+              const SizedBox(height: 24),
+              // Reason pills — wrap layout like onboarding
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
+                children: reasons.map((reason) {
+                  final selected = _selectedReason == reason;
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setSheet(() => _selectedReason = reason);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? kAccentColor.withOpacity(0.12)
+                            : Colors.white.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(50),
+                        border: Border.all(
+                          color: selected
+                              ? kAccentColor
+                              : kAccentColor.withOpacity(0.42),
+                          width: selected ? 2.0 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(reason,
+                              style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: selected
+                                      ? FontWeight.w600
+                                      : FontWeight.w400)),
+                          if (selected) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 18, height: 18,
+                              decoration: const BoxDecoration(
+                                  color: kAccentColor,
+                                  shape: BoxShape.circle),
+                              child: const Icon(Icons.check,
+                                  color: Colors.white, size: 11),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 28),
+              // Submit button — purple gradient pill
+              GestureDetector(
+                onTap: _selectedReason == null
+                    ? null
+                    : () { Navigator.pop(ctx); _submitReport(_selectedReason!); },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 17),
+                  decoration: BoxDecoration(
+                    gradient: _selectedReason != null
+                        ? const LinearGradient(
+                            colors: [kAccentColor, Color(0xFF9D50BB)])
+                        : null,
+                    color: _selectedReason == null
+                        ? Colors.white.withOpacity(0.08)
+                        : null,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: _selectedReason != null
+                        ? [BoxShadow(
+                            color: kAccentColor.withOpacity(0.4),
+                            blurRadius: 18,
+                            offset: const Offset(0, 6))]
+                        : [],
+                  ),
+                  child: Text('Submit Report',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                          color: _selectedReason != null
+                              ? Colors.white
+                              : Colors.white30,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submitReport(String reason) async {
+    HapticFeedback.mediumImpact();
+    final currentId   = Supabase.instance.client.auth.currentUser?.id;
+    final reportedId  = widget.profile['id'] as String?;
+    final displayName = _name.isNotEmpty ? _name : 'User';
+
+    if (currentId != null && reportedId != null) {
+      try {
+        await Supabase.instance.client.from('reports').insert({
+          'reporter_id': currentId,
+          'reported_id': reportedId,
+          'reason':      reason,
+          'created_at':  DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Report submitted. Thanks for keeping MatchXP safe.',
+            style: GoogleFonts.outfit()),
+        backgroundColor: const Color(0xFF1A1228),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final contentStack = Stack(
+      children: [
+        _buildScrollContent(context),
+        // LIKE / NOPE stamp — hidden in preview
+        if (!widget.isPreview && _isDragging && _dragPosition.dx.abs() > 20)
+          _buildSwipeStamp(),
+        // SUPER LIKE stamp — hidden in preview
+        if (!widget.isPreview && _showSuperLikeStamp) _buildSuperLikeStamp(),
+        // Superlike footer button — hidden in preview
+        if (!widget.isPreview) _buildStickyFooter(),
+        // Preview banner — shown only in preview
+        if (widget.isPreview) _buildPreviewBanner(),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: kBgColor,
       extendBodyBehindAppBar: true,
-      body: GestureDetector(
-        onHorizontalDragStart: _onHorizDragStart,
-        onHorizontalDragUpdate: _onHorizDragUpdate,
-        onHorizontalDragEnd: _onHorizDragEnd,
-        child: AnimatedBuilder(
-          animation: _swipeCtrl,
-          builder: (_, child) {
-            final offset = _isAnimating ? _swipeAnim.value : _dragPosition;
-            final angle  = _isAnimating ? _rotAnim.value  : _getRotation();
-            return Transform.translate(
-              offset: offset,
-              child: Transform.rotate(
-                angle: angle,
-                alignment: Alignment.bottomCenter,
-                child: child,
+      body: MatchXPBackground(
+        child: widget.isPreview
+            // Preview: no swipe gestures
+            ? contentStack
+            : GestureDetector(
+                onHorizontalDragStart: _onHorizDragStart,
+                onHorizontalDragUpdate: _onHorizDragUpdate,
+                onHorizontalDragEnd: _onHorizDragEnd,
+                child: AnimatedBuilder(
+                  animation: _swipeCtrl,
+                  builder: (_, child) {
+                    final offset = _isAnimating ? _swipeAnim.value : _dragPosition;
+                    final angle  = _isAnimating ? _rotAnim.value  : _getRotation();
+                    return Transform.translate(
+                      offset: offset,
+                      child: Transform.rotate(
+                        angle: angle,
+                        alignment: Alignment.bottomCenter,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: contentStack,
+                ),
               ),
-            );
-          },
-          child: Stack(
-            children: [
-              _buildScrollContent(context),
-              // LIKE / NOPE stamp
-              if (_isDragging && _dragPosition.dx.abs() > 20)
-                _buildSwipeStamp(),
-              // SUPER LIKE stamp
-              if (_showSuperLikeStamp) _buildSuperLikeStamp(),
-              _buildStickyFooter(),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -338,154 +722,174 @@ class _FullProfileScreenState extends State<FullProfileScreen>
     );
   }
 
-  // ── Scrollable content ────────────────────────────────────────────────────────
+  // ── Scrollable content — photo extends full-bleed, buttons float over it ─────
 
   Widget _buildScrollContent(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        _buildSliverAppBar(context),
-        SliverToBoxAdapter(child: _buildMainContent(context)),
+    return Stack(
+      children: [
+        // Scroll content: hero photo + main sections — no SliverAppBar
+        CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _buildHeroPhoto()),
+            SliverToBoxAdapter(child: _buildMainContent(context)),
+          ],
+        ),
+
+        // Floating buttons overlay — transparent background, photo shows through
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: _navIconBtn(
+                    widget.isPreview
+                        ? Icons.close_rounded
+                        : Icons.arrow_back_ios_new_rounded,
+                  ),
+                ),
+                const Spacer(),
+                // Flag hidden in preview — can't report yourself
+                if (!widget.isPreview)
+                  GestureDetector(
+                    onTap: () => _showFlagSheet(context),
+                    child: _navIconBtn(Icons.flag_outlined),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 
-  // ── SliverAppBar ──────────────────────────────────────────────────────────────
+  // ── Hero photo — natural aspect ratio, tap left/right to advance ─────────────
 
-  SliverAppBar _buildSliverAppBar(BuildContext context) {
-    final imgs = _images;
-    final nameDisplay = _name.isNotEmpty ? "$_name's Profile" : 'Profile';
+  Widget _buildHeroPhoto() {
+    final imgs     = _images;
+    final captions = _photoCaptions;
 
-    return SliverAppBar(
-      expandedHeight: 420,
-      pinned: true,
-      backgroundColor: const Color(0xD90D0618),
-      elevation: 0,
-      centerTitle: true,
-      toolbarHeight: 60,
-      leadingWidth: 64,
-      titleSpacing: 0,
-      automaticallyImplyLeading: false,
-      leading: Padding(
-        padding: const EdgeInsets.only(left: 16),
-        child: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: _navIconBtn(Icons.arrow_back_ios_new_rounded),
-        ),
-      ),
-      title: Text(
-        nameDisplay,
-        style: GoogleFonts.outfit(
-          color: Colors.white,
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      actions: [
-        _navIconBtn(Icons.flag_outlined),
-        const SizedBox(width: 10),
-        _navIconBtn(Icons.more_vert),
-        const SizedBox(width: 16),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            // ── Hero photo / placeholder ────────────────────────────────────
-            imgs.isNotEmpty
-                ? PageView.builder(
-                    controller: _pageCtrl,
-                    itemCount: imgs.length,
-                    onPageChanged: (i) => setState(() => _photoIdx = i),
-                    itemBuilder: (_, i) => Image.network(
-                      imgs[i],
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _heroPHolderGradient(),
-                    ),
-                  )
-                : _heroPHolderGradient(),
+    if (imgs.isEmpty) {
+      return Container(
+        key: _heroKey,
+        width: double.infinity,
+        height: 480,
+        child: _heroPHolderGradient(),
+      );
+    }
 
-            // ── Photo dot indicators — bottom of hero ──────────────────────
-            if (imgs.length > 1)
-              Positioned(
-                bottom: 90,
-                left: 0,
-                right: 0,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(imgs.length, (i) {
-                    final active = _photoIdx == i;
-                    return Row(
-                      children: [
-                        Container(
-                          width: 28,
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: active
-                                ? const Color(0xE6FFFFFF)
-                                : const Color(0x40FFFFFF),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        if (i < imgs.length - 1)
-                          const SizedBox(width: 5),
-                      ],
-                    );
-                  }),
-                ),
+    final url     = imgs[_photoIdx];
+    final caption = _photoIdx < captions.length ? captions[_photoIdx] : '';
+
+    return Container(
+      key: _heroKey,
+      color: kBgColor, // prevents any white bleed between photo and content below
+      child: GestureDetector(
+      onTapUp: (details) {
+        if (imgs.length <= 1) return;
+        final goNext = details.localPosition.dx > MediaQuery.of(context).size.width / 2;
+        _navigatePhoto(goNext ? -1 : 1);
+      },
+      // Preview mode: no outer card-swipe detector, so handle drag directly.
+      onHorizontalDragUpdate: widget.isPreview
+          ? (details) {
+              _photoDragDx += details.delta.dx;
+              if (_photoPageCtrl.hasClients) {
+                final sw = MediaQuery.of(context).size.width;
+                final newPos = (_photoPageCtrl.position.pixels - details.delta.dx)
+                    .clamp(0.0, (_images.length - 1) * sw);
+                _photoPageCtrl.jumpTo(newPos);
+              }
+            }
+          : null,
+      onHorizontalDragEnd: widget.isPreview
+          ? (_) => _completePhotoDrag()
+          : null,
+      child: Stack(
+        children: [
+          // PageView tracks the finger in real time via PageController.jumpTo.
+          // NeverScrollableScrollPhysics disables its own gesture handling so
+          // our gesture routing stays in control.
+          SizedBox(
+            width: double.infinity,
+            height: 480,
+            child: PageView.builder(
+              controller: _photoPageCtrl,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: imgs.length,
+              onPageChanged: (idx) => setState(() => _photoIdx = idx),
+              itemBuilder: (_, i) => Image.network(
+                imgs[i],
+                width: double.infinity,
+                height: 480,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _heroPHolderGradient(),
               ),
+            ),
+          ),
 
-
-            // ── Photo caption overlay ───────────────────────────────────────
-            Builder(builder: (_) {
-              final captions = _photoCaptions;
-              final caption  = _photoIdx < captions.length
-                  ? captions[_photoIdx]
-                  : '';
-              if (caption.isEmpty) return const SizedBox.shrink();
-              return Positioned(
-                bottom: imgs.length > 1 ? 104 : 88,
-                left: 16,
-                right: 16,
-                child: Text(
-                  caption,
-                  style: GoogleFonts.outfit(
-                    color: Colors.white.withOpacity(0.88),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    height: 1.4,
-                    shadows: const [
-                      Shadow(
-                        color: Colors.black54,
-                        blurRadius: 8,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-
-            // ── Bottom fade ─────────────────────────────────────────────────
+          // Dot indicators
+          if (imgs.length > 1)
             Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 180,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [kBgColor, Colors.transparent],
-                  ),
+              bottom: 80, left: 0, right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(imgs.length, (i) {
+                  final active = _photoIdx == i;
+                  return Row(children: [
+                    Container(
+                      width: 28, height: 3,
+                      decoration: BoxDecoration(
+                        color: active
+                            ? const Color(0xE6FFFFFF)
+                            : const Color(0x40FFFFFF),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    if (i < imgs.length - 1) const SizedBox(width: 5),
+                  ]);
+                }),
+              ),
+            ),
+
+          // Caption overlay
+          if (caption.isNotEmpty)
+            Positioned(
+              bottom: imgs.length > 1 ? 100 : 84,
+              left: 16, right: 16,
+              child: Text(
+                caption,
+                style: GoogleFonts.outfit(
+                  color: Colors.white.withOpacity(0.88),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                  height: 1.4,
+                  shadows: const [
+                    Shadow(color: Colors.black54, blurRadius: 8, offset: Offset(0, 1)),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+
+          // Bottom fade into content
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: Container(
+              height: 140,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [kBgColor, Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-    );
+    ),    // GestureDetector
+    );    // Container(_heroKey)
   }
 
   Widget _heroPHolderGradient() => Container(
@@ -512,174 +916,154 @@ class _FullProfileScreenState extends State<FullProfileScreen>
   // ── Main content ──────────────────────────────────────────────────────────────
 
   Widget _buildMainContent(BuildContext context) {
+    final imgs     = _images;
+    final captions = _photoCaptions;
+    final c        = <Widget>[];
+
+    // Helper — builds a full-width photo card for a given index.
+    Widget photoCard(int i) {
+      final caption = i < captions.length ? captions[i] : '';
+      return _interleavePhoto(imgs[i], caption);
+    }
+
+    // ── 2. Bio — name, age, online dot, location, chips ──────────────────────
+    c.add(const SizedBox(height: 8));
+    c.add(Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          _name.isNotEmpty && _age > 0 ? '$_name, $_age' : 'Profile',
+          style: GoogleFonts.outfit(
+              color: Colors.white, fontSize: 38, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          width: 10, height: 10,
+          decoration: BoxDecoration(
+            color: const Color(0xFF00D4AA),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(color: const Color(0xFF00D4AA).withOpacity(0.6),
+                  blurRadius: 8, spreadRadius: 1),
+            ],
+          ),
+        ),
+      ],
+    ));
+    c.add(const SizedBox(height: 6));
+    c.add(Row(children: [
+      const Icon(Icons.location_on, color: kAccentColor, size: 14),
+      const SizedBox(width: 5),
+      Expanded(child: Text(_buildLocationStr(),
+          style: GoogleFonts.outfit(color: kTextMuted, fontSize: 13))),
+    ]));
+    c.add(const SizedBox(height: 14));
+    c.add(_buildQuickChips());
+
+    if (_bio.isNotEmpty) {
+      c.addAll([
+        const _Divider(),
+        const _SectionLabel('ABOUT ME'),
+        const SizedBox(height: 8),
+        Text(_bio, style: GoogleFonts.outfit(
+            color: const Color(0xE0FFFFFF), fontSize: 15,
+            fontWeight: FontWeight.w300, height: 1.6)),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerRight,
+          child: InkWell(
+            onTap: () {},
+            borderRadius: BorderRadius.circular(15),
+            child: Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(shape: BoxShape.circle,
+                  color: kSurfaceColor, border: Border.all(color: kBorderColor)),
+              child: const Icon(Icons.favorite_border, color: kAccentColor, size: 14),
+            ),
+          ),
+        ),
+      ]);
+    }
+
+    // ── 3. Lifestyle ─────────────────────────────────────────────────────────
+    if (_drink.isNotEmpty || _smoke.isNotEmpty ||
+        _workout.isNotEmpty || _pets.isNotEmpty) {
+      c.addAll([
+        const _Divider(),
+        const _SectionLabel('LIFESTYLE'),
+        const SizedBox(height: 10),
+        _buildLifestylePills(),
+      ]);
+    }
+
+    // ── 4. Photos 2 + 3 (indices 1 and 2) ────────────────────────────────────
+    if (imgs.length > 1) c.add(photoCard(1));
+    if (imgs.length > 2) c.add(photoCard(2));
+
+    // ── 5. Interests ─────────────────────────────────────────────────────────
+    if (_interests.isNotEmpty) {
+      c.addAll([
+        const _Divider(),
+        const _SectionLabel('INTERESTS'),
+        const SizedBox(height: 10),
+        _buildInterests(),
+      ]);
+    }
+
+    // ── 6. Remaining photos (4th onwards, indices 3+) ─────────────────────────
+    for (int i = 3; i < imgs.length; i++) {
+      c.add(photoCard(i));
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 100),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: c),
+    );
+  }
+
+  // ── Interleaved photo card ─────────────────────────────────────────────────────
+
+  Widget _interleavePhoto(String url, String caption) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Name + location ───────────────────────────────────────────────
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                _name.isNotEmpty && _age > 0
-                    ? '$_name, $_age'
-                    : 'Profile',
-                style: GoogleFonts.outfit(
-                  color: Colors.white,
-                  fontSize: 38,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF00D4AA),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF00D4AA).withOpacity(0.6),
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(Icons.location_on,
-                  color: kAccentColor, size: 14),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  _buildLocationStr(),
-                  style: GoogleFonts.outfit(
-                      color: kTextMuted, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // ── Quick info chips ──────────────────────────────────────────────
-          _buildQuickChips(),
-
-          // ── About Me ──────────────────────────────────────────────────────
-          if (_bio.isNotEmpty) ...[
-            const _Divider(),
-            const _SectionLabel('ABOUT ME'),
-            const SizedBox(height: 8),
-            Text(
-              _bio,
-              style: GoogleFonts.outfit(
-                color: const Color(0xE0FFFFFF),
-                fontSize: 15,
-                fontWeight: FontWeight.w300,
-                height: 1.6,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: InkWell(
-                onTap: () {},
-                borderRadius: BorderRadius.circular(15),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            // No height constraint — image renders at its natural aspect ratio
+            child: Image.network(
+              url,
+              width: double.infinity,
+              fit: BoxFit.fitWidth,
+              errorBuilder: (_, __, ___) => AspectRatio(
+                aspectRatio: 3 / 4,
                 child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: kSurfaceColor,
-                    border: Border.all(color: kBorderColor),
-                  ),
-                  child: const Icon(
-                    Icons.favorite_border,
-                    color: kAccentColor,
-                    size: 14,
-                  ),
-                ),
-              ),
-            ),
-          ],
-
-          // ── Photos ────────────────────────────────────────────────────────
-          if (_images.length > 1) ...[
-            const _Divider(),
-            const _SectionLabel('PHOTOS'),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                height: 200,
-                width: double.infinity,
-                child: Image.network(
-                  _images[1],
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF251248), Color(0xFF0D0618)],
-                      ),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF251248), Color(0xFF0D0618)],
                     ),
                   ),
                 ),
               ),
             ),
-            if (_photoCaptions.length > 1 && _photoCaptions[1].isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8, left: 2),
-                child: Text(
-                  _photoCaptions[1],
-                  style: GoogleFonts.outfit(
-                    color: Colors.white.withOpacity(0.55),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w300,
-                    height: 1.4,
-                  ),
+          ),
+          if (caption.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 2),
+              child: Text(
+                caption,
+                style: GoogleFonts.outfit(
+                  color: Colors.white.withOpacity(0.55),
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w300,
+                  height: 1.4,
                 ),
               ),
-          ],
-
-          // ── Lifestyle ─────────────────────────────────────────────────────
-          if (_drink.isNotEmpty || _smoke.isNotEmpty ||
-              _workout.isNotEmpty || _pets.isNotEmpty) ...[
-            const _Divider(),
-            const _SectionLabel('LIFESTYLE'),
-            const SizedBox(height: 10),
-            _buildLifestylePills(),
-          ],
-
-          // ── Values ────────────────────────────────────────────────────────
-          if (_zodiac.isNotEmpty || _religion.isNotEmpty) ...[
-            const _Divider(),
-            const _SectionLabel('VALUES'),
-            const SizedBox(height: 10),
-            _buildValuesPills(),
-          ],
-
-          // ── Looking For ───────────────────────────────────────────────────
-          if (_lookingFor.isNotEmpty) ...[
-            const _Divider(),
-            const _SectionLabel('LOOKING FOR'),
-            const SizedBox(height: 10),
-            _buildLookingFor(),
-          ],
-
-          // ── Interests ─────────────────────────────────────────────────────
-          if (_interests.isNotEmpty) ...[
-            const _Divider(),
-            const _SectionLabel('INTERESTS'),
-            const SizedBox(height: 10),
-            _buildInterests(),
-          ],
+            ),
         ],
       ),
     );
@@ -732,48 +1116,6 @@ class _FullProfileScreenState extends State<FullProfileScreen>
     return Wrap(spacing: 8, runSpacing: 8, children: pills);
   }
 
-  // ── Values pills ──────────────────────────────────────────────────────────────
-
-  Widget _buildValuesPills() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        if (_zodiac.isNotEmpty)
-          _ValuePill(emoji: '♍', label: 'Zodiac', value: _zodiac),
-        if (_religion.isNotEmpty)
-          _ValuePill(emoji: '🙏', label: 'Religion', value: _religion),
-      ],
-    );
-  }
-
-  // ── Looking For ───────────────────────────────────────────────────────────────
-
-  Widget _buildLookingFor() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: _lookingFor
-          .map((l) => Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: kSurfaceColor,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: kBorderColor),
-                ),
-                child: Text(
-                  '${_kLookingForEmojis[l] ?? '💫'} $l',
-                  style: GoogleFonts.outfit(
-                    color: const Color(0xD9FFFFFF),
-                    fontSize: 13,
-                  ),
-                ),
-              ))
-          .toList(),
-    );
-  }
-
   // ── Interests ─────────────────────────────────────────────────────────────────
 
   Widget _buildInterests() {
@@ -797,6 +1139,53 @@ class _FullProfileScreenState extends State<FullProfileScreen>
     if (_location.isEmpty) return '';
     if (_distance.isNotEmpty) return '$_location · $_distance';
     return _location;
+  }
+
+  // ── Preview banner ────────────────────────────────────────────────────────────
+
+  Widget _buildPreviewBanner() {
+    return SafeArea(
+      bottom: false,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          // Sit below the ✕ nav row (~34px button + 4px top padding + 8px gap)
+          padding: const EdgeInsets.only(top: 50),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.62),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: Colors.white.withOpacity(0.18), width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.visibility_outlined,
+                    color: Colors.white60, size: 13),
+                const SizedBox(width: 6),
+                Text(
+                  'This is how others see you',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Sticky footer ─────────────────────────────────────────────────────────────
@@ -853,10 +1242,9 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) => Text(
         text,
         style: GoogleFonts.outfit(
-          color: kTextMuted,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 1.2,
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
         ),
       );
 }
@@ -869,8 +1257,8 @@ class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         height: 1,
-        margin: const EdgeInsets.symmetric(vertical: 16),
-        color: kDividerColor,
+        margin: const EdgeInsets.symmetric(vertical: 20),
+        color: Colors.white.withOpacity(0.08),
       );
 }
 
@@ -883,22 +1271,23 @@ class _InfoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: kSurfaceColor,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: kBorderColor),
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(50),
+          border: Border.all(color: kAccentColor.withOpacity(0.42)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: kAccentColor, size: 13),
-            const SizedBox(width: 5),
+            Icon(icon, color: kAccentColor, size: 14),
+            const SizedBox(width: 6),
             Text(
               label,
               style: GoogleFonts.outfit(
-                color: const Color(0xCCFFFFFF),
-                fontSize: 12,
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],
@@ -917,24 +1306,16 @@ class _LifestylePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: kSurfaceColor,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: kBorderColor),
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(50),
+          border: Border.all(color: kAccentColor.withOpacity(0.42)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: kAccentColor.withOpacity(0.18),
-              ),
-              child: Icon(icon, color: kAccentColor, size: 14),
-            ),
+            Icon(icon, color: kAccentColor, size: 15),
             const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -943,8 +1324,9 @@ class _LifestylePill extends StatelessWidget {
                 Text(
                   label,
                   style: GoogleFonts.outfit(
-                    color: const Color(0x66FFFFFF),
-                    fontSize: 10,
+                    color: Colors.white38,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w300,
                   ),
                 ),
                 Text(
@@ -973,16 +1355,16 @@ class _ValuePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: kSurfaceColor,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: kBorderColor),
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(50),
+          border: Border.all(color: kAccentColor.withOpacity(0.42)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 18)),
+            Text(emoji, style: const TextStyle(fontSize: 15)),
             const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -991,8 +1373,9 @@ class _ValuePill extends StatelessWidget {
                 Text(
                   label,
                   style: GoogleFonts.outfit(
-                    color: const Color(0x66FFFFFF),
-                    fontSize: 10,
+                    color: Colors.white38,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w300,
                   ),
                 ),
                 Text(
@@ -1021,31 +1404,23 @@ class _InterestTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? kAccentColor : kSurfaceColor,
-          borderRadius: BorderRadius.circular(20),
-          border: selected ? null : Border.all(color: kBorderColor),
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(50),
+          border: Border.all(color: kAccentColor.withOpacity(0.42)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 13,
-              color: selected
-                  ? Colors.white
-                  : const Color(0xA6FFFFFF),
-            ),
-            const SizedBox(width: 5),
+            Icon(icon, size: 15, color: Colors.white),
+            const SizedBox(width: 7),
             Text(
               label,
               style: GoogleFonts.outfit(
-                color: selected
-                    ? Colors.white
-                    : const Color(0xA6FFFFFF),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],

@@ -294,6 +294,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           photoUrls.add(item.url!);
         }
       }
+
       int? age;
       if (_birthday != null) {
         final now = DateTime.now();
@@ -330,10 +331,46 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         HapticFeedback.mediumImpact();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Profile saved!', style: GoogleFonts.outfit()),
-          backgroundColor: _purple,
+          content: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [_purple, _purple2],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(100),
+              boxShadow: [
+                BoxShadow(
+                  color: _purple.withOpacity(0.45),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.check_rounded, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text('Profile saved!',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.1,
+                    )),
+              ],
+            ),
+          ),
+          backgroundColor: Colors.transparent,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          width: 210,
+          padding: EdgeInsets.zero,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+          dismissDirection: DismissDirection.horizontal,
         ));
         Navigator.pop(context, true);
       }

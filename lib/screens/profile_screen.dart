@@ -18,6 +18,7 @@ import 'onboarding/location_screen.dart';
 import 'onboarding/about_yourself_screen.dart';
 import 'onboarding/interests_screen.dart' hide BirthdayScreen;
 import 'onboarding/add_photos_screen.dart';
+import 'preview_profile_screen.dart';
 
 const String _matchSvg = '''
 <svg viewBox="0 0 133 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -155,22 +156,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           const SizedBox(width: 34, height: 34), // spacer for overlay logo
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()));
-            },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _card,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _purple.withOpacity(0.3)),
+          Row(
+            children: [
+              // ── Preview Profile eye button ──────────────────────────────
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(context,
+                      MaterialPageRoute(
+                          builder: (_) => const PreviewProfileScreen()));
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _card,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _purple.withOpacity(0.3)),
+                  ),
+                  child: const Icon(Icons.visibility_outlined,
+                      color: Color(0xFF6C3FE8), size: 18),
+                ),
               ),
-              child: const Icon(Icons.settings_outlined,
-                  color: Color(0xFF6C3FE8), size: 18),
-            ),
+              const SizedBox(width: 10),
+              // ── Settings button ─────────────────────────────────────────
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _card,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _purple.withOpacity(0.3)),
+                  ),
+                  child: const Icon(Icons.settings_outlined,
+                      color: Color(0xFF6C3FE8), size: 18),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -270,7 +296,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.location_on, color: Colors.white54, size: 14),
                 const Icon(Icons.location_on, color: Colors.white54, size: 14),
                 const SizedBox(width: 3),
                 Text(
@@ -373,7 +398,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const ProfileDetailsScreen())),
       ));
-    }
 
     if ((p['gender'] as String?)?.trim().isEmpty != false) {
       steps.add(_CompletionStep(
@@ -581,7 +605,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                               ),
                             ),
-                            const Icon(Icons.chevron_right,
                             const Icon(Icons.chevron_right,
                                 color: Colors.white30, size: 20),
                           ],
