@@ -51,12 +51,9 @@ class _ConnectWithScreenState extends State<ConnectWithScreen> {
 
   void _toggleOption(String option) {
     setState(() {
-      if (_selected.contains(option)) {
-        _selected.remove(option);
-      } else {
-        _selected.add(option);
-      }
-      _openToEveryone = _selected.length == _allOptions.length;
+      _selected.clear();
+      _selected.add(option);
+      _openToEveryone = option == 'Everyone';
     });
   }
 
@@ -139,7 +136,7 @@ class _ConnectWithScreenState extends State<ConnectWithScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'You can choose more than one answer\nand change it any time.',
+                  'Choose one option. You can change it any time.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
                     fontSize: 14,
