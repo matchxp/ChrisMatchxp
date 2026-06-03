@@ -284,7 +284,7 @@ class _ValuesScreenState extends State<ValuesScreen> {
         } else {
           isSelected
               ? _selectedReligions.remove(label)
-              : _selectedReligions.add(label);
+              : (_selectedReligions..clear()).add(label);
         }
       }),
       child: AnimatedContainer(
