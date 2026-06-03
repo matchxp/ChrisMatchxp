@@ -106,10 +106,10 @@ class GameStatusScreen extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
                       children: [
                         if (inProgress.isNotEmpty) ...[
-                          _SectionHeader(
+                          const _SectionHeader(
                             icon: Icons.sports_esports_rounded,
                             label: 'IN PROGRESS',
-                            color: const Color(0xFFF59E0B),
+                            color: Color(0xFFF59E0B),
                             subtitle: 'Games you need to action',
                           ),
                           const SizedBox(height: 6),
@@ -157,10 +157,10 @@ class GameStatusScreen extends StatelessWidget {
                           const SizedBox(height: 16),
                         ],
                         if (unlocked.isNotEmpty) ...[
-                          _SectionHeader(
+                          const _SectionHeader(
                             icon: Icons.chat_bubble_rounded,
                             label: 'UNLOCKED',
-                            color: const Color(0xFF22C55E),
+                            color: Color(0xFF22C55E),
                             subtitle: 'Chat is open!',
                           ),
                           const SizedBox(height: 6),
@@ -187,10 +187,10 @@ class GameStatusScreen extends StatelessWidget {
                           const SizedBox(height: 16),
                         ],
                         if (locked.isNotEmpty) ...[
-                          _SectionHeader(
+                          const _SectionHeader(
                             icon: Icons.lock_rounded,
                             label: 'LOCKED',
-                            color: const Color(0xFF6B7280),
+                            color: Color(0xFF6B7280),
                             subtitle: 'No game started yet',
                           ),
                           const SizedBox(height: 6),

@@ -299,7 +299,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         final now = DateTime.now();
         age = now.year - _birthday!.year;
         if (now.month < _birthday!.month ||
-            (now.month == _birthday!.month && now.day < _birthday!.day)) age--;
+            (now.month == _birthday!.month && now.day < _birthday!.day)) {
+          age--;
+        }
       }
       final payload = <String, dynamic>{
         'first_name':     firstName,
@@ -665,7 +667,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       width: 105, height: 130,
       margin: const EdgeInsets.only(right: 10),
       decoration: BoxDecoration(
-        color: _purple.withOpacity(0.06),
+        color: _purple.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _purple.withOpacity(0.42), width: 1.0),
       ),

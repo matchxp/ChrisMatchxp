@@ -767,7 +767,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: _purple.withOpacity(0.12),
+                  color: _purple.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: Icon(icon, color: _purple, size: 19),
@@ -809,7 +809,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withOpacity(0.12),
+                  color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.location_on_outlined,
@@ -866,7 +866,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               border: Border.all(color: _purple.withOpacity(0.25)),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.4),
+                    color: Colors.black.withValues(alpha: 0.4),
                     blurRadius: 16,
                     offset: const Offset(0, 6)),
               ],
@@ -890,7 +890,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                               height: 1,
                               thickness: 1,
                               color: Colors.white
-                                  .withOpacity(0.05)),
+                                  .withValues(alpha: 0.05)),
                         Padding(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 12),
@@ -901,7 +901,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                                 height: 32,
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF4CAF50)
-                                      .withOpacity(0.1),
+                                      .withValues(alpha: 0.1),
                                   borderRadius:
                                       BorderRadius.circular(8),
                                 ),
@@ -934,10 +934,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         if (_locationCtrl.text.isNotEmpty &&
             _locationSuggestions.isEmpty &&
             !_isSearchingLocation)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, left: 4),
+          const Padding(
+            padding: EdgeInsets.only(top: 8, left: 4),
             child: Row(
-              children: const [
+              children: [
                 Icon(Icons.info_outline_rounded,
                     color: Colors.white24, size: 13),
                 SizedBox(width: 6),
@@ -1038,14 +1038,14 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       decoration: BoxDecoration(
         gradient: _isSaving
             ? LinearGradient(colors: [
-                _purple.withOpacity(0.5),
-                _purple2.withOpacity(0.5)
+                _purple.withValues(alpha: 0.5),
+                _purple2.withValues(alpha: 0.5)
               ])
             : const LinearGradient(colors: [_purple, _purple2]),
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
-              color: _purple.withOpacity(0.4),
+              color: _purple.withValues(alpha: 0.4),
               blurRadius: 18,
               offset: const Offset(0, 6)),
         ],
@@ -1161,13 +1161,13 @@ class _PickerSheet extends StatelessWidget {
                     horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? _purple.withOpacity(0.15)
-                      : Colors.white.withOpacity(0.04),
+                      ? _purple.withValues(alpha: 0.15)
+                      : Colors.white.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: isSelected
-                        ? _purple.withOpacity(0.6)
-                        : Colors.white.withOpacity(0.07),
+                        ? _purple.withValues(alpha: 0.6)
+                        : Colors.white.withValues(alpha: 0.07),
                     width: isSelected ? 1.5 : 1,
                   ),
                 ),
@@ -1178,8 +1178,8 @@ class _PickerSheet extends StatelessWidget {
                       height: 36,
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? _purple.withOpacity(0.2)
-                            : Colors.white.withOpacity(0.06),
+                            ? _purple.withValues(alpha: 0.2)
+                            : Colors.white.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(opt.icon,

@@ -237,7 +237,7 @@ class _HelpCentreScreenState extends State<HelpCentreScreen> {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isOpen
-                  ? _purple.withOpacity(0.4)
+                  ? _purple.withValues(alpha: 0.4)
                   : Colors.white12,
               width: isOpen ? 1.5 : 1,
             ),
@@ -255,7 +255,7 @@ class _HelpCentreScreenState extends State<HelpCentreScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: _purple.withOpacity(0.12),
+                        color: _purple.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(item.category,
@@ -328,12 +328,12 @@ class _HelpCentreScreenState extends State<HelpCentreScreen> {
     decoration: BoxDecoration(
       gradient: LinearGradient(
         colors: [
-          _purple.withOpacity(0.15),
-          _purple2.withOpacity(0.08),
+          _purple.withValues(alpha: 0.15),
+          _purple2.withValues(alpha: 0.08),
         ],
       ),
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: _purple.withOpacity(0.3)),
+      border: Border.all(color: _purple.withValues(alpha: 0.3)),
     ),
     child: Column(
       children: [
@@ -366,7 +366,7 @@ class _HelpCentreScreenState extends State<HelpCentreScreen> {
               borderRadius: BorderRadius.circular(30),
               boxShadow: [
                 BoxShadow(
-                    color: _purple.withOpacity(0.35),
+                    color: _purple.withValues(alpha: 0.35),
                     blurRadius: 12,
                     offset: const Offset(0, 4)),
               ],

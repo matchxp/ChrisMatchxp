@@ -17,11 +17,14 @@ class RPSIntroScreen extends StatefulWidget {
     required this.currentUserName,
     required this.opponentId,
     required this.opponentName,
-    required this.sessionId,
+   required this.sessionId,
     required this.onChatUnlocked,
     this.popCount = 1,
     this.chatAlreadyUnlocked = false,
     this.skipIntro = false,
+    required this.matchId,
+    required this.partnerUserId,
+    required this.partnerName,
   });
 
   final String currentUserId;
@@ -32,9 +35,10 @@ class RPSIntroScreen extends StatefulWidget {
   final VoidCallback onChatUnlocked;
   final int popCount;
   final bool chatAlreadyUnlocked;
-  /// When true, bypass the intro animation and jump straight to RPSPickScreen.
-  /// RPSPickScreen will then check DB state and route to Pick / Waiting / Reveal.
   final bool skipIntro;
+  final String matchId;
+  final String partnerUserId;
+  final String partnerName;
 
   @override
   State<RPSIntroScreen> createState() => _RPSIntroScreenState();
@@ -61,7 +65,7 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
   void initState() {
     super.initState();
 
-    Animation<double> _make(AnimationController c) =>
+    Animation<double> make(AnimationController c) =>
         Tween<double>(begin: 0, end: 1).animate(
           CurvedAnimation(parent: c, curve: Curves.easeInOut));
 
@@ -69,9 +73,9 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
     _fc1 = AnimationController(duration: const Duration(milliseconds: 2000), vsync: this);
     _fc2 = AnimationController(duration: const Duration(milliseconds: 2000), vsync: this);
 
-    _fa0 = _make(_fc0);
-    _fa1 = _make(_fc1);
-    _fa2 = _make(_fc2);
+    _fa0 = make(_fc0);
+    _fa1 = make(_fc1);
+    _fa2 = make(_fc2);
 
     // Stagger starts so they are offset from each other
     Future.delayed(const Duration(milliseconds: 600),  () { if (mounted) _fc1.repeat(reverse: true); });
@@ -126,6 +130,9 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
         onChatUnlocked:       widget.onChatUnlocked,
         popCount:             widget.popCount,
         chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
+        matchId:              widget.matchId,
+        partnerUserId:        widget.partnerUserId,
+        partnerName:          widget.partnerName,
       ),
     ));
   }
@@ -133,34 +140,43 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: RPSTheme.bg,
+      backgroundColor: Colors.transparent,
       body: RPSBackground(
         child: SafeArea(
           child: Stack(
             children: [
-              const RPSGlowBlobs(),
+             // RPSGlowBlobs removed
               Padding(
-                padding: const EdgeInsets.fromLTRB(22, 64, 22, 32),
+                padding: const EdgeInsets.fromLTRB(22, 12, 22, 32),
                 child: Column(
                   children: [
-                    RPSNavBar(onBack: () => Navigator.pop(context)),
-                    const SizedBox(height: 16),
+                    Align(
+                  alignment: Alignment.centerLeft,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.chevron_left_rounded,
+                        color: Color(0xFFC4B8E8), size: 28),
+                  ),
+                ),
+                        const SizedBox(height: 16),
 
                     // Title — same font/weight/size as Emoji Charades.
                     Text('ROCK',
-                        style: RPSTheme.font(62,
+                        style: RPSTheme.font(56,
                             fw: FontWeight.w700, color: RPSTheme.gold)),
                     Text('PAPER',
-                        style: RPSTheme.font(62,
+                        style: RPSTheme.font(56,
                             fw: FontWeight.w700, color: Colors.white)),
                     Text('SCISSORS',
-                        style: RPSTheme.font(62,
+                        style: RPSTheme.font(56,
                             fw: FontWeight.w700, color: RPSTheme.gold)),
 
                     // Floating hand emojis — smooth easeInOut, staggered
                     Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      child: Transform.translate(
+                        offset: const Offset(0, -40),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           for (int i = 0; i < 3; i++)
                             Padding(
@@ -177,25 +193,33 @@ class _RPSIntroScreenState extends State<RPSIntroScreen>
                               ),
                             ),
                         ],
-                      ),
-                    ),
-
-                    GestureDetector(
-                      onTap: _openTutorial,
-                      child: Text(
-                        'View tutorial',
-                        style: RPSTheme.font(15,
-                          fw: FontWeight.w500,
-                          color: const Color(0xFFC8AAFF),
-                        ).copyWith(
-                          decoration: TextDecoration.underline,
-                          decorationColor: const Color(0xFFC8AAFF),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 11),
 
-                    RPSPillButton(label: 'Play now', onPressed: _play),
+                    Transform.translate(
+                      offset: const Offset(0, -30),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        GestureDetector(
+                          onTap: _openTutorial,
+                          child: Text(
+                            'View tutorial',
+                            style: RPSTheme.font(18,
+                              fw: FontWeight.w500,
+                              color: const Color(0xFFC8AAFF),
+                            ).copyWith(
+                              decoration: TextDecoration.underline,
+                              decorationColor: const Color(0xFFC8AAFF),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: RPSPillButton(label: 'Play now', onPressed: _play),
+                        ),
+                      ]),
+                    ),
                   ],
                 ),
               ),

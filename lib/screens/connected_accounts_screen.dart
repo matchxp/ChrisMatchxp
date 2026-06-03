@@ -37,7 +37,7 @@ class _ConnectedAccountsScreenState extends State<ConnectedAccountsScreen> {
     final identities =
         Supabase.instance.client.auth.currentUser?.identities ?? [];
     final providers =
-        identities.map((i) => i.provider?.toLowerCase() ?? '').toSet();
+        identities.map((i) => i.provider.toLowerCase() ?? '').toSet();
     setState(() {
       _connected['google']   = providers.contains('google');
       _connected['apple']    = providers.contains('apple');
@@ -63,9 +63,9 @@ class _ConnectedAccountsScreenState extends State<ConnectedAccountsScreen> {
             style: const TextStyle(
                 color: Colors.white, fontWeight: FontWeight.w700),
           ),
-          content: Text(
+          content: const Text(
             'You can reconnect at any time.',
-            style: const TextStyle(color: Colors.white54),
+            style: TextStyle(color: Colors.white54),
           ),
           actions: [
             TextButton(
@@ -159,10 +159,10 @@ class _ConnectedAccountsScreenState extends State<ConnectedAccountsScreen> {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: _purple.withOpacity(0.08),
+                        color: _purple.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                            color: _purple.withOpacity(0.2)),
+                            color: _purple.withValues(alpha: 0.2)),
                       ),
                       child: const Row(
                         children: [
@@ -248,7 +248,7 @@ class _ConnectedAccountsScreenState extends State<ConnectedAccountsScreen> {
         color: _card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isConnected ? color.withOpacity(0.35) : Colors.white12,
+          color: isConnected ? color.withValues(alpha: 0.35) : Colors.white12,
           width: isConnected ? 1.5 : 1,
         ),
       ),
@@ -258,7 +258,7 @@ class _ConnectedAccountsScreenState extends State<ConnectedAccountsScreen> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(_providerIcon(provider), color: color, size: 22),
@@ -278,7 +278,7 @@ class _ConnectedAccountsScreenState extends State<ConnectedAccountsScreen> {
                   isConnected ? 'Connected' : 'Not connected',
                   style: TextStyle(
                       color: isConnected
-                          ? color.withOpacity(0.8)
+                          ? color.withValues(alpha: 0.8)
                           : Colors.white38,
                       fontSize: 12),
                 ),
@@ -293,13 +293,13 @@ class _ConnectedAccountsScreenState extends State<ConnectedAccountsScreen> {
                   horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: isConnected
-                    ? const Color(0xFFFF3B60).withOpacity(0.1)
-                    : _purple.withOpacity(0.12),
+                    ? const Color(0xFFFF3B60).withValues(alpha: 0.1)
+                    : _purple.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: isConnected
-                      ? const Color(0xFFFF3B60).withOpacity(0.4)
-                      : _purple.withOpacity(0.4),
+                      ? const Color(0xFFFF3B60).withValues(alpha: 0.4)
+                      : _purple.withValues(alpha: 0.4),
                 ),
               ),
               child: Text(

@@ -230,10 +230,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFF3B60).withOpacity(0.1),
+                        color: const Color(0xFFFF3B60).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(30),
                         border: Border.all(
-                            color: const Color(0xFFFF3B60).withOpacity(0.5)),
+                            color: const Color(0xFFFF3B60).withValues(alpha: 0.5)),
                       ),
                       child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -308,7 +308,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           decoration: BoxDecoration(
             color: _card,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _purple.withOpacity(0.12)),
+            border: Border.all(color: _purple.withValues(alpha: 0.12)),
           ),
           padding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -342,7 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               HapticFeedback.selectionClick();
               onChanged(v);
             },
-            activeColor: Colors.white,
+            activeThumbColor: Colors.white,
             activeTrackColor: _purple,
             inactiveThumbColor: Colors.white38,
             inactiveTrackColor: Colors.white12,
@@ -379,7 +379,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _divider() => Divider(
       height: 1,
       thickness: 1,
-      color: Colors.white.withOpacity(0.06));
+      color: Colors.white.withValues(alpha: 0.06));
 
   Widget _gap() => const SizedBox(height: 20);
 
@@ -396,14 +396,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         decoration: BoxDecoration(
           gradient: _isSaving
               ? LinearGradient(colors: [
-                  _purple.withOpacity(0.5),
-                  _purple2.withOpacity(0.5)
+                  _purple.withValues(alpha: 0.5),
+                  _purple2.withValues(alpha: 0.5)
                 ])
               : const LinearGradient(colors: [_purple, _purple2]),
           borderRadius: BorderRadius.circular(30),
           boxShadow: [
             BoxShadow(
-                color: _purple.withOpacity(0.35),
+                color: _purple.withValues(alpha: 0.35),
                 blurRadius: 16,
                 offset: const Offset(0, 6)),
           ],

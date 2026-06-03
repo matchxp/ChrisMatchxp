@@ -35,9 +35,9 @@ extension RPSMoveExt on RPSMove {
 
   String get beatsLabel {
     switch (this) {
-      case RPSMove.rock:     return 'ROCK BEATS SCISSORS!';
-      case RPSMove.paper:    return 'PAPER BEATS ROCK!';
-      case RPSMove.scissors: return 'SCISSORS BEATS PAPER!';
+      case RPSMove.rock:     return 'ROCK BEATS SCISSORS';
+      case RPSMove.paper:    return 'PAPER BEATS ROCK';
+      case RPSMove.scissors: return 'SCISSORS BEATS PAPER';
     }
   }
 }

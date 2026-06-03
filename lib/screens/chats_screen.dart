@@ -14,6 +14,8 @@ import '../games/rock_paper_scissors/screens/rps_pick_screen.dart';
 import '../games/game_hub_screen.dart';
 import '../widgets/matchxp_background.dart';
 import 'chat_conversation_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'chat_tutorial_sheet.dart';
 
 const String _matchSvg = '''
 <svg viewBox="0 0 133 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -41,7 +43,7 @@ class ChatsScreen extends StatefulWidget {
   State<ChatsScreen> createState() => _ChatsScreenState();
 }
 
-class _ChatsScreenState extends State<ChatsScreen> {
+class _ChatsScreenState extends State<ChatsScreen> with TickerProviderStateMixin {
   final MatchingService _matchingService = MatchingService();
   final WordSearchService _wordSearchService = WordSearchService();
   final String _currentUserId =
@@ -62,20 +64,33 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // The _isFetching guard prevents concurrent fetches from stacking.
   Timer? _autoRefreshTimer;
   bool _isFetching = false; // prevents stacking concurrent fetches
-
+  final Set<String> _seenChallengeIds = {};
+  late final AnimationController _glowCtrl;
+  late final Animation<double> _glowAnim;
   @override
   void initState() {
     super.initState();
     _loadMatches();
+    _loadSeenChallenges();
     ChatsScreen.refreshNotifier.addListener(_onExternalRefresh);
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted && !_isFetching) _loadMatches();
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+  showChatTutorialIfNeeded(context);
+});
+
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _glowAnim = CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut);
   }
 
   @override
   void dispose() {
     _autoRefreshTimer?.cancel();
+    _glowCtrl.dispose();
     ChatsScreen.refreshNotifier.removeListener(_onExternalRefresh);
     super.dispose();
   }
@@ -140,8 +155,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         String? activeSessionId;
         String? activeGameType;
         String? activeSessionStatus;
-        if (!chatUnlocked) {
-          try {
+        try {
             final sessions = await Supabase.instance.client
                 .from('game_sessions')
                 .select('id, challenger_id, status, game_type')
@@ -149,30 +163,25 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 .order('created_at', ascending: false);
             final sessionList =
                 List<Map<String, dynamic>>.from(sessions as List);
-            chatUnlocked = sessionList.any((s) => s['status'] == 'completed');
-            if (!chatUnlocked) {
-              final active = sessionList.firstWhere(
-                (s) => s['status'] != 'completed',
-                orElse: () => <String, dynamic>{},
-              );
-              if (active.isNotEmpty) {
-                final challengerId = active['challenger_id'] as String?;
-                activeSessionId = active['id'] as String?;
-                activeGameType = active['game_type'] as String?;
-                activeSessionStatus = active['status'] as String?;
-                if (gamePhase == MatchGamePhase.solving ||
-                    gamePhase == MatchGamePhase.waitingPartnerSolve) {
-                  circleColor = 'purple';
-                } else {
-                  // 'purple' = I sent the challenge (sender) — waiting for partner
-                  // 'green'  = I received the challenge (receiver)
-                  circleColor =
-                      challengerId == _currentUserId ? 'purple' : 'green';
-                }
+          chatUnlocked = sessionList.any((s) => s['status'] == 'completed');
+            final active = sessionList.firstWhere(
+              (s) => s['status'] != 'completed',
+              orElse: () => <String, dynamic>{},
+            );
+            if (active.isNotEmpty) {
+              final challengerId = active['challenger_id'] as String?;
+              activeSessionId = active['id'] as String?;
+              activeGameType = active['game_type'] as String?;
+              activeSessionStatus = active['status'] as String?;
+              if (gamePhase == MatchGamePhase.solving ||
+                  gamePhase == MatchGamePhase.waitingPartnerSolve) {
+                circleColor = 'purple';
+              } else {
+                circleColor =
+                    challengerId == _currentUserId ? 'purple' : 'green';
               }
-            }
-          } catch (_) {}
-        }
+            } 
+         } catch (_) {}
 
         return {
           ...m,
@@ -239,6 +248,16 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   void _openConversation(Map<String, dynamic> match) {
+    final lastMsg = match['last_message'] as Map<String, dynamic>?;
+    final msgType = lastMsg?['message_type'] as String? ?? '';
+    final msgId = lastMsg?['id'] as String?;
+    if (msgType == 'game_challenge' || msgType == 'game_result') _markChallengeAsSeen(msgId);
+    final activeSessionId = match['active_session_id'] as String?;
+    if (activeSessionId != null) {
+      final sessionStatus = match['active_session_status'] as String? ?? '';
+      _markChallengeAsSeen('session_${activeSessionId}_$sessionStatus');
+    }
+    
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -249,6 +268,20 @@ class _ChatsScreenState extends State<ChatsScreen> {
       ),
     ).then((_) => _loadMatches());
   }
+
+Future<void> _loadSeenChallenges() async {
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getStringList('seen_challenges_$_currentUserId') ?? [];
+    if (mounted) setState(() => _seenChallengeIds.addAll(seen));
+  }
+
+  Future<void> _markChallengeAsSeen(String? msgId) async {
+    if (msgId == null) return;
+    if (mounted) setState(() => _seenChallengeIds.add(msgId));
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setStringList('seen_challenges_$_currentUserId', _seenChallengeIds.toList());
+  }
+
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -429,9 +462,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
       child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-          child: const Text(
+        const Padding(
+          padding: EdgeInsets.fromLTRB(24, 8, 24, 12),
+          child: Text(
             'Match',
             style: TextStyle(
               fontSize: 20,
@@ -477,7 +510,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
         margin: const EdgeInsets.only(right: 16),
         child: Column(
           children: [
-            Container(
+            AnimatedBuilder(
+              animation: _glowAnim,
+              builder: (_, __) => Container(
               width: 68,
               height: 68,
               decoration: BoxDecoration(
@@ -486,14 +521,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 boxShadow: circleColor != 'grey'
                     ? [
                         BoxShadow(
-                          color: borderColor.withValues(alpha: 0.55),
-                          blurRadius: 8,
-                          spreadRadius: 2,
+                          color: borderColor.withValues(alpha: 0.5 + _glowAnim.value * 0.5),
+                          blurRadius: 12 + _glowAnim.value * 16,
+                          spreadRadius: 1 + _glowAnim.value * 1,
                         ),
                         BoxShadow(
-                          color: borderColor.withValues(alpha: 0.25),
-                          blurRadius: 20,
-                          spreadRadius: 0,
+                          color: borderColor.withValues(alpha: 0.2 + _glowAnim.value * 0.3),
+                          blurRadius: 28 + _glowAnim.value * 20,
+                          spreadRadius: -2,
                         ),
                       ]
                     : null,
@@ -512,6 +547,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       : _avatarInitial(name),
                 ),
               ),
+            ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -598,17 +634,38 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final name = _profileName(profile);
     final preview = _lastMessagePreview(lastMsg);
     final time = _lastMessageTime(lastMsg);
-    final unread = _isUnread(lastMsg);
-    final unreadCount = (match['unread_count'] as int?) ?? 0;
     final userId = profile['id'] as String?;
     final isOnline = userId != null && _onlineUserIds.contains(userId);
 
-    return GestureDetector(
+    final circleColor = match['circle_color'] as String? ?? 'grey';
+    final activeSessionStatus = match['active_session_status'] as String?;
+    final lastMsgType = lastMsg?['message_type'] as String? ?? 'text';
+    final lastMsgSender = lastMsg?['sender_id'] as String? ?? '';
+    final lastMsgId = lastMsg?['id'] as String?;
+    final sessionNeedsAction = 
+        activeSessionStatus == 'active' ||
+        (activeSessionStatus == 'submitted' && circleColor == 'green') ||
+        (activeSessionStatus == 'pending' && circleColor == 'green');
+    final isActiveChat = ChatConversationScreen.activeChatMatchId == (match['match_id'] as String?);
+    final needsAction = !isActiveChat && (
+        (circleColor == 'green' && !_seenChallengeIds.contains('session_${match['active_session_id']}_$activeSessionStatus')) ||
+        (lastMsgType == 'game_challenge' && 
+         lastMsgSender != _currentUserId &&
+         !_seenChallengeIds.contains(lastMsgId)) ||
+        (lastMsgType == 'game_result' &&
+         !_seenChallengeIds.contains(lastMsgId)) ||
+        (sessionNeedsAction && !_seenChallengeIds.contains('session_${match['active_session_id']}_$activeSessionStatus')));
+       debugPrint('[CHAT-ROW] $name | circleColor=$circleColor | status=$activeSessionStatus | sessionNeedsAction=$sessionNeedsAction | seenIds=$_seenChallengeIds | needsAction=$needsAction');
+    final unreadCount = match['unread_count'] as int? ?? 0;
+    final unread = _isUnread(lastMsg) || needsAction;
+    
+   return GestureDetector(
       onTap: () => _openConversation(match),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
         child: Row(
+            
           children: [
             // ── Avatar with online dot ───────────────────────────────────
             Stack(
@@ -722,7 +779,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
-                if (unread && unreadCount > 0) ...[
+                if (unread && (unreadCount > 0 || needsAction)) ...[
                   const SizedBox(height: 6),
                   Container(
                     constraints:
@@ -736,7 +793,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      unreadCount > 99 ? '99+' : '$unreadCount',
+                      unreadCount > 0 ? (unreadCount > 99 ? '99+' : '$unreadCount') : '1',
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
@@ -763,7 +820,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
           ],
         ),
       ),
-    );
+   );
   }
 
   // ── Circle tap routing ─────────────────────────────────────────────────────
@@ -1155,9 +1212,17 @@ class _ChatsScreenState extends State<ChatsScreen> {
     }
 
     void onReturn(_) {
+      // Mark current session as seen when returning from game
+      final sessionId = match['active_session_id'] as String?;
+      if (sessionId != null) {
+        final status = match['active_session_status'] as String? ?? '';
+        _markChallengeAsSeen('session_${sessionId}_$status');
+        // Also mark active and submitted so returning player isn't self-notified
+        _markChallengeAsSeen('session_${sessionId}_submitted');
+        _markChallengeAsSeen('session_${sessionId}_active');
+      }
       if (mounted) _loadMatches();
     }
-
     switch (gameType) {
       case 'word_search':
         Navigator.push(
@@ -1207,10 +1272,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     sessionId: sessionId,
                     popCount: 1,
                     chatAlreadyUnlocked: match['chat_unlocked'] == true,
-                    showIntroFirst: true, // show intro if user hasn't played yet
+                    showIntroFirst: true,
                     onChatUnlocked: () {
                       if (mounted) _loadMatches();
                     },
+                    matchId: matchId,
+                    partnerUserId: partnerUserId,
+                    partnerName: partnerName,
                   )
                 : RPSIntroScreen(
                     currentUserId: _currentUserId,
@@ -1222,6 +1290,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     onChatUnlocked: () {
                       if (mounted) _loadMatches();
                     },
+                    matchId: matchId,
+                    partnerUserId: partnerUserId,
+                    partnerName: partnerName,
                   ),
           ),
         ).then(onReturn);
@@ -1241,3 +1312,63 @@ class _ChatsScreenState extends State<ChatsScreen> {
     }
   }
 }
+
+class _PulsingBorder extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const _PulsingBorder({required this.active, required this.child});
+
+  @override
+  State<_PulsingBorder> createState() => _PulsingBorderState();
+}
+
+class _PulsingBorderState extends State<_PulsingBorder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _anim = Tween(begin: 0.3, end: 1.0).animate(
+        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) return widget.child;
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFFAB5CF5).withValues(alpha: _anim.value),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFAB5CF5).withValues(alpha: _anim.value * 0.3),
+              blurRadius: 8,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+
+

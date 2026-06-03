@@ -13,9 +13,27 @@ class RPSBackground extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Container(
-        decoration: RPSTheme.bgDecoration,
-        child: child,
+  Widget build(BuildContext context) => Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(decoration: RPSTheme.bgDecoration),
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                stops: [0.0, 0.12, 0.22, 0.30],
+                colors: [
+                  Color(0xCC0C0A12),
+                  Color(0x550C0A12),
+                  Color(0x110C0A12),
+                  Color(0x000C0A12),
+                ],
+              ),
+            ),
+          ),
+          child,
+        ],
       );
 }
 
@@ -192,7 +210,7 @@ class _RPSMoveCardState extends State<RPSMoveCard>
                               const Shadow(
                                   color: Colors.white70, blurRadius: 20),
                               Shadow(
-                                color: RPSTheme.purpleLight.withOpacity(0.7),
+                                color: RPSTheme.purpleLight.withValues(alpha: 0.7),
                                 blurRadius: 10,
                               ),
                             ]
@@ -228,7 +246,7 @@ class RPSGlowBlobs extends StatelessWidget {
   const RPSGlowBlobs({super.key});
 
   @override
-  Widget build(BuildContext context) => Stack(
+  Widget build(BuildContext context) => const Stack(
         children: [
           Positioned(
             top: -34,

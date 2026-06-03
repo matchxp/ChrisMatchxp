@@ -191,7 +191,7 @@ class WordSearchData {
   };
 
   // Remove duplicates at runtime (matches JS dedup behaviour)
-  static late final Map<String, List<String>> wordLists = {
+  static final Map<String, List<String>> wordLists = {
     for (final e in _lists.entries) e.key: e.value.toSet().toList(),
   };
 

@@ -235,7 +235,7 @@ void main() {
     // TC-WS-15  No puzzle submitted yet → setup
     // -------------------------------------------------------------------------
     test('TC-WS-15 · phase is setup when myGame is null', () {
-      final snap = MatchGamesSnapshot(myGame: null, partnerGame: null);
+      const snap = MatchGamesSnapshot(myGame: null, partnerGame: null);
       expect(snap.phase, equals(MatchGamePhase.setup));
     });
 

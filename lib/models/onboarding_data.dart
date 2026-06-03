@@ -95,8 +95,9 @@ class OnboardingData {
     if (birthday != null) completed++;
     if (heightCm != null) completed++;
     if (location != null) completed++;
-    if (drinkingHabit != null || smokingHabit != null || workoutHabit != null)
+    if (drinkingHabit != null || smokingHabit != null || workoutHabit != null) {
       completed++;
+    }
     if (interests.isNotEmpty) completed++;
     if (photos.length >= 2) completed++;
 

@@ -84,7 +84,7 @@ class _HeightScreenState extends State<HeightScreen> {
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                     ),
-                    Expanded(
+                    const Expanded(
                       child: OnboardingProgressDots(currentStep: 4),
                     ),
                     const SizedBox(width: 48),
@@ -169,7 +169,7 @@ class _HeightScreenState extends State<HeightScreen> {
                             borderRadius: BorderRadius.circular(2),
                             boxShadow: [
                               BoxShadow(
-                                color: _purple.withOpacity(0.5),
+                                color: _purple.withValues(alpha: 0.5),
                                 blurRadius: 10,
                                 spreadRadius: 2,
                               ),
@@ -264,7 +264,7 @@ class _HeightScreenState extends State<HeightScreen> {
                       gradient: _isSaving
                           ? null
                           : const LinearGradient(colors: [_purple, _purple2]),
-                      color: _isSaving ? Colors.white.withOpacity(0.08) : null,
+                      color: _isSaving ? Colors.white.withValues(alpha: 0.08) : null,
                       borderRadius: BorderRadius.circular(50),
                     ),
                     child: Center(
@@ -308,8 +308,8 @@ class _HeightScreenState extends State<HeightScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),

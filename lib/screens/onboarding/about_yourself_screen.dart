@@ -19,6 +19,7 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
   String? _drinkingHabit;
   String? _smokingHabit;
   String? _workoutHabit;
+  final TextEditingController _bioController = TextEditingController();
   final TextEditingController _petsController = TextEditingController();
   final ProfileService _profileService = ProfileService();
   final OnboardingData _onboardingData = OnboardingData();
@@ -41,6 +42,7 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
 
   @override
   void dispose() {
+    _bioController.dispose();
     _petsController.dispose();
     super.dispose();
   }
@@ -115,7 +117,7 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                     ),
-                    Expanded(
+                    const Expanded(
                       child: OnboardingProgressDots(currentStep: 5),
                     ),
                     const SizedBox(width: 48),
@@ -152,12 +154,80 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
                           style: GoogleFonts.outfit(
                             fontSize: 14,
                             fontWeight: FontWeight.w300,
-                            color: Colors.white.withOpacity(0.80),
+                            color: Colors.white.withValues(alpha: 0.80),
                           ),
                         ),
                       ),
 
                       const SizedBox(height: 36),
+
+                      // ── Bio ───────────────────────────────────────
+                      _sectionLabel('Own Your Bio'),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Keep it real, keep it you',
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w300,
+                          color: Colors.white.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          TextField(
+                            controller: _bioController,
+                            maxLength: 150,
+                            maxLines: 4,
+                            buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                            onChanged: (_) => setState(() {}),
+                            style: GoogleFonts.outfit(
+                              fontSize: 14,
+                              color: Colors.white,
+                            ),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.07),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: _purple.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: _purple.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: _purple,
+                                  width: 1.5,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 36),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(right: 12, bottom: 10),
+                            child: Text(
+                              '${_bioController.text.length}/150',
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                color: _bioController.text.length >= 140
+                                    ? Colors.redAccent
+                                    : Colors.white.withValues(alpha: 0.35),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 32),
+                     
 
                       // ── Drinking ──────────────────────────────────
                       _sectionLabel('How often do you drink?'),
@@ -223,9 +293,9 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
                       Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(50),
-                          color: Colors.white.withOpacity(0.05),
+                          color: Colors.white.withValues(alpha: 0.05),
                           border: Border.all(
-                              color: _purple.withOpacity(0.42), width: 1.0),
+                              color: _purple.withValues(alpha: 0.42), width: 1.0),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,7 +304,7 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
                             Padding(
                               padding: const EdgeInsets.only(top: 14),
                               child: Icon(Icons.pets_rounded,
-                                  color: Colors.white.withOpacity(0.4),
+                                  color: Colors.white.withValues(alpha: 0.4),
                                   size: 18),
                             ),
                             Expanded(
@@ -250,7 +320,7 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
                                   hintText:
                                       'e.g. I have a golden retriever and a cat...',
                                   hintStyle: GoogleFonts.outfit(
-                                      color: Colors.white.withOpacity(0.36),
+                                      color: Colors.white.withValues(alpha: 0.36),
                                       fontSize: 14,
                                       fontWeight: FontWeight.w300),
                                   border: InputBorder.none,
@@ -277,7 +347,7 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
                                 : const LinearGradient(
                                     colors: [_purple, _purple2]),
                             color: _isSaving
-                                ? Colors.white.withOpacity(0.08)
+                                ? Colors.white.withValues(alpha: 0.08)
                                 : null,
                             borderRadius: BorderRadius.circular(50),
                           ),
@@ -325,8 +395,8 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),
@@ -346,16 +416,16 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
         decoration: BoxDecoration(
-          color: isSelected ? _purple.withOpacity(0.18) : Colors.transparent,
+          color: isSelected ? _purple.withValues(alpha: 0.18) : Colors.transparent,
           border: Border.all(
-            color: isSelected ? _purple : _purple.withOpacity(0.42),
+            color: isSelected ? _purple : _purple.withValues(alpha: 0.42),
             width: isSelected ? 1.5 : 1.0,
           ),
           borderRadius: BorderRadius.circular(50),
         ),
         child: Text(label,
             style: GoogleFonts.outfit(
-              color: isSelected ? Colors.white : Colors.white.withOpacity(0.95),
+              color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.95),
               fontSize: 14,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
             )),

@@ -6,11 +6,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:audioplayers/audioplayers.dart';
 import '../services/matching_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../games/game_hub_screen.dart';
 import '../games/word_search/word_search_service.dart';
 import '../games/word_search/word_search_models.dart';
@@ -19,9 +21,11 @@ import '../games/emoji_charades/emoji_charades_game_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_intro_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_waiting_screen.dart';
 import '../games/rock_paper_scissors/screens/rps_reveal_screen.dart';
+import '../games/rock_paper_scissors/screens/rps_result_screen.dart';
 import '../games/rock_paper_scissors/data/rps_models.dart';
 import 'full_profile_screen.dart';
 import '../widgets/matchxp_background.dart';
+
 
 class ChatConversationScreen extends StatefulWidget {
   final String matchId;
@@ -95,6 +99,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
   // ── Scoreboard collapse ────────────────────────────────────────────────────
   bool _scoreboardExpanded = false;
+  final Set<String> _seenResultSessions = {};
+  String? _mostRecentCompletedSessionId;
+  SharedPreferences? _prefs;
 
   // ── Typing indicator ───────────────────────────────────────────────────────
   bool _isPartnerTyping = false;
@@ -132,7 +139,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     _inputFocusNode.addListener(() {
       if (_inputFocusNode.hasFocus) _scrollToBottom();
     });
-    _initAudioPlayer();
+   _initAudioPlayer();
+    _loadSeenSessions();
   }
 
   @override
@@ -316,6 +324,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           callback: (payload) {
             if (!mounted) return;
             final updated = Map<String, dynamic>.from(payload.newRecord);
+            // Realtime sends JSONB columns as raw strings — parse meta back to a Map
+            final rawMeta = updated['meta'];
+            if (rawMeta is String) {
+              try {
+                updated['meta'] = jsonDecode(rawMeta);
+              } catch (_) {}
+            }
             setState(() {
               final idx = _messages.indexWhere((m) => m['id'] == updated['id']);
               if (idx != -1) _messages[idx] = updated;
@@ -368,6 +383,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         _scoresLoaded = true;
       });
 
+      if (_scoreChannel != null) _gameService.unsubscribe(_scoreChannel!);
       _scoreChannel = _gameService.subscribeToScores(widget.matchId, () async {
         final updated = await _gameService.getScores(
           matchId: widget.matchId,
@@ -381,6 +397,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           });
       });
     } catch (_) {}
+  }
+
+  Future<void> _loadSeenSessions() async {
+    _prefs = await SharedPreferences.getInstance();
+    final seen = _prefs?.getStringList('seen_result_sessions_${_currentUserId}_${widget.matchId}') ?? [];
+    if (mounted) {
+      setState(() => _seenResultSessions.addAll(seen));
+    }
   }
 
   // ── Online status ──────────────────────────────────────────────────────────
@@ -622,6 +646,26 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     setState(() {
       _messages = messages;
       _loading = false;
+
+      // Compute most recently completed session for "View Results" bubble
+      _mostRecentCompletedSessionId = null;
+      for (final msg in _messages.reversed) {
+        if (msg['message_type'] != 'game_challenge') continue;
+        final meta = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+        final status = meta['status'] as String? ?? '';
+        final sid = meta['session_id'] as String?;
+        if (status == 'completed' && sid != null) {
+          final createdAt = DateTime.tryParse(msg['created_at'] as String? ?? '')?.toUtc();
+          if (createdAt != null &&
+              DateTime.now().toUtc().difference(createdAt) < const Duration(hours: 1)) {
+            _mostRecentCompletedSessionId = sid;
+            break;
+          }
+        }
+      }
+
+      debugPrint('[VIEW-RESULTS] mostRecentCompletedSessionId=$_mostRecentCompletedSessionId');
+
       // Unlock if there are real text messages — exclude old game-request tags
       // AND the new structured game_challenge / game_result system messages.
       final gameTypes = {'game_challenge', 'game_result'};
@@ -711,12 +755,37 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       }).toList();
 
       _messages = [...serverMsgs, ...pending];
+      // Deduplicate by id to prevent double-bubble from optimistic + realtime
+      final seen = <String>{};
+      _messages = _messages.where((m) {
+        final id = m['id']?.toString();
+        if (id == null) return true; // keep pending (no id yet)
+        return seen.add(id);
+      }).toList();
       _messages.sort((a, b) {
         final ta = a['created_at'] as String? ?? '';
         final tb = b['created_at'] as String? ?? '';
         return ta.compareTo(tb);
       });
       _loading = false;
+
+      // Compute most recently completed session for "View Results" bubble
+      _mostRecentCompletedSessionId = null;
+      for (final msg in _messages.reversed) {
+        if (msg['message_type'] != 'game_challenge') continue;
+        final meta = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+        final status = meta['status'] as String? ?? '';
+        final sid = meta['session_id'] as String?;
+        if (status == 'completed' && sid != null) {
+          final createdAt = DateTime.tryParse(msg['created_at'] as String? ?? '')?.toUtc();
+          if (createdAt != null &&
+              DateTime.now().toUtc().difference(createdAt) < const Duration(hours: 1)) {
+            _mostRecentCompletedSessionId = sid;
+            break;
+          }
+        }
+      }
+      debugPrint('[VIEW-RESULTS-STREAM] mostRecentCompletedSessionId=$_mostRecentCompletedSessionId');
 
       // Unlock chat if server list contains real (non-game) messages.
       if (!_chatUnlocked) {
@@ -946,6 +1015,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       'session_id': sessionId,
       'game_type': gameType,
       'accepted_by': _currentUserId,
+      'sender_id': _currentUserId,
     });
     debugPrint(
         '[AcceptChallenge] broadcast sent session=$sessionId game=$gameType');
@@ -1038,6 +1108,55 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     });
   }
 
+  Future<void> _navigateToRpsResult(String sessionId) async {
+    final partnerUserId = widget.otherProfile['id'] as String? ?? '';
+    final db = Supabase.instance.client;
+    try {
+      final allRows = await db
+          .from('rps_moves')
+          .select('player_id, move')
+          .eq('session_id', sessionId);
+      if (!mounted) return;
+      if (allRows.length < 2) return;
+      final myRow = allRows.firstWhere(
+          (r) => r['player_id'] == _currentUserId,
+          orElse: () => allRows.first);
+      final oppRow = allRows.firstWhere(
+          (r) => r['player_id'] != _currentUserId,
+          orElse: () => allRows.first);
+      final myMove = RPSMove.values.firstWhere(
+          (m) => m.name == (myRow['move'] as String),
+          orElse: () => RPSMove.rock);
+      final oppMove = RPSMove.values.firstWhere(
+          (m) => m.name == (oppRow['move'] as String),
+          orElse: () => RPSMove.rock);
+      final result = computeResult(myMove, oppMove);
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RPSResultScreen(
+            currentUserId: _currentUserId,
+            currentUserName: 'You',
+            opponentId: partnerUserId,
+            opponentName: _otherName,
+            myMove: myMove,
+            opponentMove: oppMove,
+            result: result,
+            onChatUnlocked: () {},
+            popCount: 1,
+            chatAlreadyUnlocked: _chatUnlocked,
+            matchId: widget.matchId,
+            partnerUserId: partnerUserId,
+            partnerName: _otherName,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[ViewResults] error: $e');
+    }
+  }
+
   Future<void> _navigateToGame(String gameType, String sessionId,
       {bool isRejoin = false}) async {
     _gameAcceptancePoller?.cancel();
@@ -1093,6 +1212,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                   popCount: 1,
                   chatAlreadyUnlocked: _chatUnlocked,
                   onChatUnlocked: onRpsUnlock,
+                  matchId: widget.matchId,
+                  partnerUserId: partnerUserId,
+                  partnerName: _otherName,
                 ),
               )).then(refresh);
         } else {
@@ -1128,6 +1250,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     popCount: 1,
                     chatAlreadyUnlocked: _chatUnlocked,
                     onChatUnlocked: onRpsUnlock,
+                    matchId: widget.matchId,
+                    partnerUserId: partnerUserId,
+                    partnerName: _otherName,
                   ),
                 )).then(refresh);
           } else {
@@ -1145,6 +1270,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     popCount: 1,
                     chatAlreadyUnlocked: _chatUnlocked,
                     onChatUnlocked: onRpsUnlock,
+                    matchId: widget.matchId,
+                    partnerUserId: partnerUserId,
+                    partnerName: _otherName,
                   ),
                 )).then(refresh);
           }
@@ -1163,11 +1291,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 sessionId: sessionId,
                 popCount: 1,
                 chatAlreadyUnlocked: _chatUnlocked,
-                onChatUnlocked: onRpsUnlock,
-              ),
-            )).then(refresh);
-      }
-      return;
+             onChatUnlocked: onRpsUnlock,
+                matchId: widget.matchId,
+                partnerUserId: partnerUserId,
+                partnerName: _otherName,
+              ), // RPSIntroScreen
+            )).then(refresh); // MaterialPageRoute
+    }
+    return;
     }
 
     switch (gameType) {
@@ -1213,10 +1344,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 sessionId: sessionId,
                 popCount: 1,
                 chatAlreadyUnlocked: _chatUnlocked,
-                onChatUnlocked: onRpsUnlock,
-              ),
-            )).then(refresh);
-      default:
+        onChatUnlocked: onRpsUnlock,
+                matchId: widget.matchId,
+                partnerUserId: partnerUserId,
+                partnerName: _otherName,
+              ), // RPSIntroScreen
+            )).then(refresh); // MaterialPageRoute
+      default:     
         Navigator.push(
             context,
             MaterialPageRoute(
@@ -2190,6 +2324,23 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       );
     }
 
+  // Find the most recently completed session — only show "View Results" for that one
+    String? mostRecentCompletedSessionId;
+    for (final msg in _messages.reversed) {
+      if (msg['message_type'] != 'game_challenge') continue;
+      final meta = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
+      final status = meta['status'] as String? ?? '';
+      final sessionId = meta['session_id'] as String?;
+      if (status == 'completed' && sessionId != null) {
+        final createdAt = DateTime.tryParse(msg['created_at'] as String? ?? '')?.toUtc();
+        if (createdAt != null &&
+            DateTime.now().toUtc().difference(createdAt) < const Duration(hours: 1)) {
+          mostRecentCompletedSessionId = sessionId;
+          break;
+        }
+      }
+    }
+
     // Build a flat list of widgets: date separators + message bubbles
     final widgets = <Widget>[];
     String? lastDateLabel;
@@ -2483,9 +2634,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     // ── Structured game messages ────────────────────────────────────────────
     final msgType = msg['message_type'] as String? ?? 'text';
     if (msgType == 'game_result') return _buildGameResultBubble(msg, showTime);
-    if (msgType == 'game_challenge')
-      return _buildGameChallengeBubble(msg, isMe, showTime);
-
+    if (msgType == 'game_challenge') {
+      return _buildGameChallengeBubble(msg, isMe, showTime, _mostRecentCompletedSessionId);
+    }
     // ── Skip legacy game-request tag messages ───────────────────────────────
     if (content.startsWith(_gameRequestTag)) return const SizedBox.shrink();
 
@@ -2659,8 +2810,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   // ── Game challenge bubble (message_type = 'game_challenge') ──────────────
   static const _kInviteExpiry = Duration(hours: 24);
 
-  Widget _buildGameChallengeBubble(
-      Map<String, dynamic> msg, bool isMe, bool showTime) {
+ Widget _buildGameChallengeBubble(
+      Map<String, dynamic> msg, bool isMe, bool showTime, String? mostRecentCompletedSessionId) {
     final meta = (msg['meta'] as Map?)?.cast<String, dynamic>() ?? {};
     final gameType = meta['game_type'] as String? ?? 'word_search';
     final sessionId = meta['session_id'] as String?;
@@ -2706,23 +2857,44 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             liveStatus == 'submitted') &&
         sessionId != null &&
         !isExpired;
-    final isDone = liveStatus == 'completed' || isExpired;
 
-    // Once a game is finished or expired, hide it entirely — no clutter in chat.
-    if (isDone) return const SizedBox.shrink();
+   final isDone = liveStatus == 'completed';
+    // Only show "view results" for recently completed games (last 24 hours)
+    final isRecentlyCompleted = isDone &&
+        createdAt != null &&
+        DateTime.now().toUtc().difference(createdAt) < const Duration(hours: 24);
 
+    // Hide if expired or completed more than 24 hours ago
+    if (isExpired && !isDone) return const SizedBox.shrink();
+    if (isDone && sessionId != _mostRecentCompletedSessionId) return const SizedBox.shrink();
+    if (isDone && sessionId != null && _seenResultSessions.contains(sessionId)) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Column(
         crossAxisAlignment:
             isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [
+       children: [
+        Stack(
+            clipBehavior: Clip.none,
+            children: [
           GestureDetector(
             onTap: canAccept
                 ? () => _acceptChallenge(msg)
-                : canRejoin
-                    ? () => _navigateToGame(gameType, sessionId, isRejoin: true)
+                : (canRejoin || isDone) && sessionId != null
+                    ? () {
+                        if (isDone) {
+                          setState(() => _seenResultSessions.add(sessionId!));
+                          final updated = _seenResultSessions.toList();
+                          _prefs?.setStringList('seen_result_sessions_${_currentUserId}_${widget.matchId}', updated);
+                          // View Results — skip countdown, go straight to result screen
+                          if (gameType == 'rps') {
+                            _navigateToRpsResult(sessionId);
+                            return;
+                          }
+                        }
+                        _navigateToGame(gameType, sessionId, isRejoin: true);
+                      }
                     : null,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -2758,22 +2930,32 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                   ),
                 ],
               ),
-              child: Row(
+             child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(gameEmoji, style: const TextStyle(fontSize: 16)),
+                  Text(isDone ? '🏆' : gameEmoji, style: const TextStyle(fontSize: 16)),
                   const SizedBox(width: 8),
-                  Text(gameName,
-                      style: GoogleFonts.roboto(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        letterSpacing: 0.4,
-                      )),
+                  Text(
+                    isDone ? 'View Results' : gameName,
+                    style: GoogleFonts.roboto(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
+          if (canAccept || liveStatus == 'submitted' || liveStatus == 'active' || isDone)
+                const Positioned(
+                  top: -4,
+                  right: -4,
+                  child: _PulsingDot(),
+                ),
+            ], // Stack children
+          ), // Stack
           if (showTime) ...[
             const SizedBox(height: 3),
             Text(
@@ -3518,6 +3700,62 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     );
   }
 }
+
+// ── Pulsing purple notification dot ──────────────────────────────────────────
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot();
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    _scale = Tween(begin: 0.8, end: 1.2).animate(
+        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _scale,
+      builder: (_, __) => Transform.scale(
+        scale: _scale.value,
+        child: Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFFAB5CF5),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFAB5CF5).withValues(alpha: 0.6),
+                blurRadius: 6,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 
 // ── Typing indicator bubble ───────────────────────────────────────────────────
 class _TypingBubble extends StatefulWidget {

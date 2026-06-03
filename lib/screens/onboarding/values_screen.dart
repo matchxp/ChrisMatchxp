@@ -112,14 +112,14 @@ class _ValuesScreenState extends State<ValuesScreen> {
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                     ),
-                    Expanded(
+                    const Expanded(
                       child: OnboardingProgressDots(currentStep: 9),
                     ),
                     GestureDetector(
                       onTap: _skip,
                       child: Text('Skip',
                           style: GoogleFonts.outfit(
-                            color: Colors.white.withOpacity(0.90),
+                            color: Colors.white.withValues(alpha: 0.90),
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           )),
@@ -150,7 +150,7 @@ class _ValuesScreenState extends State<ValuesScreen> {
                       style: GoogleFonts.outfit(
                         fontSize: 14,
                         fontWeight: FontWeight.w300,
-                        color: Colors.white.withOpacity(0.80),
+                        color: Colors.white.withValues(alpha: 0.80),
                         height: 1.5,
                       ),
                     ),
@@ -198,7 +198,7 @@ class _ValuesScreenState extends State<ValuesScreen> {
                       gradient: _isSaving
                           ? null
                           : const LinearGradient(colors: [_purple, _purple2]),
-                      color: _isSaving ? Colors.white.withOpacity(0.08) : null,
+                      color: _isSaving ? Colors.white.withValues(alpha: 0.08) : null,
                       borderRadius: BorderRadius.circular(50),
                     ),
                     child: Center(
@@ -292,10 +292,10 @@ class _ValuesScreenState extends State<ValuesScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
           color: isSelected
-              ? _purple.withOpacity(0.18)
-              : Colors.white.withOpacity(0.05),
+              ? _purple.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.05),
           border: Border.all(
-            color: isSelected ? _purple : _purple.withOpacity(0.42),
+            color: isSelected ? _purple : _purple.withValues(alpha: 0.42),
             width: isSelected ? 1.5 : 1.0,
           ),
           borderRadius: BorderRadius.circular(50),
@@ -305,7 +305,7 @@ class _ValuesScreenState extends State<ValuesScreen> {
           children: [
             Icon(icon,
                 color:
-                    isSelected ? Colors.white : Colors.white.withOpacity(0.55),
+                    isSelected ? Colors.white : Colors.white.withValues(alpha: 0.55),
                 size: 18),
             const SizedBox(width: 8),
             Flexible(
@@ -314,7 +314,7 @@ class _ValuesScreenState extends State<ValuesScreen> {
                   style: GoogleFonts.outfit(
                     color: isSelected
                         ? Colors.white
-                        : Colors.white.withOpacity(0.95),
+                        : Colors.white.withValues(alpha: 0.95),
                     fontSize: 15,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   )),
@@ -342,8 +342,8 @@ class _ValuesScreenState extends State<ValuesScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),

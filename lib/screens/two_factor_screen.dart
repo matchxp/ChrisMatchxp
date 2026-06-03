@@ -139,7 +139,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
                         decoration: BoxDecoration(
                           color: _card,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: _purple.withOpacity(0.2)),
+                          border: Border.all(color: _purple.withValues(alpha: 0.2)),
                         ),
                         child: Column(
                           children: [
@@ -183,7 +183,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
                         color: _card,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                            color: const Color(0xFF00C853).withOpacity(0.35),
+                            color: const Color(0xFF00C853).withValues(alpha: 0.35),
                             width: 1.5),
                       ),
                       child: Column(
@@ -210,10 +210,10 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 24, vertical: 12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFF3B60).withOpacity(0.12),
+                                color: const Color(0xFFFF3B60).withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(30),
                                 border: Border.all(
-                                    color: const Color(0xFFFF3B60).withOpacity(0.4)),
+                                    color: const Color(0xFFFF3B60).withValues(alpha: 0.4)),
                               ),
                               child: const Text('Disable 2FA',
                                   style: TextStyle(
@@ -265,7 +265,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
       decoration: BoxDecoration(
         color: _card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: accentColor.withOpacity(0.3), width: 1.5),
+        border: Border.all(color: accentColor.withValues(alpha: 0.3), width: 1.5),
       ),
       child: Row(
         children: [
@@ -273,7 +273,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: accentColor.withOpacity(0.12),
+              color: accentColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
@@ -307,7 +307,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: accentColor.withOpacity(0.12),
+              color: accentColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -339,7 +339,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: selected ? _purple.withOpacity(0.12) : _card,
+          color: selected ? _purple.withValues(alpha: 0.12) : _card,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected ? _purple : Colors.white12,
@@ -352,7 +352,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: selected ? _purple.withOpacity(0.2) : Colors.white10,
+                color: selected ? _purple.withValues(alpha: 0.2) : Colors.white10,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon,
@@ -417,11 +417,11 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.white12),
+            borderSide: const BorderSide(color: Colors.white12),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.white12),
+            borderSide: const BorderSide(color: Colors.white12),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
@@ -442,13 +442,13 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: onTap == null
-              ? [_purple.withOpacity(0.4), _purple2.withOpacity(0.4)]
+              ? [_purple.withValues(alpha: 0.4), _purple2.withValues(alpha: 0.4)]
               : [_purple, _purple2],
         ),
         borderRadius: BorderRadius.circular(30),
         boxShadow: onTap != null
             ? [BoxShadow(
-                color: _purple.withOpacity(0.35),
+                color: _purple.withValues(alpha: 0.35),
                 blurRadius: 14,
                 offset: const Offset(0, 5))]
             : [],

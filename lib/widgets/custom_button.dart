@@ -71,8 +71,8 @@ class _CustomButtonState extends State<CustomButton>
             gradient: LinearGradient(
               colors: widget.onPressed == null
                   ? [
-                      const Color(0xFF6C3FE8).withOpacity(0.5),
-                      const Color(0xFF6C3FE8).withOpacity(0.5),
+                      const Color(0xFF6C3FE8).withValues(alpha: 0.5),
+                      const Color(0xFF6C3FE8).withValues(alpha: 0.5),
                     ]
                   : _isPressed
                       ? [
@@ -90,7 +90,7 @@ class _CustomButtonState extends State<CustomButton>
             boxShadow: widget.onPressed != null
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF6C3FE8).withOpacity(0.3),
+                      color: const Color(0xFF6C3FE8).withValues(alpha: 0.3),
                       blurRadius: 15,
                       offset: const Offset(0, 5),
                     ),

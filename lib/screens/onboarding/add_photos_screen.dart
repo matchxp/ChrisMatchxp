@@ -119,7 +119,7 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                     ),
-                    Expanded(
+                    const Expanded(
                       child: OnboardingProgressDots(currentStep: 10),
                     ),
                     const SizedBox(width: 48),
@@ -149,7 +149,7 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                     style: GoogleFonts.outfit(
                       fontSize: 14,
                       fontWeight: FontWeight.w300,
-                      color: Colors.white.withOpacity(0.80),
+                      color: Colors.white.withValues(alpha: 0.80),
                     ),
                   ),
                 ),
@@ -208,7 +208,7 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                                 ? "Looking good! Add ${5 - _photoCount} more for best results."
                                 : "Amazing! Your profile will stand out 🔥",
                         style: GoogleFonts.outfit(
-                          color: Colors.white.withOpacity(0.60),
+                          color: Colors.white.withValues(alpha: 0.60),
                           fontSize: 12,
                           height: 1.5,
                         ),
@@ -233,7 +233,7 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                           ? const LinearGradient(colors: [_purple, _purple2])
                           : null,
                       color: (_photoCount < 2 || _isSaving)
-                          ? Colors.white.withOpacity(0.08)
+                          ? Colors.white.withValues(alpha: 0.08)
                           : null,
                       borderRadius: BorderRadius.circular(50),
                     ),
@@ -273,12 +273,12 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
           onTap: _pickImages,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.06),
+              color: Colors.white.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: hasPhoto
-                    ? _purple.withOpacity(0.6)
-                    : _purple.withOpacity(0.30),
+                    ? _purple.withValues(alpha: 0.6)
+                    : _purple.withValues(alpha: 0.30),
                 width: hasPhoto ? 1.5 : 1.0,
               ),
               image: hasPhoto
@@ -292,7 +292,7 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                 ? null
                 : Center(
                     child: Icon(Icons.add_photo_alternate_rounded,
-                        color: _purple.withOpacity(0.5), size: 32),
+                        color: _purple.withValues(alpha: 0.5), size: 32),
                   ),
           ),
         ),
@@ -327,7 +327,7 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
+                  color: Colors.black.withValues(alpha: 0.7),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.close, color: Colors.white, size: 13),
@@ -355,8 +355,8 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),

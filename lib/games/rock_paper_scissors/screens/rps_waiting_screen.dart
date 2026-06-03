@@ -22,6 +22,9 @@ class RPSWaitingScreen extends StatefulWidget {
     required this.onChatUnlocked,
     this.popCount = 1,
     this.chatAlreadyUnlocked = false,
+    required this.matchId,
+    required this.partnerUserId,
+    required this.partnerName,
   });
 
   final String currentUserId;
@@ -33,6 +36,9 @@ class RPSWaitingScreen extends StatefulWidget {
   final VoidCallback onChatUnlocked;
   final int popCount;
   final bool chatAlreadyUnlocked;
+  final String matchId;
+  final String partnerUserId;
+  final String partnerName;
 
   @override
   State<RPSWaitingScreen> createState() => _RPSWaitingScreenState();
@@ -130,6 +136,9 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
         onChatUnlocked:       widget.onChatUnlocked,
         popCount:             widget.popCount,
         chatAlreadyUnlocked:  widget.chatAlreadyUnlocked,
+        matchId:              widget.matchId,
+        partnerUserId:        widget.partnerUserId,
+        partnerName:          widget.partnerName,
       ),
     ));
   }
@@ -139,12 +148,12 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
     final myMove = widget.myMove;
 
     return Scaffold(
-      backgroundColor: RPSTheme.bg,
+      backgroundColor: Colors.transparent,
       body: RPSBackground(
         child: SafeArea(
           child: Stack(
             children: [
-              const RPSGlowBlobs(),
+             // RPSGlowBlobs removed
               Padding(
                 padding: const EdgeInsets.fromLTRB(22, 24, 22, 32),
                 child: Column(
@@ -166,8 +175,8 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                         style: RPSTheme.font(38, fw: FontWeight.w700)
                             .copyWith(shadows: [
                           Shadow(
-                            color: Colors.white.withOpacity(
-                                0.55 + _glowCtrl.value * 0.45),
+                            color: Colors.white.withValues(
+                                alpha: 0.55 + _glowCtrl.value * 0.45),
                             blurRadius: 8 + _glowCtrl.value * 10,
                           ),
                         ]),
@@ -175,7 +184,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                     ),
 
                     // Ripple + floating emoji
-                    const SizedBox(height: 36),
+                    const SizedBox(height: 54),
                     SizedBox(
                       width: 160,
                       height: 160,
@@ -192,7 +201,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color:
-                                      RPSTheme.purple.withOpacity(0.12),
+                                      RPSTheme.purple.withValues(alpha: 0.12),
                                 ),
                               ),
                             ),
@@ -210,10 +219,10 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: RPSTheme.purple.withOpacity(0.5),
+                                    color: RPSTheme.purple.withValues(alpha: 0.5),
                                     width: 2,
                                   ),
-                                  color: RPSTheme.purple.withOpacity(0.08),
+                                  color: RPSTheme.purple.withValues(alpha: 0.08),
                                 ),
                                 child: Center(
                                   child: RepaintBoundary(
@@ -233,7 +242,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
 
                     const SizedBox(height: 32),
                     Text(
-                      myMove != null ? 'You played ${myMove.label}' : '',
+                      'You played ${myMove.label}',
                       style: RPSTheme.font(20,
                           fw: FontWeight.w600, color: RPSTheme.purpleLight),
                     ),
@@ -247,9 +256,9 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
 
                     // Status avatars right below the "Waiting for…" line,
                     // with a dotted line connecting the two circles.
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 75),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      padding: const EdgeInsets.symmetric(horizontal: 44),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -266,8 +275,8 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                               padding: const EdgeInsets.only(top: 31),
                               child: _DottedLine(
                                 color: _opponentReady
-                                    ? _kGreen.withOpacity(0.6)
-                                    : RPSTheme.purple.withOpacity(0.5),
+                                    ? const Color.fromARGB(255, 176, 71, 237).withValues(alpha: 0.6)
+                                    : RPSTheme.purple.withValues(alpha: 0.5),
                               ),
                             ),
                           ),
@@ -299,7 +308,7 @@ String _initialOf(String name) {
   return trimmed.characters.first.toUpperCase();
 }
 
-const _kGreen = Color(0xFF39FF14);
+const _kGreen = Color.fromARGB(255, 153, 62, 233);
 
 /// Emoji-Charades–style status avatar. Big circle with an initial,
 /// green ring + glow when done, pulsing dots while waiting.
@@ -332,11 +341,11 @@ class _RPSStatusAvatar extends StatelessWidget {
                 : null,
             color: isMe ? null : RPSTheme.bgCard,
             border: Border.all(
-              color: done ? _kGreen : RPSTheme.purple.withOpacity(0.3),
+              color: done ? _kGreen : RPSTheme.purple.withValues(alpha: 0.3),
               width: 3,
             ),
             boxShadow: done
-                ? [BoxShadow(color: _kGreen.withOpacity(0.5), blurRadius: 16)]
+                ? [BoxShadow(color: _kGreen.withValues(alpha: 0.5), blurRadius: 16)]
                 : null,
           ),
           child: Center(
@@ -348,7 +357,7 @@ class _RPSStatusAvatar extends StatelessWidget {
         const SizedBox(height: 8),
         done
             ? Text('✓',
-                style: RPSTheme.font(18, fw: FontWeight.w700, color: _kGreen))
+                style: RPSTheme.font(18, fw: FontWeight.w700, color: const Color.fromARGB(255, 60, 230, 69)))
             : const _PulseDots(),
         const SizedBox(height: 6),
         Text(isMe ? 'You' : name,
@@ -434,7 +443,7 @@ class _PulseDotState extends State<_PulseDot>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: const Color(0xFFAB5CF5)
-                .withOpacity(0.2 + 0.8 * _c.value),
+                .withValues(alpha: 0.2 + 0.8 * _c.value),
           ),
         ),
       );

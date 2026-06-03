@@ -84,7 +84,7 @@ class _InterestsScreenState extends State<InterestsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text('Error: ${e.toString()}'),
-              backgroundColor: Color.fromARGB(236, 187, 86, 214)),
+              backgroundColor: const Color.fromARGB(236, 187, 86, 214)),
         );
       }
     } finally {
@@ -116,14 +116,14 @@ class _InterestsScreenState extends State<InterestsScreen> {
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                     ),
-                    Expanded(
+                    const Expanded(
                       child: OnboardingProgressDots(currentStep: 8),
                     ),
                     GestureDetector(
                       onTap: _skip,
                       child: Text('Skip',
                           style: GoogleFonts.outfit(
-                            color: Colors.white.withOpacity(0.90),
+                            color: Colors.white.withValues(alpha: 0.90),
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           )),
@@ -152,7 +152,7 @@ class _InterestsScreenState extends State<InterestsScreen> {
                         style: GoogleFonts.outfit(
                           fontSize: 14,
                           fontWeight: FontWeight.w300,
-                          color: Colors.white.withOpacity(0.80),
+                          color: Colors.white.withValues(alpha: 0.80),
                         )),
                   ],
                 ),
@@ -201,7 +201,7 @@ class _InterestsScreenState extends State<InterestsScreen> {
                       gradient: _isSaving
                           ? null
                           : const LinearGradient(colors: [_purple, _purple2]),
-                      color: _isSaving ? Colors.white.withOpacity(0.08) : null,
+                      color: _isSaving ? Colors.white.withValues(alpha: 0.08) : null,
                       borderRadius: BorderRadius.circular(50),
                     ),
                     child: Center(
@@ -244,10 +244,10 @@ class _InterestsScreenState extends State<InterestsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(
           color: isSelected
-              ? _purple.withOpacity(0.18)
-              : Colors.white.withOpacity(0.05),
+              ? _purple.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.05),
           border: Border.all(
-            color: isSelected ? _purple : _purple.withOpacity(0.42),
+            color: isSelected ? _purple : _purple.withValues(alpha: 0.42),
             width: isSelected ? 1.5 : 1.0,
           ),
           borderRadius: BorderRadius.circular(50),
@@ -257,14 +257,14 @@ class _InterestsScreenState extends State<InterestsScreen> {
           children: [
             Icon(icon,
                 color:
-                    isSelected ? Colors.white : Colors.white.withOpacity(0.55),
+                    isSelected ? Colors.white : Colors.white.withValues(alpha: 0.55),
                 size: 18),
             const SizedBox(width: 8),
             Text(label,
                 style: GoogleFonts.outfit(
                   color: isSelected
                       ? Colors.white
-                      : Colors.white.withOpacity(0.95),
+                      : Colors.white.withValues(alpha: 0.95),
                   fontSize: 16,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                 )),
@@ -291,8 +291,8 @@ class _InterestsScreenState extends State<InterestsScreen> {
             color: isActive
                 ? _purple
                 : isPast
-                    ? _purple.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.15),
+                    ? _purple.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.15),
           ),
         );
       }),

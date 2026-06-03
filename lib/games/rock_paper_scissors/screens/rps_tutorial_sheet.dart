@@ -45,7 +45,7 @@ class RPSTutorialSheet extends StatelessWidget {
           // Title
           Text(
             'HOW TO PLAY',
-            style: RPSTheme.font(11,
+            style: RPSTheme.font(18,
                 fw: FontWeight.w700,
                 color: RPSTheme.purpleLight,
                 letterSpacing: 2),
