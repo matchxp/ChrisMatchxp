@@ -398,6 +398,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const ProfileDetailsScreen())),
       ));
+    }
 
     if ((p['gender'] as String?)?.trim().isEmpty != false) {
       steps.add(_CompletionStep(
