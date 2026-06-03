@@ -369,46 +369,35 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
                                   const SizedBox(height: 24),
 
                                   // Continue button
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton(
-                                      onPressed: () {
-                                        HapticFeedback.mediumImpact();
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Payment integration coming soon!',
-                                              style: GoogleFonts.outfit(),
-                                            ),
-                                            backgroundColor: const Color(0xFF6C3FE8),
+                                  GestureDetector(
+                                    onTap: () {
+                                      HapticFeedback.mediumImpact();
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Payment integration coming soon!',
+                                            style: GoogleFonts.outfit(),
                                           ),
-                                        );
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 18),
-                                        backgroundColor: Colors.transparent,
-                                        shadowColor: Colors.transparent,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(16),
+                                          backgroundColor: const Color(0xFF6C3FE8),
                                         ),
+                                      );
+                                    },
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(vertical: 16),
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                                        ),
+                                        borderRadius: BorderRadius.circular(50),
                                       ),
-                                      child: Ink(
-                                        decoration: BoxDecoration(
-                                          gradient: const LinearGradient(
-                                            colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
-                                          ),
-                                          borderRadius: BorderRadius.circular(16),
-                                        ),
-                                        child: Container(
-                                          alignment: Alignment.center,
-                                          child: Text(
-                                            'CONTINUE',
-                                            style: GoogleFonts.outfit(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w900,
-                                              letterSpacing: 1.2,
-                                              color: Colors.white,
-                                            ),
+                                      child: Center(
+                                        child: Text(
+                                          'Continue',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
                                           ),
                                         ),
                                       ),
