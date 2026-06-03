@@ -53,10 +53,16 @@ class _LocationScreenState extends State<LocationScreen> {
           longitude: _onboardingData.longitude,
         );
         if (!result['success']) throw Exception(result['error']);
-        await Supabase.instance.client.from('profiles').update({
+        final completionPayload = <String, dynamic>{
           'profile_completed': true,
           'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', userId);
+        };
+        final bio = _onboardingData.bio;
+        if (bio != null && bio.isNotEmpty) completionPayload['bio'] = bio;
+        await Supabase.instance.client
+            .from('profiles')
+            .update(completionPayload)
+            .eq('id', userId);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
