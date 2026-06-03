@@ -28,7 +28,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   // ── State ──────────────────────────────────────────────────────────────────
   String _hereTo     = 'Make New Friends';
-  String _wantToMeet = 'Woman';
   double _ageMin     = 20;
   double _ageMax     = 35;
   String _language   = 'English';
@@ -51,11 +50,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     _Option('A Long-Term Relationship', Icons.favorite_outline_rounded),
     _Option('Not Sure Yet',             Icons.help_outline_rounded),
   ];
-  static const _meetOptions = [
-    _Option('Woman',    Icons.female_rounded),
-    _Option('Man',      Icons.male_rounded),
-    _Option('Non-binary', Icons.people_alt_outlined),
-  ];
+  static const _connectWithOptions = ['Men', 'Women', 'Everyone'];
   static const _langOptions = [
     _Option('English',    Icons.language_rounded),
     _Option('Spanish',    Icons.language_rounded),
@@ -172,16 +167,15 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     try {
       final p = await _supabase
           .from('profiles')
-          .select('here_to, want_to_meet, pref_age_range, '
+          .select('here_to, pref_age_range, '
               'pref_language, location, max_distance_km, '
               'looking_for, connect_with')
           .eq('id', uid)
           .maybeSingle();
       if (p == null || !mounted) return;
       setState(() {
-        _hereTo     = _safe(p['here_to'],       _hereToOptions, 'Make New Friends');
-        _wantToMeet = _safe(p['want_to_meet'],  _meetOptions,   'Woman');
-        _language   = _safe(p['pref_language'], _langOptions,   'English');
+        _hereTo   = _safe(p['here_to'],       _hereToOptions, 'Make New Friends');
+        _language = _safe(p['pref_language'], _langOptions,   'English');
         final raw = p['pref_age_range'] as String? ?? '20 - 35';
         final parts = raw.split(' - ');
         _ageMin = double.tryParse(parts.first.trim()) ?? 20;
@@ -210,7 +204,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     try {
       await _supabase.from('profiles').update({
         'here_to':         _hereTo,
-        'want_to_meet':    _wantToMeet,
         'pref_age_range':  '${_ageMin.round()} - ${_ageMax.round()}',
         'pref_language':   _language,
         'location':        _locationCtrl.text.trim(),
@@ -287,7 +280,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     _suppressSearch = false;
     setState(() {
       _hereTo      = 'Make New Friends';
-      _wantToMeet  = 'Woman';
       _ageMin      = 20;
       _ageMax      = 35;
       _language    = 'English';
@@ -513,44 +505,50 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     );
   }
 
-  // ── Want to Meet (3 pill cards) ────────────────────────────────────────────
+  // ── Want to Meet (multi-select: Men / Women / Everyone) ───────────────────
 
   Widget _buildMeetPills() {
     return Wrap(
       spacing: 10,
       runSpacing: 10,
-      children: _meetOptions.map((opt) {
-        final selected = _wantToMeet == opt.label;
+      children: _connectWithOptions.map((opt) {
+        final isSelected = _connectWith.contains(opt);
         return GestureDetector(
           onTap: () {
             HapticFeedback.selectionClick();
-            setState(() => _wantToMeet = opt.label);
+            setState(() {
+              if (isSelected) {
+                _connectWith.remove(opt);
+              } else {
+                _connectWith.add(opt);
+              }
+            });
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(50),
-              color: selected
+              color: isSelected
                   ? _purple.withOpacity(0.12)
                   : Colors.white.withOpacity(0.05),
               border: Border.all(
-                color: selected ? _purple : _purple.withOpacity(0.42),
-                width: selected ? 2.0 : 1.0,
+                color: isSelected ? _purple : _purple.withOpacity(0.42),
+                width: isSelected ? 2.0 : 1.0,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  opt.label,
+                  opt,
                   style: GoogleFonts.outfit(
                     color: Colors.white,
                     fontSize: 14,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
-                if (selected) ...[
+                if (isSelected) ...[
                   const SizedBox(width: 8),
                   Container(
                     width: 18,
