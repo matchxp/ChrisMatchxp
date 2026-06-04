@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../widgets/matchxp_background.dart';
+import '../../../models/onboarding_data.dart';
 import '../main_navigation.dart';
 import 'onboarding_progress_dots.dart';
 import 'location_screen.dart';
@@ -24,6 +25,16 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
   static const _purple2 = Color(0xFF9D50BB);
 
   int get _photoCount => _photos.where((p) => p != null).length;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-populate slot 0 with profile pic from Profile Details if set
+    final profileImage = OnboardingData().profileImage;
+    if (profileImage != null) {
+      _photos[0] = profileImage;
+    }
+  }
 
   // ── Pick multiple images at once ──────────────────────────────────────────
   Future<void> _pickImages() async {
@@ -46,10 +57,10 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
   }
 
   Future<void> _saveAndComplete() async {
-    if (_photoCount < 2) {
+    if (_photoCount < 3) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please add at least 2 photos'),
+          content: Text('Please add at least 3 photos'),
           backgroundColor: Colors.red,
         ),
       );
@@ -186,7 +197,7 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: _photoCount >= 2 ? _purple : Colors.white24,
+                          color: _photoCount >= 3 ? _purple : Colors.white24,
                           width: 2,
                         ),
                       ),
@@ -202,8 +213,8 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        _photoCount < 2
-                            ? "Hey! Let's add 2 to start. We recommend 5 (but 2 is enough). You can always add or remove more."
+                        _photoCount < 3
+                            ? "Hey! Let's add 3 to start. We recommend 5 (but 3 is enough). You can always add or remove more."
                             : _photoCount < 5
                                 ? "Looking good! Add ${5 - _photoCount} more for best results."
                                 : "Amazing! Your profile will stand out 🔥",
@@ -221,7 +232,7 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
 
                 // ── Continue button ───────────────────────────────
                 GestureDetector(
-                  onTap: (_photoCount >= 2 && !_isSaving)
+                  onTap: (_photoCount >= 3 && !_isSaving)
                       ? _saveAndComplete
                       : null,
                   child: AnimatedContainer(
@@ -229,10 +240,10 @@ class _AddPhotosScreenState extends State<AddPhotosScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
-                      gradient: (_photoCount >= 2 && !_isSaving)
+                      gradient: (_photoCount >= 3 && !_isSaving)
                           ? const LinearGradient(colors: [_purple, _purple2])
                           : null,
-                      color: (_photoCount < 2 || _isSaving)
+                      color: (_photoCount < 3 || _isSaving)
                           ? Colors.white.withValues(alpha: 0.08)
                           : null,
                       borderRadius: BorderRadius.circular(50),
