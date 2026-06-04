@@ -1323,7 +1323,7 @@ if (widget.skipIntro && _phase != _Phase.done) {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _statusAvatar('Y', true, true),
+            _statusAvatar('Y', true, true, photoUrl: _myAvatarUrl),
             const SizedBox(width: 12),
             Container(
                 width: 90,
@@ -1331,7 +1331,7 @@ if (widget.skipIntro && _phase != _Phase.done) {
                 margin: const EdgeInsets.only(top: 30),
                 color: _kPurple.withValues(alpha: 0.4)),
             const SizedBox(width: 12),
-            _statusAvatar(theirInit, ps, false),
+            _statusAvatar(theirInit, ps, false, photoUrl: _partnerAvatarUrl),
           ]),
       if (ps) ...[
         const SizedBox(height: 20),
@@ -1352,7 +1352,7 @@ if (widget.skipIntro && _phase != _Phase.done) {
     ]);
   }
 
-  Widget _statusAvatar(String init, bool done, bool isMe) => Column(
+  Widget _statusAvatar(String init, bool done, bool isMe, {String photoUrl = ''}) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
@@ -1360,11 +1360,11 @@ if (widget.skipIntro && _phase != _Phase.done) {
               height: 64,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: isMe
+                gradient: isMe && photoUrl.isEmpty
                     ? const LinearGradient(
                         colors: [Color(0xFF6930C3), Color(0xFF8B5CF6)])
                     : null,
-                color: isMe ? null : _kCard,
+                color: (isMe && photoUrl.isEmpty) ? null : _kCard,
                 border: Border.all(
                     color: done ? const Color.fromARGB(255, 192, 83, 239) : _kPurple.withValues(alpha: 0.3),
                     width: 3),
@@ -1375,8 +1375,12 @@ if (widget.skipIntro && _phase != _Phase.done) {
                       ]
                     : [],
               ),
-              child: Center(
-                  child: Text(init, style: _f(26, fw: FontWeight.w700)))),
+              child: ClipOval(
+                child: photoUrl.isNotEmpty
+                    ? Image.network(photoUrl, width: 64, height: 64, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Center(child: Text(init, style: _f(26, fw: FontWeight.w700))))
+                    : Center(child: Text(init, style: _f(26, fw: FontWeight.w700))),
+              )),
           const SizedBox(height: 8),
           done ? Text('✓', style: _f(18, c: _kGreen)) : _pulseDots(),
           const SizedBox(height: 6),
@@ -1731,14 +1735,14 @@ Widget _buildWaitSolve() {
   child: Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _statusAvatar('Y', true, true),
+      _statusAvatar('Y', true, true, photoUrl: _myAvatarUrl),
       Expanded(
         child: Padding(
           padding: const EdgeInsets.only(top: 31, left: 8, right: 8),
           child: _DottedLine(color: _kPurple.withValues(alpha: 0.5)),
         ),
       ),
-      _statusAvatar(theirInit, false, false),
+      _statusAvatar(theirInit, false, false, photoUrl: _partnerAvatarUrl),
     ],
   ),
 ),

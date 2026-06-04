@@ -4,6 +4,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/rps_models.dart';
 import '../data/rps_supabase_service.dart';
 import '../rps_theme.dart';
@@ -56,9 +57,39 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
   late final Animation<double> _ripple;
   late final Animation<double> _float;
 
+  String _myPhotoUrl       = '';
+  String _opponentPhotoUrl = '';
+
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) return '${match.group(1)}public/${match.group(2)}';
+    return url;
+  }
+
+  Future<void> _fetchAvatars() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('profiles')
+          .select('id, photos')
+          .inFilter('id', [widget.currentUserId, widget.opponentId]);
+      for (final row in (rows as List)) {
+        final id     = row['id'] as String;
+        final photos = row['photos'];
+        final url    = (photos is List && photos.isNotEmpty)
+            ? _toPublicUrl(photos[0] as String)
+            : '';
+        if (!mounted) return;
+        if (id == widget.currentUserId) setState(() => _myPhotoUrl = url);
+        if (id == widget.opponentId)    setState(() => _opponentPhotoUrl = url);
+      }
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
+    _fetchAvatars();
 
     _rippleCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2000))
@@ -265,6 +296,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                           _RPSStatusAvatar(
                             name: 'You',
                             initial: _initialOf(widget.currentUserName),
+                            photoUrl: _myPhotoUrl,
                             isMe: true,
                             done: true,
                           ),
@@ -283,6 +315,7 @@ class _RPSWaitingScreenState extends State<RPSWaitingScreen>
                           _RPSStatusAvatar(
                             name: widget.opponentName,
                             initial: _initialOf(widget.opponentName),
+                            photoUrl: _opponentPhotoUrl,
                             isMe: false,
                             done: _opponentReady,
                           ),
@@ -318,10 +351,12 @@ class _RPSStatusAvatar extends StatelessWidget {
     required this.initial,
     required this.isMe,
     required this.done,
+    this.photoUrl = '',
   });
 
   final String name;
   final String initial;
+  final String photoUrl;
   final bool isMe;
   final bool done;
 
@@ -348,10 +383,12 @@ class _RPSStatusAvatar extends StatelessWidget {
                 ? [BoxShadow(color: _kGreen.withValues(alpha: 0.5), blurRadius: 16)]
                 : null,
           ),
-          child: Center(
-            child: Text(initial,
-                style: RPSTheme.font(26,
-                    fw: FontWeight.w700, color: Colors.white)),
+          child: ClipOval(
+            child: photoUrl.isNotEmpty
+                ? Image.network(photoUrl, width: 64, height: 64, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Center(
+                        child: Text(initial, style: RPSTheme.font(26, fw: FontWeight.w700, color: Colors.white))))
+                : Center(child: Text(initial, style: RPSTheme.font(26, fw: FontWeight.w700, color: Colors.white))),
           ),
         ),
         const SizedBox(height: 8),
