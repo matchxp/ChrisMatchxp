@@ -144,6 +144,7 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   Timer? _skipTimer;
   bool _showSkip = false;
   int _skipSeconds = 15;
+  bool _solvedEventFired = false; // prevents wordSolved firing more than once
 
   // ── Confetti ───────────────────────────────────────────────
   late ConfettiController _confettiCtrl;
@@ -176,12 +177,19 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
       for (final row in (rows as List)) {
         final id = row['id'] as String;
         final photos = row['photos'];
-        final url = (photos is List && photos.isNotEmpty) ? photos[0] as String : '';
+        final url = (photos is List && photos.isNotEmpty) ? _toPublicUrl(photos[0] as String) : '';
         if (!mounted) return;
         if (id == widget.currentUserId) setState(() => _myAvatarUrl = url);
         if (id == widget.partnerUserId) setState(() => _partnerAvatarUrl = url);
       }
     } catch (_) {}
+  }
+
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) return '${match.group(1)}public/${match.group(2)}';
+    return url;
   }
 
   void _initAnimations() {
@@ -383,7 +391,12 @@ class WordSearchGameScreenState extends State<WordSearchGameScreen>
   void _resetBoard() => setState(() => _me = _me.copyWith(tapCells: []));
 
   void _doSolvedContinue() {
-    widget.onGameEvent?.call({'event': 'wordSolved'});
+    // Only fire wordSolved once — guard prevents duplicate score recording
+    // if the user taps Continue more than once or after already being scored.
+    if (!_solvedEventFired) {
+      _solvedEventFired = true;
+      widget.onGameEvent?.call({'event': 'wordSolved'});
+    }
     _goToWaitPartner();
   }
 

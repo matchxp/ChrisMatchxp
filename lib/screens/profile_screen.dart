@@ -100,10 +100,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return n.isNotEmpty ? n : 'Your Name';
   }
 
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) return '${match.group(1)}public/${match.group(2)}';
+    return url;
+  }
+
   String _photoUrl(Map<String, dynamic> p) {
     final ph = p['photos'];
-    if (ph is List && ph.isNotEmpty) return ph[0] as String;
-    return (p['profile_image_url'] as String?) ?? '';
+    if (ph is List && ph.isNotEmpty) return _toPublicUrl(ph[0] as String);
+    final url = (p['profile_image_url'] as String?) ?? '';
+    return url.isNotEmpty ? _toPublicUrl(url) : '';
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────

@@ -162,10 +162,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final url = p['profile_image_url'] as String?;
       if (url != null && url.isNotEmpty) rawUrls.add(url);
     }
-    _photos = rawUrls.map((u) => _PhotoItem.network(u)).toList();
-    if (rawUrls.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _resolveSignedUrls(rawUrls));
-    }
+    _photos = rawUrls.map((u) => _PhotoItem.network(_toPublicUrl(u))).toList();
 
     _locationCtrl.addListener(_onLocationChanged);
     _locationFocus.addListener(() {
@@ -189,25 +186,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  // ── Signed URL resolution ─────────────────────────────────────────────────
-  Future<void> _resolveSignedUrls(List<String> rawUrls) async {
-    final resolved = <_PhotoItem>[];
-    final storage = Supabase.instance.client.storage;
-    for (final url in rawUrls) {
-      final regex = RegExp(r'/storage/v1/object/(?:public|sign)/([^/?]+)/([^?]+)');
-      final match = regex.firstMatch(url);
-      if (match != null) {
-        final bucket = match.group(1)!;
-        final path   = Uri.decodeComponent(match.group(2)!);
-        try {
-          final signed = await storage.from(bucket).createSignedUrl(path, 3600);
-          resolved.add(_PhotoItem.network(signed));
-          continue;
-        } catch (_) {}
-      }
-      resolved.add(_PhotoItem.network(url));
+  // ── Convert any signed/expired URL back to a stable public URL ─────────────
+  String _toPublicUrl(String url) {
+    // Matches both /object/public/... and /object/sign/... URLs
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) {
+      final base = match.group(1)!;
+      final path = match.group(2)!;
+      return '${base}public/$path';
     }
-    if (mounted) setState(() => _photos = resolved);
+    return url;
   }
 
   // ── Nominatim ─────────────────────────────────────────────────────────────
@@ -291,7 +280,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           photoUrls.add(
               Supabase.instance.client.storage.from('user-photos').getPublicUrl(fn));
         } else {
-          photoUrls.add(item.url!);
+          photoUrls.add(_toPublicUrl(item.url!));
         }
       }
 

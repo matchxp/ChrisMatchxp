@@ -92,12 +92,24 @@ class _FullProfileScreenState extends State<FullProfileScreen>
     return v is String ? v : '';
   }
 
-  List<String> _l(String key) {
-    final v = widget.profile[key];
-    return v is List ? v.whereType<String>().toList() : [];
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) return '${match.group(1)}public/${match.group(2)}';
+    return url;
   }
 
-  List<String> get _images     => _l('images');
+  List<String> _l(String key) {
+    final v = widget.profile[key];
+    return v is List ? v.whereType<String>().map(_toPublicUrl).toList() : [];
+  }
+
+  // Falls back to 'photos' key if 'images' is not present (e.g. when called from chat)
+  List<String> get _images {
+    final imgs = _l('images');
+    if (imgs.isNotEmpty) return imgs;
+    return _l('photos');
+  }
   String get _name             => _s('name');
   int    get _age              => (widget.profile['age'] as num?)?.toInt() ?? 0;
   String get _location         => _s('location');

@@ -59,6 +59,13 @@ class _RPSResultScreenState extends State<RPSResultScreen>
   String _myPhotoUrl = '';
   String _opponentPhotoUrl = '';
 
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) return '${match.group(1)}public/${match.group(2)}';
+    return url;
+  }
+
   Future<void> _fetchAvatars() async {
     try {
       final rows = await Supabase.instance.client
@@ -69,7 +76,7 @@ class _RPSResultScreenState extends State<RPSResultScreen>
         final id = row['id'] as String;
         final photos = row['photos'];
         final url = (photos is List && photos.isNotEmpty)
-            ? photos[0] as String
+            ? _toPublicUrl(photos[0] as String)
             : '';
         if (!mounted) return;
         if (id == widget.currentUserId) setState(() => _myPhotoUrl = url);

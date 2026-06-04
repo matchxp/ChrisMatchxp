@@ -64,7 +64,17 @@ class _PreviewProfileScreenState extends State<PreviewProfileScreen> {
   /// Safely reads a List<String> field.
   List<String> _lst(Map<String, dynamic> p, String key) {
     final v = p[key];
-    return v is List ? v.whereType<String>().toList() : <String>[];
+    return v is List ? v.whereType<String>().map(_toPublicUrl).toList() : <String>[];
+  }
+
+  /// Converts any signed/expired Supabase URL to a stable public URL.
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) {
+      return '${match.group(1)}public/${match.group(2)}';
+    }
+    return url;
   }
 
   /// Converts a Supabase profiles row into the shape [FullProfileScreen] expects.

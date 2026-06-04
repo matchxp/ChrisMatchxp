@@ -1383,9 +1383,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   String get _otherName =>
       widget.otherProfile['first_name'] as String? ?? 'Match';
 
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) return '${match.group(1)}public/${match.group(2)}';
+    return url;
+  }
+
   String get _otherPhoto {
     final photos = widget.otherProfile['photos'];
-    if (photos is List && photos.isNotEmpty) return photos[0] as String;
+    if (photos is List && photos.isNotEmpty) return _toPublicUrl(photos[0] as String);
     return '';
   }
 
@@ -1938,20 +1945,28 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       ),
       title: Row(
         children: [
-          Stack(
-            children: [
-              _otherPhoto.isNotEmpty
-                  ? ClipOval(
-                      child: Image.network(
-                        _otherPhoto,
-                        width: 40,
-                        height: 40,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _avatarFallback(),
-                      ),
-                    )
-                  : _avatarFallback(),
-            ],
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => FullProfileScreen(profile: widget.otherProfile),
+              ),
+            ),
+            child: Stack(
+              children: [
+                _otherPhoto.isNotEmpty
+                    ? ClipOval(
+                        child: Image.network(
+                          _otherPhoto,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _avatarFallback(),
+                        ),
+                      )
+                    : _avatarFallback(),
+              ],
+            ),
           ),
           const SizedBox(width: 12),
           GestureDetector(

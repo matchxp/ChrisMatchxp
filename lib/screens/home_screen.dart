@@ -473,23 +473,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   /// Returns the primary display image URL for a profile.
+  /// Converts any signed/expired Supabase URL to a stable public URL.
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) {
+      return '${match.group(1)}public/${match.group(2)}';
+    }
+    return url;
+  }
+
   /// Falls back to profile_image_url if the photos array is empty.
   String _getFirstImage(Map<String, dynamic> profile) {
     final photos = profile['photos'];
     if (photos is List && photos.isNotEmpty) {
-      return photos[0] as String;
+      return _toPublicUrl(photos[0] as String);
     }
-    return (profile['profile_image_url'] as String?) ?? '';
+    final url = profile['profile_image_url'] as String?;
+    return url != null ? _toPublicUrl(url) : '';
   }
 
   /// Returns all image URLs for a profile (used in full profile view).
   List<String> _getAllImages(Map<String, dynamic> profile) {
     final photos = profile['photos'];
     if (photos is List && photos.isNotEmpty) {
-      return photos.cast<String>();
+      return photos.whereType<String>().map(_toPublicUrl).toList();
     }
     final url = profile['profile_image_url'] as String?;
-    return url != null ? [url] : [];
+    return url != null ? [_toPublicUrl(url)] : [];
   }
 
   /// Returns interests as a List<String>, safely cast from the DB array.

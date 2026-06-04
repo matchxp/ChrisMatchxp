@@ -190,18 +190,20 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
     _scoreRecorded = true;
     debugPrint('[WordSearch] OUTCOME: iSolved=$iSolved partnerSolved=$partnerSolved myId=${widget.currentUserId} partnerId=${widget.partnerUserId}');
 
-    // Only insert a score row if I actually solved the puzzle.
-    // Each player runs this independently on their own device.
-    // RPC is still called to mark the session completed — but we
-    // never rely on it for score insertion.
-    if (iSolved) {
-      _insertMyScoreDirectly();
-    }
     final resultLabel = (iSolved && partnerSolved) ? 'both_solved'
         : iSolved ? 'completed'
         : partnerSolved ? 'completed'
         : 'both_skipped';
-    _sendCompletion(winnerId: null, resultLabel: resultLabel);
+
+    // Await the RPC first so its score insert (if any) lands in the DB
+    // before _insertMyScoreDirectly runs its dedup check. This prevents
+    // the race condition where both fire concurrently and both insert.
+    _sendCompletionThenScore(resultLabel: resultLabel, iSolved: iSolved);
+  }
+
+  Future<void> _sendCompletionThenScore({required String resultLabel, required bool iSolved}) async {
+    await _sendCompletion(winnerId: null, resultLabel: resultLabel);
+    if (iSolved) await _insertMyScoreDirectly();
   }
 
   /// Each player calls this for themselves in the both-solved case.
@@ -233,17 +235,19 @@ class _WordSearchSupabaseWrapperState extends State<WordSearchSupabaseWrapper> {
     }
   }
 
-  void _sendCompletion({required String? winnerId, required String resultLabel}) {
+  Future<void> _sendCompletion({required String? winnerId, required String resultLabel}) async {
     if (_completionSent || widget.sessionId == null) return;
     _completionSent = true;
     debugPrint('[WordSearch] complete_game_session sessionId=${widget.sessionId} winnerId=$winnerId label=$resultLabel');
-    Supabase.instance.client.rpc('complete_game_session', params: {
-      'p_session_id':   widget.sessionId,
-      'p_winner_id':    winnerId,
-      'p_result_label': resultLabel,
-    }).catchError((e) {
+    try {
+      await Supabase.instance.client.rpc('complete_game_session', params: {
+        'p_session_id':   widget.sessionId,
+        'p_winner_id':    winnerId,
+        'p_result_label': resultLabel,
+      });
+    } catch (e) {
       debugPrint('[WordSearch] complete_game_session error: $e');
-    });
+    }
   }
 
   // ── Game event handler ─────────────────────────────────────

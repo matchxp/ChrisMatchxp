@@ -285,9 +285,16 @@ Future<void> _loadSeenChallenges() async {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+  String _toPublicUrl(String url) {
+    final regex = RegExp(r'(https?://[^/]+/storage/v1/object/)(?:public|sign)/([^?]+)');
+    final match = regex.firstMatch(url);
+    if (match != null) return '${match.group(1)}public/${match.group(2)}';
+    return url;
+  }
+
   String _profilePhoto(Map<String, dynamic> profile) {
     final photos = profile['photos'];
-    if (photos is List && photos.isNotEmpty) return photos[0] as String;
+    if (photos is List && photos.isNotEmpty) return _toPublicUrl(photos[0] as String);
     return '';
   }
 
