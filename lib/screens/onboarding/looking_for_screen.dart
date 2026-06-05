@@ -41,13 +41,22 @@ class _LookingForScreenState extends State<LookingForScreen> {
   }
 
   void _toggleOption(String option) {
-    setState(() {
-      if (_selected.contains(option)) {
-        _selected.remove(option);
-      } else if (_selected.length < 2) {
-        _selected.add(option);
-      }
-    });
+    if (_selected.contains(option)) {
+      setState(() => _selected.remove(option));
+    } else if (_selected.length < 2) {
+      setState(() => _selected.add(option));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'You can only pick 2',
+          style: GoogleFonts.outfit(color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF2A1060),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ));
+    }
   }
 
   Future<void> _saveAndContinue() async {
@@ -121,7 +130,7 @@ class _LookingForScreenState extends State<LookingForScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Select all that apply',
+                  'Select up to 2',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
                     fontSize: 14,

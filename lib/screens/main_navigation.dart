@@ -10,6 +10,7 @@ import 'matches_screen.dart';
 import 'chats_screen.dart';
 import 'profile_screen.dart';
 import 'chat_conversation_screen.dart';
+import 'premium_state.dart';
 
 const String _matchSvg = '''
 <svg viewBox="0 0 133 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -326,17 +327,22 @@ class _MainNavigationState extends State<MainNavigation> {
             index: _currentIndex,
             children: _screens,
           ),
-          // ── Fixed logo overlay — renders once, never moves ──────────────
-          Positioned(
-            top: MediaQuery.of(context).viewPadding.top + 12,
-            left: 24,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                SvgPicture.string(_matchSvg, height: 22),
-                const SizedBox(width: 6),
-                SvgPicture.string(_xpSvg, height: 22),
-              ],
+          // ── Fixed logo overlay — hidden while Premium upgrade modal is open ──
+          ValueListenableBuilder<bool>(
+            valueListenable: premiumUpgradeVisible,
+            builder: (_, isModalOpen, child) =>
+                isModalOpen ? const SizedBox.shrink() : child!,
+            child: Positioned(
+              top: MediaQuery.of(context).viewPadding.top + 12,
+              left: 24,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SvgPicture.string(_matchSvg, height: 22),
+                  const SizedBox(width: 6),
+                  SvgPicture.string(_xpSvg, height: 22),
+                ],
+              ),
             ),
           ),
         ],

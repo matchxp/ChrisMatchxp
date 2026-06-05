@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 import '../widgets/matchxp_background.dart';
+import 'premium_state.dart';
 
 const String _matchSvg = '''
 <svg viewBox="0 0 133 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -30,6 +31,16 @@ class MatchesScreenPremium extends StatefulWidget {
 
 class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
   bool _showUpgradeModal = false;
+
+  void _openUpgradeModal() {
+    setState(() => _showUpgradeModal = true);
+    premiumUpgradeVisible.value = true;
+  }
+
+  void _closeUpgradeModal() {
+    setState(() => _showUpgradeModal = false);
+    premiumUpgradeVisible.value = false;
+  }
 
   final List<Map<String, dynamic>> likesYou = [
     {
@@ -97,9 +108,7 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
                           GestureDetector(
                             onTap: () {
                               HapticFeedback.mediumImpact();
-                              setState(() {
-                                _showUpgradeModal = true;
-                              });
+                              _openUpgradeModal();
                             },
                             child: Container(
                               padding: const EdgeInsets.all(20),
@@ -227,11 +236,7 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
               // Upgrade Modal
               if (_showUpgradeModal)
                 GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _showUpgradeModal = false;
-                    });
-                  },
+                  onTap: _closeUpgradeModal,
                   child: Container(
                     color: Colors.black.withValues(alpha: 0.8),
                     child: BackdropFilter(
@@ -261,11 +266,7 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
                                   Align(
                                     alignment: Alignment.topRight,
                                     child: GestureDetector(
-                                      onTap: () {
-                                        setState(() {
-                                          _showUpgradeModal = false;
-                                        });
-                                      },
+                                      onTap: _closeUpgradeModal,
                                       child: Container(
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
@@ -465,9 +466,7 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
     return GestureDetector(
       onTap: () {
         HapticFeedback.mediumImpact();
-        setState(() {
-          _showUpgradeModal = true;
-        });
+        _openUpgradeModal();
       },
       child: Container(
         decoration: BoxDecoration(

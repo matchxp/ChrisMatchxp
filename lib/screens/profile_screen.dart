@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -19,6 +20,7 @@ import 'onboarding/about_yourself_screen.dart';
 import 'onboarding/interests_screen.dart' hide BirthdayScreen;
 import 'onboarding/add_photos_screen.dart';
 import 'preview_profile_screen.dart';
+import 'premium_state.dart';
 
 const String _matchSvg = '''
 <svg viewBox="0 0 133 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -47,6 +49,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final ProfileService _profileService = ProfileService();
   Map<String, dynamic>? _profile;
   bool _isLoading = true;
+  bool _showUpgradeModal = false;
+
+  void _openUpgradeModal() {
+    setState(() => _showUpgradeModal = true);
+    premiumUpgradeVisible.value = true;
+  }
+
+  void _closeUpgradeModal() {
+    setState(() => _showUpgradeModal = false);
+    premiumUpgradeVisible.value = false;
+  }
 
   // ── App colour tokens ─────────────────────────────────────────────────────
   static const _bg = Color(0xFF0C0B11);
@@ -123,33 +136,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: MatchXPBackground(
         child: SafeArea(
           top: false,
-          child: Column(
+          child: Stack(
             children: [
-              // ── Fixed header — never scrolls ─────────────────────────────
-              _buildHeader(),
-              // ── Scrollable content ───────────────────────────────────────
-              Expanded(
-                child: _isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: _purple))
-                    : RefreshIndicator(
-                        onRefresh: _loadProfile,
-                        color: _purple,
-                        child: CustomScrollView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          slivers: [
-                            SliverToBoxAdapter(child: _buildAvatarSection()),
-                            SliverToBoxAdapter(child: _buildActionButtons()),
-                            SliverToBoxAdapter(
-                                child: _buildCompletionSection()),
-                            SliverToBoxAdapter(child: _buildFeatureCards()),
-                            SliverToBoxAdapter(child: _buildXPPlusSection()),
-                            const SliverToBoxAdapter(
-                                child: SizedBox(height: 40)),
-                          ],
-                        ),
-                      ),
+              Column(
+                children: [
+                  // ── Fixed header — never scrolls ─────────────────────────────
+                  _buildHeader(),
+                  // ── Scrollable content ───────────────────────────────────────
+                  Expanded(
+                    child: _isLoading
+                        ? const Center(
+                            child: CircularProgressIndicator(color: _purple))
+                        : RefreshIndicator(
+                            onRefresh: _loadProfile,
+                            color: _purple,
+                            child: CustomScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              slivers: [
+                                SliverToBoxAdapter(child: _buildAvatarSection()),
+                                SliverToBoxAdapter(child: _buildActionButtons()),
+                                SliverToBoxAdapter(
+                                    child: _buildCompletionSection()),
+                                SliverToBoxAdapter(child: _buildFeatureCards()),
+                                SliverToBoxAdapter(child: _buildXPPlusSection()),
+                                const SliverToBoxAdapter(
+                                    child: SizedBox(height: 40)),
+                              ],
+                            ),
+                          ),
+                  ),
+                ],
               ),
+              if (_showUpgradeModal) _buildUpgradeModal(),
             ],
           ),
         ),
@@ -648,7 +666,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             iconBg: Colors.white.withValues(alpha: 0.12),
             title: 'Boost',
             subtitle: 'Get seen by 4x more people',
-            onTap: () => _snack('Boost coming soon!'),
+            onTap: _openUpgradeModal,
           ),
           const SizedBox(height: 12),
           _featureCard(
@@ -656,7 +674,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             iconBg: Colors.white.withValues(alpha: 0.12),
             title: 'XP',
             subtitle: '2x as likely to lead to a date',
-            onTap: () => _snack('XP feature coming soon!'),
+            onTap: _openUpgradeModal,
           ),
         ],
       ),
@@ -819,7 +837,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             GestureDetector(
               onTap: () {
                 HapticFeedback.mediumImpact();
-                _snack('XP+ upgrade coming soon!');
+                _openUpgradeModal();
               },
               child: Container(
                 width: double.infinity,
@@ -908,6 +926,272 @@ class _ProfileScreenState extends State<ProfileScreen> {
         border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Icon(icon, color: color, size: 20),
+    );
+  }
+
+  // ── Premium upgrade modal (same as Likes screen) ─────────────────────────
+
+  Widget _buildUpgradeModal() {
+    return GestureDetector(
+      onTap: _closeUpgradeModal,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.8),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Center(
+            child: GestureDetector(
+              onTap: () {}, // prevent dismissal when tapping modal
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.9,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A0A2E),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: const Color(0xFF6C3FE8).withValues(alpha: 0.5),
+                    width: 2,
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Close button
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: GestureDetector(
+                          onTap: _closeUpgradeModal,
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close, color: Colors.white, size: 20),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Premium icon
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF6C3FE8).withValues(alpha: 0.5),
+                              blurRadius: 30,
+                              spreadRadius: 10,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.workspace_premium, color: Colors.white, size: 60),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Title
+                      ShaderMask(
+                        shaderCallback: (bounds) => const LinearGradient(
+                          colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                        ).createShader(bounds),
+                        child: Text(
+                          'Upgrade to Premium',
+                          style: GoogleFonts.outfit(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Unlock all features and find your perfect match faster!',
+                        style: GoogleFonts.outfit(fontSize: 16, color: Colors.white70),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+
+                      // Features
+                      _buildUpgradeFeature(Icons.visibility, 'See who likes you'),
+                      _buildUpgradeFeature(Icons.favorite, 'Unlimited likes'),
+                      _buildUpgradeFeature(Icons.star, '5 Super Likes per day'),
+                      _buildUpgradeFeature(Icons.location_on, 'Change your location'),
+                      _buildUpgradeFeature(Icons.undo, 'Rewind unlimited'),
+                      _buildUpgradeFeature(Icons.verified_user, 'Priority support'),
+                      const SizedBox(height: 24),
+
+                      // Pricing
+                      _buildUpgradePricingOption(
+                        title: '6 Months', price: '\$59.99',
+                        perMonth: '\$10/month', badge: 'SAVE 50%', isPopular: true,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildUpgradePricingOption(
+                        title: '12 Months', price: '\$89.99',
+                        perMonth: '\$7.50/month', badge: 'BEST VALUE', isPopular: false,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildUpgradePricingOption(
+                        title: '1 Month', price: '\$19.99',
+                        perMonth: '', badge: '', isPopular: false,
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Continue button
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Payment integration coming soon!',
+                                  style: GoogleFonts.outfit()),
+                              backgroundColor: const Color(0xFF6C3FE8),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                            ),
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Continue',
+                              style: GoogleFonts.outfit(
+                                fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Cancel anytime. Terms apply.',
+                        style: GoogleFonts.outfit(fontSize: 12, color: Colors.white54),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpgradeFeature(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 16),
+          Text(
+            text,
+            style: GoogleFonts.outfit(
+              color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpgradePricingOption({
+    required String title,
+    required String price,
+    required String perMonth,
+    required String badge,
+    required bool isPopular,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isPopular
+              ? const Color(0xFF6C3FE8)
+              : Colors.white.withValues(alpha: 0.1),
+          width: isPopular ? 2 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.outfit(
+                        color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (badge.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          badge,
+                          style: GoogleFonts.outfit(
+                            color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (perMonth.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    perMonth,
+                    style: GoogleFonts.outfit(color: Colors.white54, fontSize: 14),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Text(
+            price,
+            style: GoogleFonts.outfit(
+              color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

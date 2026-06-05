@@ -458,9 +458,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 12),
                     _multiSelectPills(
                       _lookingForOptions, _lookingFor,
-                      (v) => setState(() => _lookingFor.contains(v)
-                          ? _lookingFor.remove(v)
-                          : _lookingFor.add(v)),
+                      (v) {
+                        if (_lookingFor.contains(v)) {
+                          setState(() => _lookingFor.remove(v));
+                        } else if (_lookingFor.length < 2) {
+                          setState(() => _lookingFor.add(v));
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(
+                              'You can only pick 2',
+                              style: GoogleFonts.outfit(color: Colors.white),
+                            ),
+                            backgroundColor: const Color(0xFF2A1060),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            duration: const Duration(seconds: 2),
+                          ));
+                        }
+                      },
                     ),
                     const SizedBox(height: 28),
 

@@ -1091,10 +1091,8 @@ class _FullProfileScreenState extends State<FullProfileScreen>
         _InfoChip(icon: Icons.wc_rounded, label: _gender),
       if (_zodiac.isNotEmpty)
         _InfoChip(icon: Icons.auto_awesome_rounded, label: _zodiac),
-      if (_lookingFor.isNotEmpty)
-        _InfoChip(
-            icon: Icons.favorite_border_rounded,
-            label: _lookingFor.first),
+      ..._lookingFor.take(2).map(
+            (lf) => _InfoChip(icon: Icons.favorite_border_rounded, label: lf)),
     ];
     if (chips.isEmpty) return const SizedBox.shrink();
     return Wrap(spacing: 7, runSpacing: 7, children: chips);
@@ -1284,6 +1282,7 @@ class _InfoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        constraints: const BoxConstraints(maxWidth: 200),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(50),
@@ -1294,12 +1293,16 @@ class _InfoChip extends StatelessWidget {
           children: [
             Icon(icon, color: kAccentColor, size: 14),
             const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.outfit(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ),
           ],
