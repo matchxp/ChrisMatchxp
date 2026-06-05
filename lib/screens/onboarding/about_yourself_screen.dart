@@ -163,74 +163,6 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
 
                       const SizedBox(height: 36),
 
-                      // ── Bio ───────────────────────────────────────
-                      _sectionLabel('Own Your Bio'),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Keep it real, keep it you',
-                        style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w300,
-                          color: Colors.white.withValues(alpha: 0.55),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          TextField(
-                            controller: _bioController,
-                            maxLength: 150,
-                            maxLines: 4,
-                            buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                            onChanged: (_) => setState(() {}),
-                            style: GoogleFonts.outfit(
-                              fontSize: 14,
-                              color: Colors.white,
-                            ),
-                            decoration: InputDecoration(
-                              filled: true,
-                              fillColor: Colors.white.withValues(alpha: 0.07),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide(
-                                  color: _purple.withValues(alpha: 0.3),
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide(
-                                  color: _purple.withValues(alpha: 0.3),
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide(
-                                  color: _purple,
-                                  width: 1.5,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 36),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(right: 12, bottom: 10),
-                            child: Text(
-                              '${_bioController.text.length}/150',
-                              style: GoogleFonts.outfit(
-                                fontSize: 12,
-                                color: _bioController.text.length >= 140
-                                    ? Colors.redAccent
-                                    : Colors.white.withValues(alpha: 0.35),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 32),
-                     
-
                       // ── Drinking ──────────────────────────────────
                       _sectionLabel('How often do you drink?'),
                       const SizedBox(height: 14),
@@ -333,6 +265,73 @@ class _AboutYourselfScreenState extends State<AboutYourselfScreen> {
                             ),
                           ],
                         ),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // ── Bio ───────────────────────────────────────
+                      _sectionLabel('Own Your Bio'),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Keep it real, keep it you',
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w300,
+                          color: Colors.white.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          TextField(
+                            controller: _bioController,
+                            maxLength: 150,
+                            maxLines: 4,
+                            buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                            onChanged: (_) => setState(() {}),
+                            style: GoogleFonts.outfit(
+                              fontSize: 14,
+                              color: Colors.white,
+                            ),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.07),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: _purple.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: _purple.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: _purple,
+                                  width: 1.5,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 36),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(right: 12, bottom: 10),
+                            child: Text(
+                              '${_bioController.text.length}/150',
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                color: _bioController.text.length >= 140
+                                    ? Colors.redAccent
+                                    : Colors.white.withValues(alpha: 0.35),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
 
                       const SizedBox(height: 40),

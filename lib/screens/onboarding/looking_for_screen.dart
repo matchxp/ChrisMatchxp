@@ -44,7 +44,7 @@ class _LookingForScreenState extends State<LookingForScreen> {
     setState(() {
       if (_selected.contains(option)) {
         _selected.remove(option);
-      } else {
+      } else if (_selected.length < 2) {
         _selected.add(option);
       }
     });
