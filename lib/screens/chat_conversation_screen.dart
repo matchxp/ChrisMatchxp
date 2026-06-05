@@ -966,13 +966,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
       if (!mounted) return;
       setState(() {
+        // Remove the optimistic placeholder (if stream hasn't already done so)
         _messages.removeWhere((m) =>
             m['id'] == null &&
             m['message_type'] == 'game_challenge' &&
             (m['meta'] as Map?)?['game_type'] == gameType);
-        _messages.add(realMsg);
-        _messages.sort((a, b) => (a['created_at'] as String? ?? '')
-            .compareTo(b['created_at'] as String? ?? ''));
+        // Only add the real message if it's not already in the list
+        // (the stream may have raced and added it before we got here)
+        final realId = realMsg['id']?.toString();
+        final alreadyPresent = realId != null &&
+            _messages.any((m) => m['id']?.toString() == realId);
+        if (!alreadyPresent) {
+          _messages.add(realMsg);
+          _messages.sort((a, b) => (a['created_at'] as String? ?? '')
+              .compareTo(b['created_at'] as String? ?? ''));
+        }
       });
 
       _matchingService.broadcastMessage(widget.matchId, realMsg);
@@ -2966,8 +2974,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           ),
           if (canAccept || liveStatus == 'submitted' || liveStatus == 'active' || isDone)
                 const Positioned(
-                  top: -4,
-                  right: -4,
+                  top: 0,
+                  right: 0,
                   child: _PulsingDot(),
                 ),
             ], // Stack children
@@ -3717,7 +3725,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   }
 }
 
-// ── Pulsing purple notification dot ──────────────────────────────────────────
+// ── Notification badge dot (red with inner highlight, pulsing) ───────────────
 class _PulsingDot extends StatefulWidget {
   const _PulsingDot();
   @override
@@ -3734,9 +3742,9 @@ class _PulsingDotState extends State<_PulsingDot>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
-    _scale = Tween(begin: 0.8, end: 1.2).animate(
+    _scale = Tween(begin: 0.9, end: 1.15).animate(
         CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
   }
 
@@ -3760,9 +3768,9 @@ class _PulsingDotState extends State<_PulsingDot>
             color: const Color(0xFFAB5CF5),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFAB5CF5).withValues(alpha: 0.6),
+                color: const Color(0xFFAB5CF5).withValues(alpha: 0.5),
                 blurRadius: 6,
-                spreadRadius: 2,
+                spreadRadius: 1,
               ),
             ],
           ),

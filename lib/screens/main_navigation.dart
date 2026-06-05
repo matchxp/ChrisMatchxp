@@ -157,8 +157,16 @@ class _MainNavigationState extends State<MainNavigation> {
     // Ignore own messages
     if (senderId == null || senderId == currentUserId) return;
 
-    // Suppress only if the user is currently viewing THIS exact chat
+    // Suppress if the user is currently viewing THIS exact chat
     if (matchId == ChatConversationScreen.activeChatMatchId) return;
+
+    // Suppress internal game-flow events that aren't user-facing notifications
+    final eventType = msg['event_type'] as String?;
+    if (eventType == 'game_accepted') return;
+
+    // Suppress game_result messages — these are system rows, not chat messages
+    final msgType = msg['message_type'] as String?;
+    if (msgType == 'game_result') return;
 
     final profile = matchEntry['profile'] as Map<String, dynamic>?;
     if (profile == null) return;
@@ -166,11 +174,21 @@ class _MainNavigationState extends State<MainNavigation> {
     // Notify ChatsScreen to refresh its list in real-time
     ChatsScreen.refreshNotifier.value++;
 
-    // Clean up system-tag messages before showing in the banner
+    // Build a friendly display message for game events
     String displayMessage = msg['content'] as String? ?? '';
-    if (displayMessage.startsWith('[GAME_REQUEST]')) {
-      displayMessage = '🎮 Sent a Word Search challenge!';
+    if (displayMessage.startsWith('[GAME_REQUEST]') || msgType == 'game_challenge') {
+      final gameType = msg['game_type'] as String? ?? '';
+      if (gameType == 'rock_paper_scissors') {
+        displayMessage = '🪨 Sent a Rock Paper Scissors challenge!';
+      } else if (gameType == 'emoji_charades') {
+        displayMessage = '🎭 Sent an Emoji Charades challenge!';
+      } else {
+        displayMessage = '🎮 Sent a Word Search challenge!';
+      }
     }
+
+    // Don't show a banner for empty messages
+    if (displayMessage.trim().isEmpty) return;
 
     _showNotificationBanner(
       matchId: matchId,

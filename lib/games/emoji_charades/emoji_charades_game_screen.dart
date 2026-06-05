@@ -1681,7 +1681,7 @@ Widget _buildWaitSolve() {
                     style: _f(16, fw: FontWeight.w700,
                         c: const Color(0xFFAB5CF5), ls: 0)),
                 const SizedBox(height: 12),
-                Text(_phrase,
+                Text(_myPhrase.isNotEmpty ? _myPhrase : _phrase,
                     textAlign: TextAlign.center,
                     style: _f(20, fw: FontWeight.w700)),
                 if (_myEmojis.isNotEmpty) ...[
