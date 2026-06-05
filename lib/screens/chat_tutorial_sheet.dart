@@ -283,7 +283,7 @@ class _ChatTutorialSheetState extends State<_ChatTutorialSheet> {
             Text(
               card.body,
               style: GoogleFonts.fredoka(
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.w400,
                 color: _tx.withValues(alpha: 0.85),
                 height: 1.5,

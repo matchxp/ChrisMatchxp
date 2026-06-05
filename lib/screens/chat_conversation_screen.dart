@@ -86,9 +86,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   Map<String, dynamic>? _replyingTo;
 
   // ── Reactions ──────────────────────────────────────────────────────────────
-  /// Map of message id → list of emoji strings reacted by current user
-  /// (stored in-memory; persisted via a `message_reactions` table if available)
+  /// My reactions: message id → list of emoji strings
   final Map<String, List<String>> _reactions = {};
+  /// Partner's reactions: message id → list of emoji strings
+  final Map<String, List<String>> _partnerReactions = {};
 
   static const _quickEmojis = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
 
@@ -491,18 +492,35 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   // ── Reaction loader (persisted) ────────────────────────────────────────────
   Future<void> _loadReactions() async {
     try {
+      // Load ALL reactions for this match (both users)
+      final messageIds = _messages
+          .map((m) => m['id']?.toString())
+          .where((id) => id != null)
+          .toList();
+      if (messageIds.isEmpty) return;
+
       final data = await Supabase.instance.client
           .from('message_reactions')
-          .select('message_id, emoji')
-          .eq('user_id', _currentUserId);
+          .select('message_id, emoji, user_id')
+          .inFilter('message_id', messageIds);
       if (!mounted) return;
-      final Map<String, List<String>> loaded = {};
+
+      final Map<String, List<String>> mine = {};
+      final Map<String, List<String>> theirs = {};
       for (final row in List<Map<String, dynamic>>.from(data as List)) {
-        final id = row['message_id'] as String;
+        final id    = row['message_id'] as String;
         final emoji = row['emoji'] as String;
-        loaded.putIfAbsent(id, () => []).add(emoji);
+        final uid   = row['user_id'] as String;
+        if (uid == _currentUserId) {
+          mine.putIfAbsent(id, () => []).add(emoji);
+        } else {
+          theirs.putIfAbsent(id, () => []).add(emoji);
+        }
       }
-      setState(() => _reactions.addAll(loaded));
+      setState(() {
+        _reactions.addAll(mine);
+        _partnerReactions.addAll(theirs);
+      });
     } catch (_) {}
   }
 
@@ -851,6 +869,27 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         if (msg['event_type'] == 'game_accepted') {
           debugPrint('[onMessage] game_accepted — refreshing card status');
           if (mounted) _restartMessageStream();
+          return;
+        }
+        // Handle partner reaction broadcasts instantly
+        if (msg['event_type'] == 'reaction') {
+          final senderId = msg['sender_id'] as String?;
+          if (senderId != null && senderId != _currentUserId && mounted) {
+            final msgId  = msg['message_id'] as String?;
+            final emoji  = msg['emoji'] as String?;
+            final action = msg['action'] as String?;
+            if (msgId != null && emoji != null) {
+              setState(() {
+                final list = List<String>.from(_partnerReactions[msgId] ?? []);
+                if (action == 'add' && !list.contains(emoji)) {
+                  list.add(emoji);
+                } else if (action == 'remove') {
+                  list.remove(emoji);
+                }
+                _partnerReactions[msgId] = list;
+              });
+            }
+          }
           return;
         }
         // Only refresh on messages from the partner — our own broadcasts
@@ -1770,29 +1809,46 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   // ── Reactions ──────────────────────────────────────────────────────────────
   void _toggleReaction(Map<String, dynamic> msg, String emoji) {
     final msgId = msg['id'] as String? ?? msg['created_at'] as String? ?? '';
+    bool added = false;
     setState(() {
       final list = List<String>.from(_reactions[msgId] ?? []);
       if (list.contains(emoji)) {
         list.remove(emoji);
+        added = false;
       } else {
         list.add(emoji);
+        added = true;
       }
       _reactions[msgId] = list;
     });
     HapticFeedback.lightImpact();
-
-    // Persist to Supabase if available (best-effort)
-    _persistReaction(msg['id'] as String?, emoji);
+    _persistReaction(msg['id'] as String?, emoji, added: added);
   }
 
-  Future<void> _persistReaction(String? msgId, String emoji) async {
+  Future<void> _persistReaction(String? msgId, String emoji, {required bool added}) async {
     if (msgId == null) return;
     try {
-      // Upsert — no error if table doesn't exist
-      await Supabase.instance.client.from('message_reactions').upsert({
+      if (added) {
+        await Supabase.instance.client.from('message_reactions').upsert({
+          'message_id': msgId,
+          'user_id': _currentUserId,
+          'emoji': emoji,
+        });
+      } else {
+        await Supabase.instance.client
+            .from('message_reactions')
+            .delete()
+            .eq('message_id', msgId)
+            .eq('user_id', _currentUserId)
+            .eq('emoji', emoji);
+      }
+      // Broadcast so partner sees the reaction instantly
+      _matchingService.broadcastMessage(widget.matchId, {
+        'event_type': 'reaction',
         'message_id': msgId,
-        'user_id': _currentUserId,
         'emoji': emoji,
+        'action': added ? 'add' : 'remove',
+        'sender_id': _currentUserId,
       });
     } catch (_) {}
   }
@@ -1957,7 +2013,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => FullProfileScreen(profile: widget.otherProfile),
+                builder: (_) => FullProfileScreen(profile: widget.otherProfile, isPreview: true),
               ),
             ),
             child: Stack(
@@ -1981,7 +2037,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => FullProfileScreen(profile: widget.otherProfile),
+                builder: (_) => FullProfileScreen(profile: widget.otherProfile, isPreview: true),
               ),
             ),
             child: Column(
@@ -2666,7 +2722,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     final isRead = msg['is_read'] == true;
     final msgKey = msg['id'] as String? ?? msg['created_at'] as String? ?? '';
-    final myReactions = List<String>.from(_reactions[msgKey] ?? []);
+    final myReactions      = List<String>.from(_reactions[msgKey] ?? []);
+    final partnerReactions = List<String>.from(_partnerReactions[msgKey] ?? []);
 
     // Reply context embedded in this message
     final replyContent = msg['reply_to_content'] as String?;
@@ -2769,31 +2826,46 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               ),
 
               // ── Reactions strip ────────────────────────────────────────────
-              if (myReactions.isNotEmpty)
+              if (myReactions.isNotEmpty || partnerReactions.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: myReactions
-                        .map((e) => GestureDetector(
-                              onTap: () => _toggleReaction(msg, e),
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 4),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF6C3FE8)
-                                      .withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                      color: const Color(0xFF6C3FE8)
-                                          .withValues(alpha: 0.4)),
-                                ),
-                                child: Text(e,
-                                    style: const TextStyle(fontSize: 13)),
+                    children: [
+                      // My reactions (tappable to toggle)
+                      ...myReactions.map((e) => GestureDetector(
+                            onTap: () => _toggleReaction(msg, e),
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF6C3FE8)
+                                    .withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: const Color(0xFF6C3FE8)
+                                        .withValues(alpha: 0.4)),
                               ),
-                            ))
-                        .toList(),
+                              child: Text(e,
+                                  style: const TextStyle(fontSize: 13)),
+                            ),
+                          )),
+                      // Partner reactions (view-only)
+                      ...partnerReactions.map((e) => Container(
+                            margin: const EdgeInsets.only(right: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.2)),
+                            ),
+                            child: Text(e,
+                                style: const TextStyle(fontSize: 13)),
+                          )),
+                    ],
                   ),
                 ),
 

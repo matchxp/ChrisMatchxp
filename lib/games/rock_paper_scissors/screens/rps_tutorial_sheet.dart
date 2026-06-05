@@ -76,7 +76,7 @@ class RPSTutorialSheet extends StatelessWidget {
                     Expanded(
                       child: Text(
                         e.value.text,
-                        style: RPSTheme.font(14,
+                        style: RPSTheme.font(12,
                             fw: FontWeight.w600,
                             color: const Color(0xFFE2D9F3),
                             height: 1.3),
