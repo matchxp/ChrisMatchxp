@@ -254,6 +254,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 12),
 
+                    // Delete Account
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        _deleteAccount();
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(50),
+                          border: Border.all(
+                              color: Colors.white.withOpacity(0.15)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.delete_forever_rounded,
+                                color: Colors.white.withOpacity(0.4), size: 18),
+                            const SizedBox(width: 10),
+                            Text('Delete Account',
+                                style: GoogleFonts.outfit(
+                                    color: Colors.white.withOpacity(0.4),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
                     // Save Changes
                     _saveButton(),
                   ],
@@ -524,6 +556,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
         MaterialPageRoute(builder: (_) => const LoginScreen()),
         (_) => false,
       );
+    }
+  }
+
+  // ── Delete account ────────────────────────────────────────────────────────
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1228),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete Account',
+            style: GoogleFonts.outfit(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+        content: Text(
+            'This will permanently delete your account and all your data. This cannot be undone.',
+            style: GoogleFonts.outfit(color: Colors.white70, height: 1.5)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: GoogleFonts.outfit(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete',
+                style: GoogleFonts.outfit(
+                    color: const Color(0xFFFF3B60),
+                    fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _supabase.rpc('delete_user_account');
+      await _supabase.auth.signOut();
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to delete account: $e',
+              style: GoogleFonts.outfit(color: Colors.white)),
+          backgroundColor: const Color(0xFFFF3B60),
+        ));
+      }
     }
   }
 }
