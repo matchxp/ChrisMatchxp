@@ -492,8 +492,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         label: 'Pick your interests',
         icon: Icons.favorite_border_rounded,
         color: const Color(0xFFE91E63),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const SizedBox.shrink())),
+        onTap: () async {
+          if (_profile == null) return;
+          final updated = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(builder: (_) => EditProfileScreen(profile: _profile!)),
+          );
+          if (updated == true) _loadProfile();
+        },
       ));
     }
 
