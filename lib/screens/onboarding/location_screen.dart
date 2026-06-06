@@ -149,8 +149,10 @@ class _LocationScreenState extends State<LocationScreen> {
             backgroundColor: _purple,
           ),
         );
-        Navigator.push(
-            context, MaterialPageRoute(builder: (_) => const MainNavigation()));
+        Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const MainNavigation()),
+            (route) => false);
       }
     } catch (e) {
       if (mounted) {
@@ -441,28 +443,4 @@ class _LocationScreenState extends State<LocationScreen> {
     );
   }
 
-  // ── Step indicator ──────────────────────────────────────────────────────
-  Widget _buildStepIndicator({required int current, required int total}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(total, (i) {
-        final isActive = i == current;
-        final isPast = i < current;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          width: isActive ? 24 : 8,
-          height: 8,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            color: isActive
-                ? _purple
-                : isPast
-                    ? _purple.withValues(alpha: 0.5)
-                    : Colors.white.withValues(alpha: 0.15),
-          ),
-        );
-      }),
-    );
-  }
 }
