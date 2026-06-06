@@ -31,6 +31,7 @@ class MatchesScreenPremium extends StatefulWidget {
 
 class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
   bool _showUpgradeModal = false;
+  String _selectedPlan = '6 Months';
 
   void _openUpgradeModal() {
     setState(() => _showUpgradeModal = true);
@@ -237,26 +238,35 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
               if (_showUpgradeModal)
                 GestureDetector(
                   onTap: _closeUpgradeModal,
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.8),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Center(
-                        child: GestureDetector(
-                          onTap: () {}, // Prevent dismissal when tapping modal
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-                            constraints: BoxConstraints(
-                              maxHeight: MediaQuery.of(context).size.height * 0.9,
+                  child: MatchXPBackground(
+                    child: Center(
+                      child: GestureDetector(
+                        onTap: () {}, // Prevent dismissal when tapping modal
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.of(context).size.height * 0.9,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topRight,
+                              end: Alignment.bottomLeft,
+                              stops: [0.0, 0.18, 0.38, 0.60, 0.82, 1.0],
+                              colors: [
+                                Color.fromARGB(255, 110, 29, 131),
+                                Color(0xFF2E0858),
+                                Color(0xFF180430),
+                                Color(0xFF0F0B1E),
+                                Color(0xFF0D0B14),
+                                Color(0xFF0C0B11),
+                              ],
                             ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1A0A2E),
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color: const Color(0xFF6C3FE8).withValues(alpha: 0.5),
-                                width: 2,
-                              ),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: const Color(0xFF6C3FE8).withValues(alpha: 0.5),
+                              width: 2,
                             ),
+                          ),
                             child: SingleChildScrollView(
                               padding: const EdgeInsets.all(24),
                               child: Column(
@@ -344,29 +354,35 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
                                   const SizedBox(height: 24),
 
                                   // Pricing options
-                                  _buildPricingOption(
+                                  GestureDetector(
+                                    onTap: () => setState(() => _selectedPlan = '6 Months'),
+                                    child: _buildPricingOption(
                                     title: '6 Months',
                                     price: '\$59.99',
                                     perMonth: '\$10/month',
                                     badge: 'SAVE 50%',
-                                    isPopular: true,
-                                  ),
+                                    isSelected: _selectedPlan == '6 Months',
+                                  )),
                                   const SizedBox(height: 12),
-                                  _buildPricingOption(
+                                  GestureDetector(
+                                    onTap: () => setState(() => _selectedPlan = '12 Months'),
+                                    child: _buildPricingOption(
                                     title: '12 Months',
                                     price: '\$89.99',
                                     perMonth: '\$7.50/month',
                                     badge: 'BEST VALUE',
-                                    isPopular: false,
-                                  ),
+                                    isSelected: _selectedPlan == '12 Months',
+                                  )),
                                   const SizedBox(height: 12),
-                                  _buildPricingOption(
+                                  GestureDetector(
+                                    onTap: () => setState(() => _selectedPlan = '1 Month'),
+                                    child: _buildPricingOption(
                                     title: '1 Month',
                                     price: '\$19.99',
                                     perMonth: '',
                                     badge: '',
-                                    isPopular: false,
-                                  ),
+                                    isSelected: _selectedPlan == '1 Month',
+                                  )),
                                   const SizedBox(height: 24),
 
                                   // Continue button
@@ -421,7 +437,6 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
                       ),
                     ),
                   ),
-                ),
             ],
           ),
         ),
@@ -435,12 +450,12 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF6C3FE8), Color(0xFF9D50BB)],
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
               icon,
@@ -595,18 +610,21 @@ class _MatchesScreenPremiumState extends State<MatchesScreenPremium> {
     required String price,
     required String perMonth,
     required String badge,
-    required bool isPopular,
+    required bool isSelected,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
+        color: isSelected
+            ? const Color(0xFF6C3FE8).withValues(alpha: 0.2)
+            : const Color(0xFF2E0858).withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(50),
         border: Border.all(
-          color: isPopular
+          color: isSelected
               ? const Color(0xFF6C3FE8)
-              : Colors.white.withValues(alpha: 0.1),
-          width: isPopular ? 2 : 1,
+              : Colors.white.withValues(alpha: 0.12),
+          width: isSelected ? 2 : 1,
         ),
       ),
       child: Row(
